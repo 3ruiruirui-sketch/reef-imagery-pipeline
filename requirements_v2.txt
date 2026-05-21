@@ -1,0 +1,9 @@
+requests
+pystac-client
+planetary-computer
+rasterio
+matplotlib
+numpy
+lxml
+pyproj
+python-dotenv

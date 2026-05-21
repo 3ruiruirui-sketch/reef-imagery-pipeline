@@ -1,0 +1,1268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reef Imagery Dashboard — Algarve Underwater</title>
+  <meta name="description" content="Interactive satellite reef imagery dashboard with live GPS coordinate tracking for Algarve diving spots.">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0a0e1a;
+      --bg-secondary: #111827;
+      --bg-card: #1a2035;
+      --bg-glass: rgba(20, 28, 50, 0.85);
+      --accent: #3b82f6;
+      --accent-glow: rgba(59, 130, 246, 0.3);
+      --accent-secondary: #06d6a0;
+      --text-primary: #f0f4ff;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --border: rgba(59, 130, 246, 0.15);
+      --danger: #ef4444;
+      --success: #22c55e;
+      --warning: #f59e0b;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      overflow: hidden;
+      height: 100vh;
+    }
+
+    /* ---- HEADER ---- */
+    .header {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 1000;
+      background: linear-gradient(135deg, var(--bg-glass), rgba(10, 14, 26, 0.95));
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 56px;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .logo-icon {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      box-shadow: 0 4px 15px var(--accent-glow);
+    }
+
+    .header-title {
+      font-size: 17px;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--text-primary), var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.3px;
+    }
+
+    .header-subtitle {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+
+    /* ---- GPS DISPLAY ---- */
+    .gps-display {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      background: rgba(0,0,0,0.3);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 6px 16px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+    }
+
+    .gps-label {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 600;
+    }
+
+    .gps-coords {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--accent-secondary);
+      min-width: 300px;
+      text-align: center;
+    }
+
+    .gps-dms {
+      font-size: 11px;
+      color: var(--text-secondary);
+      min-width: 340px;
+      text-align: center;
+    }
+
+    /* ---- SIDEBAR ---- */
+    .sidebar {
+      position: fixed;
+      top: 56px;
+      left: 0;
+      bottom: 0;
+      width: 320px;
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--border);
+      z-index: 900;
+      overflow-y: auto;
+      transition: transform 0.3s ease;
+    }
+
+    .sidebar.collapsed {
+      transform: translateX(-320px);
+    }
+
+    .sidebar-toggle {
+      position: fixed;
+      top: 66px;
+      left: 320px;
+      z-index: 950;
+      width: 28px;
+      height: 48px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-left: none;
+      border-radius: 0 8px 8px 0;
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      transition: all 0.3s ease;
+    }
+
+    .sidebar-toggle:hover {
+      background: var(--accent);
+      color: white;
+    }
+
+    .sidebar.collapsed + .sidebar-toggle {
+      left: 0;
+    }
+
+    .sidebar-section {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sidebar-section-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--text-muted);
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    /* ---- LOCATION CARDS ---- */
+    .location-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .location-card:hover {
+      border-color: var(--accent);
+      box-shadow: 0 0 20px var(--accent-glow);
+      transform: translateY(-1px);
+    }
+
+    .location-card.active {
+      border-color: var(--accent);
+      background: rgba(59, 130, 246, 0.08);
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+
+    .location-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+    }
+
+    .location-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .location-dates {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 8px;
+    }
+
+    .date-chip {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(59, 130, 246, 0.12);
+      color: var(--accent);
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .date-chip:hover {
+      background: rgba(59, 130, 246, 0.25);
+      border-color: var(--accent);
+    }
+
+    .date-chip.active {
+      background: var(--accent);
+      color: white;
+    }
+
+    /* ---- OPACITY SLIDER ---- */
+    .opacity-control {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 0;
+    }
+
+    .opacity-control label {
+      font-size: 11px;
+      color: var(--text-secondary);
+      min-width: 55px;
+    }
+
+    .opacity-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      flex: 1;
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(255,255,255,0.1);
+      outline: none;
+    }
+
+    .opacity-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      box-shadow: 0 0 8px var(--accent-glow);
+    }
+
+    .opacity-value {
+      font-size: 11px;
+      color: var(--accent-secondary);
+      min-width: 30px;
+      text-align: right;
+      font-weight: 600;
+    }
+
+    /* ---- MAP ---- */
+    #map {
+      position: fixed;
+      top: 56px;
+      left: 320px;
+      right: 0;
+      bottom: 0;
+      z-index: 1;
+      background: #0a0e1a;
+    }
+
+    .sidebar.collapsed ~ #map {
+      left: 0;
+    }
+
+    /* ---- BOTTOM INFO BAR ---- */
+    .info-bar {
+      position: fixed;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      background: var(--bg-glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 8px 20px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    .info-bar .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .info-bar .dot.green { background: var(--success); box-shadow: 0 0 8px rgba(34,197,94,0.5); }
+    .info-bar .dot.blue { background: var(--accent); }
+    .info-bar .dot.orange { background: var(--warning); }
+
+    /* ---- CROSSHAIR ---- */
+    .crosshair-h, .crosshair-v {
+      position: fixed;
+      pointer-events: none;
+      z-index: 800;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+
+    .crosshair-h {
+      left: 320px; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255,220,0,0.6), transparent);
+    }
+
+    .crosshair-v {
+      top: 56px; bottom: 0;
+      width: 1px;
+      background: linear-gradient(180deg, transparent, rgba(255,220,0,0.6), transparent);
+    }
+
+    .map-active .crosshair-h,
+    .map-active .crosshair-v {
+      opacity: 1;
+    }
+
+    /* ---- COMPARISON MODAL ---- */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 2000;
+      left: 0; top: 0; width: 100%; height: 100%;
+      background-color: rgba(6, 10, 26, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    .modal.show {
+      display: flex;
+      opacity: 1;
+    }
+    .modal-content {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      width: 90%;
+      max-width: 480px;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.7);
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      transform: scale(0.95);
+      transition: transform 0.3s ease;
+    }
+    .modal.show .modal-content {
+      transform: scale(1);
+    }
+    .close-button {
+      position: absolute;
+      right: 20px;
+      top: 18px;
+      font-size: 26px;
+      cursor: pointer;
+      color: var(--text-secondary);
+      transition: color 0.2s;
+    }
+    .close-button:hover {
+      color: var(--accent-secondary);
+    }
+    .modal-header {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .modal-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+    .modal-subtitle {
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+    .comparison-slider-wrapper {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 323 / 401;
+      background: #000;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      margin-top: 6px;
+    }
+    .comparison-slider {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    .original-img, .enhanced-img {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none;
+    }
+    .original-img img, .enhanced-img img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .enhanced-img {
+      z-index: 2;
+      clip-path: inset(0 0 0 50%);
+    }
+    .img-label {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      background: rgba(10, 14, 26, 0.85);
+      backdrop-filter: blur(4px);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      z-index: 10;
+    }
+    .slider-handle {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 50%;
+      width: 2px;
+      background: var(--text-primary);
+      z-index: 3;
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+    .slider-handle-line {
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(180deg, var(--accent), var(--accent-secondary));
+      box-shadow: 0 0 8px var(--accent);
+    }
+    .slider-handle-button {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 36px;
+      height: 36px;
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.6);
+      font-size: 15px;
+      font-weight: bold;
+      border: 2px solid var(--accent);
+      z-index: 10;
+    }
+    .slider-input {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0;
+      z-index: 4;
+      cursor: ew-resize;
+      -webkit-appearance: none;
+    }
+
+    /* ---- LEAFLET OVERRIDES ---- */
+    .leaflet-control-zoom a {
+      background: var(--bg-card) !important;
+      color: var(--text-primary) !important;
+      border-color: var(--border) !important;
+    }
+
+    .leaflet-control-zoom a:hover {
+      background: var(--accent) !important;
+    }
+
+    .leaflet-bar {
+      border: 1px solid var(--border) !important;
+      border-radius: 10px !important;
+      overflow: hidden;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important;
+    }
+
+    /* Dark tile background */
+    .leaflet-container {
+      background: #0a0e1a;
+    }
+
+    /* ---- BAND SELECTOR ---- */
+    .band-selector {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 12px;
+    }
+
+    .band-btn {
+      flex: 1;
+      padding: 8px 4px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-secondary);
+      font-size: 11px;
+      font-weight: 600;
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: center;
+    }
+
+    .band-btn:hover {
+      border-color: var(--accent);
+      color: var(--text-primary);
+    }
+
+    .band-btn.active-ratio {
+      background: linear-gradient(135deg, #d73027, #fdae61, #4575b4);
+      color: white;
+      border-color: transparent;
+      box-shadow: 0 0 12px rgba(215, 48, 39, 0.3);
+    }
+
+    .band-btn.active-blue {
+      background: linear-gradient(135deg, #08306b, #2171b5, #6baed6);
+      color: white;
+      border-color: transparent;
+      box-shadow: 0 0 12px rgba(33, 113, 181, 0.4);
+    }
+
+    .band-btn.active-green {
+      background: linear-gradient(135deg, #00441b, #238b45, #74c476);
+      color: white;
+      border-color: transparent;
+      box-shadow: 0 0 12px rgba(35, 139, 69, 0.4);
+    }
+
+    .band-btn .band-icon {
+      display: block;
+      font-size: 16px;
+      margin-bottom: 2px;
+    }
+
+    /* ---- COLOR LEGEND ---- */
+    .color-legend {
+      padding: 8px 0;
+    }
+
+    .legend-bar {
+      height: 12px;
+      border-radius: 6px;
+      background: linear-gradient(90deg, 
+        #313695, #4575b4, #74add1, #abd9e9, #e0f3f8, 
+        #ffffbf, #fee090, #fdae61, #f46d43, #d73027, #a50026
+      );
+      margin-bottom: 4px;
+      transition: background 0.3s ease;
+    }
+
+    .legend-bar.blue {
+      background: linear-gradient(90deg, #08306b, #08519c, #2171b5, #4292c6, #6baed6, #9ecae1, #c6dbef, #deebf7, #f7fbff);
+    }
+
+    .legend-bar.green {
+      background: linear-gradient(90deg, #00441b, #006d2c, #238b45, #41ab5d, #74c476, #a1d99b, #c7e9c0, #e5f5e0, #f7fcf5);
+    }
+
+    .legend-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 9px;
+      color: var(--text-muted);
+    }
+
+    /* ---- SCROLLBAR ---- */
+    .sidebar::-webkit-scrollbar { width: 4px; }
+    .sidebar::-webkit-scrollbar-track { background: transparent; }
+    .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .sidebar::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+    /* ---- SPINNER MINI ---- */
+    .spinner-mini {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin-mini 0.7s linear infinite;
+    }
+    @keyframes spin-mini {
+      to { transform: rotate(360deg); }
+    }
+    .download-btn:disabled {
+      opacity: 0.7;
+      cursor: wait !important;
+      background: var(--text-muted) !important;
+    }
+    .download-btn:hover:not(:disabled) {
+      filter: brightness(1.15);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px var(--accent-glow);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-left">
+      <div class="logo-icon">🌊</div>
+      <div>
+        <div class="header-title">Reef Imagery Dashboard</div>
+        <div class="header-subtitle">Algarve Coast — Sentinel-2 Benthic Analysis</div>
+      </div>
+    </div>
+    <div class="gps-display">
+      <div>
+        <div class="gps-label">DD Format</div>
+        <div class="gps-coords" id="gpsDecimal">Move cursor over map</div>
+      </div>
+      <div style="width:1px;height:28px;background:var(--border)"></div>
+      <div>
+        <div class="gps-label">DDM Format</div>
+        <div class="gps-dms" id="gpsDMS">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">📍 Diving Locations</div>
+      <div id="locationList"></div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">🎨 Display Settings</div>
+      <div class="sidebar-section-title" style="margin-top:4px;margin-bottom:6px">Band Selection</div>
+      <div class="band-selector">
+        <button class="band-btn active-blue" id="btnBlue" data-band="b02">
+          <span class="band-icon">🔵</span>Blue 490nm
+        </button>
+        <button class="band-btn" id="btnGreen" data-band="b03">
+          <span class="band-icon">🟢</span>Green 560nm
+        </button>
+      </div>
+      <div class="opacity-control">
+        <label>Opacity</label>
+        <input type="range" class="opacity-slider" id="opacitySlider" min="0" max="100" value="80">
+        <span class="opacity-value" id="opacityValue">80%</span>
+      </div>
+      <div class="color-legend">
+        <div class="sidebar-section-title" style="margin-bottom:6px" id="legendTitle">Blue Wavelength (Band 2 — 490nm)</div>
+        <div class="legend-bar blue" id="legendBar"></div>
+        <div class="legend-labels" id="legendLabels">
+          <span>Low Reflectance</span>
+          <span>Medium</span>
+          <span>High Reflectance</span>
+        </div>
+      </div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">✨ Enhance Image</div>
+      <button class="band-btn active-blue" style="width: 100%; justify-content: center; background: rgba(59, 130, 246, 0.2);" onclick="submitEnhanceTask()">
+        <span class="band-icon">🚀</span> Run Orchestrator
+      </button>
+      <div id="enhanceStatus" style="font-size: 0.85em; margin-top: 10px; color: var(--accent-secondary); text-align: center;"></div>
+    </div>
+  </div>
+
+  <button class="sidebar-toggle" id="sidebarToggle">◀</button>
+
+  <!-- CROSSHAIR LINES -->
+  <div class="crosshair-h" id="crossH"></div>
+  <div class="crosshair-v" id="crossV"></div>
+
+  <!-- MAP -->
+  <div id="map"></div>
+
+  <!-- BOTTOM INFO BAR -->
+  <div class="info-bar">
+    <div><span class="dot green"></span> Sentinel-2 L2A</div>
+    <div><span class="dot orange"></span> <span id="activeLayerInfo">No layer selected</span></div>
+    <div>Zoom: <strong id="zoomLevel">13</strong></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // ---- DATA ----
+    let layersData = [];
+    let locationGroups = {};
+    let currentOverlay = null;
+    let currentLocationKey = null;
+    let currentLayerIdx = 0;
+    let currentBand = 'b02'; // 'b02', 'b03'
+    let map;
+    let currentLayer = null;
+
+    // Function to download full DPI image (synchronous upscaled generation)
+    function downloadFullDPI(ratioPath, btn) {
+      // Use the currently active layer if available for better context
+      const layer = currentLayer || {};
+      const band = currentBand || 'ratio';
+      const dir = layer.dir || '';
+      const date = layer.date || '';
+
+      // Show loading state on button
+      const originalText = btn ? btn.textContent : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;"><span class="spinner-mini"></span> Generating…</span>';
+      }
+
+      fetch('/api/generate-full-dpi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ratio_tif: ratioPath || (layer.ratio_tif || ''),
+          band: band === 'b02' ? 'b02' : band === 'b03' ? 'b03' : 'ratio',
+          dir: dir,
+          date: date
+        })
+      })
+      .then(resp => {
+        if (!resp.ok) return resp.json().then(err => { throw new Error(err.message || 'Generation failed'); });
+        return resp.blob();
+      })
+      .then(blob => {
+        // Trigger download
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `full_dpi_${dir || 'reef'}_${date || 'image'}_${band}_4x.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      })
+      .catch(err => {
+        console.error('Full DPI generation error:', err);
+        alert('⚠️ Full DPI generation failed: ' + err.message);
+      })
+      .finally(() => {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '📥 Download Full DPI';
+        }
+      });
+    }
+
+    // ---- INIT MAP ----
+    map = L.map('map', {
+      center: [37.065, -8.21],
+      zoom: 14,
+      zoomControl: true,
+      preferCanvas: true,
+    });
+
+    // Dark satellite basemap
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      attribution: '&copy; Esri',
+      maxZoom: 19,
+    }).addTo(map);
+
+    // ---- GPS DISPLAY ----
+    function decToDDM(dec, isLat) {
+      const dir = isLat ? (dec >= 0 ? 'N' : 'S') : (dec >= 0 ? 'E' : 'W');
+      const abs = Math.abs(dec);
+      const d = Math.floor(abs);
+      const m = ((abs - d) * 60).toFixed(3);
+      return `${d}° ${String(m).padStart(6,'0')}' ${dir}`;
+    }
+
+    map.on('mousemove', function(e) {
+      const lat = e.latlng.lat;
+      const lng = e.latlng.lng;
+      
+      document.getElementById('gpsDecimal').textContent = 
+        `${Math.abs(lat).toFixed(6)}° ${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lng).toFixed(6)}° ${lng >= 0 ? 'E' : 'W'}`;
+      
+      document.getElementById('gpsDMS').textContent = 
+        `${decToDDM(lat, true)}   ${decToDDM(lng, false)}`;
+
+      // Crosshair
+      const mapDiv = document.getElementById('map');
+      const rect = mapDiv.getBoundingClientRect();
+      const x = e.originalEvent.clientX;
+      const y = e.originalEvent.clientY;
+      document.getElementById('crossH').style.top = y + 'px';
+      document.getElementById('crossV').style.left = x + 'px';
+      document.body.classList.add('map-active');
+    });
+
+    map.on('mouseout', function() {
+      document.body.classList.remove('map-active');
+      document.getElementById('gpsDecimal').textContent = 'Move cursor over map';
+      document.getElementById('gpsDMS').textContent = '—';
+    });
+
+    map.on('zoomend', function() {
+      document.getElementById('zoomLevel').textContent = map.getZoom();
+    });
+
+    // ---- LOAD LAYER DATA ----
+    fetch('layers_meta.json')
+      .then(r => r.json())
+      .then(data => {
+        layersData = data;
+        groupLayers();
+        buildSidebar();
+        // Auto-select first location
+        const firstKey = Object.keys(locationGroups)[0];
+        if (firstKey) selectLocation(firstKey, 0);
+      });
+
+    function groupLayers() {
+      locationGroups = {};
+      layersData.forEach(layer => {
+        // Create location card
+        const card = document.createElement('div');
+        card.className = 'location-card';
+        card.dataset.key = key;
+        card.dataset.idx = 0;
+        card.innerHTML = `
+          <div class="location-name">${group.name}</div>
+          <div class="location-meta">${group.layers.length} dates available</div>
+          <div class="location-dates" id="dates-${key}"></div>
+          <button class="download-btn" style="margin-top:8px;width:100%;background:var(--accent);color:white;border:none;border-radius:6px;cursor:pointer;padding:8px 12px;font-size:0.85em;font-weight:500;transition:all 0.2s;" onclick="event.stopPropagation();downloadFullDPI('${group.layers[0].ratio_tif}', this)">📥 Download Full DPI</button>
+        `;
+        container.appendChild(card);
+        // Add click handler for selecting location
+        card.addEventListener('click', () => selectLocation(key, 0));
+        // Build date chips
+        const datesContainer = document.getElementById(`dates-${key}`);
+        group.layers.forEach((layer, idx) => {
+          const chip = document.createElement('div');
+          chip.className = 'date-chip';
+          chip.textContent = layer.formattedDate;
+          chip.dataset.idx = idx;
+          chip.addEventListener('click', (e) => {
+            e.stopPropagation();
+            selectLocation(key, Number(chip.dataset.idx));
+          });
+          datesContainer.appendChild(chip);
+        });
+        let name = layer.dir
+          .replace('reef_output_', '')
+          .replace(/_/g, ' ');
+        
+        // Better naming
+        const nameMap = {
+          'pedra do alto': 'Pedra do Alto',
+          'pedra alto aug 12 2022': 'Pedra do Alto',
+          'pedra alto aug 2022': 'Pedra do Alto',
+          'pedra alto june 2024': 'Pedra do Alto',
+          'pedra alto may 2024': 'Pedra do Alto',
+          'galé spot': 'Galé Spot',
+          'combined reefs': 'Combined Reefs',
+          'new loc': 'Target (New Location)',
+          'target 12m': 'Target 12m Spot',
+          'target spot': 'Target Diving Spot',
+          'pedra to gale 20250925': 'Pedra → Galé Corridor',
+          'v3': 'Original Analysis Area',
+          'aug 2022 target1': 'Target (Aug 2022)',
+          'sep 2025 12m': 'Target (Sep 2025)',
+          'sep 2025 new spot': 'Target (Sep 2025)',
+          'target east reef': 'ArmacaoAtuns',
+          'aug 2025': 'Target (Aug 2025)',
+          'dec 2023': 'Target (Dec 2023)',
+          'jan 2025': 'Target (Jan 2025)',
+          'jan 2025 300dpi': 'Target (Jan 2025)',
+          'winter 2025': 'Target (Winter 2025)',
+          'zimbral': 'Zimbral Reef',
+          'zimbral best day': 'Zimbral Reef',
+        };
+
+        const cleanName = name.trim().toLowerCase();
+        const displayName = nameMap[cleanName] || name.charAt(0).toUpperCase() + name.slice(1);
+        
+        // Group by bounds
+        const boundsKey = JSON.stringify(layer.bounds);
+        if (!locationGroups[boundsKey]) {
+          locationGroups[boundsKey] = {
+            name: displayName,
+            bounds: layer.bounds,
+            layers: []
+          };
+        }
+        
+        // Format date nicely
+        const dateStr = layer.date;
+        const formatted = `${dateStr.slice(0,4)}-${dateStr.slice(4,6)}-${dateStr.slice(6,8)}`;
+        layer.formattedDate = formatted;
+        layer.displayName = displayName;
+        
+        locationGroups[boundsKey].layers.push(layer);
+      });
+
+      // Sort layers by date within each group
+      Object.values(locationGroups).forEach(g => {
+        g.layers.sort((a, b) => a.date.localeCompare(b.date));
+      });
+    }
+
+    function buildSidebar() {
+      const container = document.getElementById('locationList');
+      container.innerHTML = '';
+
+      const groupsArray = Object.entries(locationGroups).map(([key, group]) => {
+        const center = [
+          (group.bounds[0][0] + group.bounds[1][0]) / 2,
+          (group.bounds[0][1] + group.bounds[1][1]) / 2
+        ];
+        return { key, group, center };
+      });
+
+      // Sort geographically: West to East (Longitude), then South to North (Latitude)
+      groupsArray.sort((a, b) => {
+        if (Math.abs(a.center[1] - b.center[1]) > 0.0001) {
+          return a.center[1] - b.center[1];
+        }
+        return a.center[0] - b.center[0];
+      });
+
+      groupsArray.forEach(({ key, group, center }) => {
+        const card = document.createElement('div');
+        card.className = 'location-card';
+        card.dataset.key = key;
+
+        const latDD = center[0];
+        const lonDD = center[1];
+
+        card.innerHTML = `
+          <div class="location-name">${group.name}</div>
+          <div class="location-meta" style="margin-bottom: 2px;">${group.layers.length} date${group.layers.length > 1 ? 's' : ''}</div>
+          <div class="location-meta" style="font-family: monospace; font-size: 0.8em; color: #94a3b8; margin-bottom: 8px;">${Math.abs(latDD).toFixed(5)}° ${latDD >= 0 ? 'N' : 'S'}, ${Math.abs(lonDD).toFixed(5)}° ${lonDD >= 0 ? 'E' : 'W'}</div>
+          <div class="location-dates" id="dates-${key.replace(/[^a-z0-9]/gi, '')}">
+            ${group.layers.map((l, i) => 
+              `<span class="date-chip" data-key="${key}" data-idx="${i}">${l.formattedDate}</span>`
+            ).join('')}
+          </div>
+          <button class="download-btn" style="margin-top:8px;width:100%;background:var(--accent);color:white;border:none;border-radius:6px;cursor:pointer;padding:8px 12px;font-size:0.85em;font-weight:500;transition:all 0.2s;" onclick="event.stopPropagation();downloadFullDPI('${group.layers[0].ratio_tif}', this)">📥 Download Full DPI</button>
+        `;
+
+        card.addEventListener('click', (e) => {
+          if (e.target.classList.contains('date-chip')) {
+            const idx = parseInt(e.target.dataset.idx);
+            selectLocation(key, idx);
+          } else {
+            selectLocation(key, 0);
+          }
+        });
+
+        container.appendChild(card);
+      });
+    }
+
+    function selectLocation(boundsKey, layerIdx) {
+      const group = locationGroups[boundsKey];
+      if (!group) return;
+      const layer = group.layers[layerIdx];
+
+      // Remove existing overlay
+      if (currentOverlay) {
+        map.removeLayer(currentOverlay);
+      }
+
+      // Update UI active states
+      document.querySelectorAll('.location-card').forEach(c => c.classList.remove('active'));
+      document.querySelectorAll('.date-chip').forEach(c => c.classList.remove('active'));
+
+      const card = document.querySelector(`.location-card[data-key='${boundsKey}']`);
+      if (card) card.classList.add('active');
+
+      const chip = document.querySelector(`.date-chip[data-key='${boundsKey}'][data-idx='${layerIdx}']`);
+      if (chip) chip.classList.add('active');
+
+      // Pick tile based on selected band
+      let tilePath = layer.tile_png;
+      let bandLabel = 'Ratio';
+      if (currentBand === 'b02' && layer.tile_b02) {
+        tilePath = layer.tile_b02;
+        bandLabel = 'Blue (B02)';
+      } else if (currentBand === 'b03' && layer.tile_b03) {
+        tilePath = layer.tile_b03;
+        bandLabel = 'Green (B03)';
+      }
+
+      // Add image overlay
+      const bounds = [layer.bounds[0], layer.bounds[1]];
+      currentOverlay = L.imageOverlay(tilePath, bounds, {
+        opacity: parseInt(document.getElementById('opacitySlider').value) / 100,
+        interactive: true,
+      }).addTo(map);
+
+      // Fly to location
+      map.flyToBounds(bounds, { padding: [40, 40], duration: 0.8 });
+
+      // Update info bar
+      document.getElementById('activeLayerInfo').textContent = 
+        `${layer.displayName} — ${layer.formattedDate} — ${bandLabel}`;
+
+      // Update active layer references
+      currentLayer = layer;
+
+      currentLocationKey = boundsKey;
+      currentLayerIdx = layerIdx;
+    }
+
+    // ---- OPACITY SLIDER ----
+    document.getElementById('opacitySlider').addEventListener('input', function() {
+      const val = this.value;
+      document.getElementById('opacityValue').textContent = val + '%';
+      if (currentOverlay) {
+        currentOverlay.setOpacity(val / 100);
+      }
+    });
+
+    // ---- BAND SELECTOR ----
+    const bandButtons = document.querySelectorAll('.band-btn');
+    bandButtons.forEach(btn => {
+      btn.addEventListener('click', function() {
+        const band = this.dataset.band;
+        currentBand = band;
+
+        // Update button active states
+        bandButtons.forEach(b => {
+          b.className = 'band-btn';
+        });
+        if (band === 'ratio') this.classList.add('active-ratio');
+        else if (band === 'b02') this.classList.add('active-blue');
+        else if (band === 'b03') this.classList.add('active-green');
+
+        // Update legend
+        const legendBar = document.getElementById('legendBar');
+        const legendTitle = document.getElementById('legendTitle');
+        const legendLabels = document.getElementById('legendLabels');
+
+        legendBar.className = 'legend-bar';
+        if (band === 'ratio') {
+          legendTitle.textContent = 'Ratio Colormap (RdYlBu_r)';
+          legendLabels.innerHTML = '<span>Deep / Sand</span><span>Transition</span><span>Reef / Rock</span>';
+        } else if (band === 'b02') {
+          legendBar.classList.add('blue');
+          legendTitle.textContent = 'Blue Wavelength (Band 2 — 490nm)';
+          legendLabels.innerHTML = '<span>Low Reflectance</span><span>Medium</span><span>High Reflectance</span>';
+        } else if (band === 'b03') {
+          legendBar.classList.add('green');
+          legendTitle.textContent = 'Green Wavelength (Band 3 — 560nm)';
+          legendLabels.innerHTML = '<span>Low Reflectance</span><span>Medium</span><span>High Reflectance</span>';
+        }
+
+        // Reload current overlay with new band
+        if (currentLocationKey) {
+          selectLocation(currentLocationKey, currentLayerIdx);
+        }
+      });
+    });
+
+    // ---- SIDEBAR TOGGLE ----
+    document.getElementById('sidebarToggle').addEventListener('click', function() {
+      const sidebar = document.getElementById('sidebar');
+      sidebar.classList.toggle('collapsed');
+      this.textContent = sidebar.classList.contains('collapsed') ? '▶' : '◀';
+      
+      // Adjust map and crosshair
+      const mapDiv = document.getElementById('map');
+      const crossH = document.getElementById('crossH');
+      if (sidebar.classList.contains('collapsed')) {
+        mapDiv.style.left = '0px';
+        crossH.style.left = '0px';
+        this.style.left = '0px';
+      } else {
+        mapDiv.style.left = '320px';
+        crossH.style.left = '320px';
+        this.style.left = '320px';
+      }
+      
+      setTimeout(() => map.invalidateSize(), 350);
+    });
+    // ---- API ORCHESTRATOR ----
+    async function submitEnhanceTask() {
+      if (!currentLayer) {
+        alert("Please select a location and layer first!");
+        return;
+      }
+      
+      const statusDiv = document.getElementById('enhanceStatus');
+      statusDiv.textContent = 'Processing... Please wait.';
+      
+      const lat = (currentLayer.bounds[0][0] + currentLayer.bounds[1][0]) / 2;
+      const lon = (currentLayer.bounds[0][1] + currentLayer.bounds[1][1]) / 2;
+      
+      // Determine currently visualized tile path
+      let activeTile = currentLayer.tile_png;
+      if (currentBand === 'b02') activeTile = currentLayer.tile_b02;
+      else if (currentBand === 'b03') activeTile = currentLayer.tile_b03;
+      
+      const payload = {
+        IMAGE_DATE: currentLayer.formattedDate,
+        LAT: lat,
+        LON: lon,
+        TARGET_SNR: currentLayer.formattedDate === '2025-09-25' ? 27.31 : 119.30,
+        TILE_B02: currentLayer.tile_b02,
+        ACTIVE_TILE_PATH: activeTile
+      };
+
+      try {
+        const resp = await fetch('/api/orchestrate-enhance', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload)
+        });
+        const result = await resp.json();
+        console.log('Orchestration result', result);
+        
+        if (result.status === 'success') {
+          statusDiv.innerHTML = `<span style="color:var(--success)">✅ Final SNR: ${result.metrics.snr_mean.toFixed(2)}</span>`;
+          
+          // Apply the Enhanced Viridis directly to the Leaflet map overlay being visualized!
+          if (currentOverlay && result.outputs.enhanced_viridis_url) {
+            currentOverlay.setUrl(result.outputs.enhanced_viridis_url);
+            document.getElementById('activeLayerInfo').textContent = 
+              `${currentLayer.displayName} — ${currentLayer.formattedDate} — Enhanced Wavelength (Viridis)`;
+          }
+          
+          // Open the comparison modal!
+          openComparisonModal(result.outputs.original_url, result.outputs.enhanced_viridis_url, result.metrics.snr_mean);
+        } else {
+          statusDiv.innerHTML = `<span style="color:var(--danger)">❌ Failed: ${result.message || 'Unknown error'}</span>`;
+        }
+      } catch (err) {
+        console.error(err);
+        statusDiv.innerHTML = `<span style="color:var(--danger)">❌ Connection error</span>`;
+      }
+    }
+  </script>
+
+  <!-- COMPARISON SLIDER MODAL -->
+  <div id="comparisonModal" class="modal">
+    <div class="modal-content">
+      <span class="close-button" onclick="closeComparisonModal()">&times;</span>
+      <div class="modal-header">
+        <div class="modal-title">✨ Geophysical Pipeline Result</div>
+        <div class="modal-subtitle">NLM Denoising + Smooth CLAHE + Viridis Colormap</div>
+      </div>
+      
+      <div style="display: flex; justify-content: space-between; font-size: 11px; padding: 6px 12px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid var(--border); font-family: monospace;">
+        <div><strong>Status</strong>: <span style="color:var(--success)">Radiometrically Safe</span></div>
+        <div><strong>Final Benthic SNR</strong>: <strong style="color:var(--accent-secondary);" id="modalSNR">27.31</strong></div>
+      </div>
+
+      <div class="comparison-slider-wrapper">
+        <div class="comparison-slider">
+          <!-- Before: Original Tile -->
+          <div class="original-img">
+            <img id="beforeImg" src="" alt="Original View">
+            <div class="img-label">Original View</div>
+          </div>
+          <!-- After: Enhanced Viridis -->
+          <div class="enhanced-img" id="enhancedWrapper">
+            <img id="afterImg" src="" alt="Enhanced Viridis">
+            <div class="img-label" style="right: 12px; left: auto; background: var(--accent); border-color: transparent;">Enhanced (NLM+CLAHE+Viridis)</div>
+          </div>
+          <!-- Drag Handle -->
+          <div class="slider-handle" id="sliderHandle">
+            <div class="slider-handle-line"></div>
+            <div class="slider-handle-button">↔</div>
+          </div>
+          <!-- Range Input Slider -->
+          <input type="range" class="slider-input" id="sliderInput" min="0" max="100" value="50">
+        </div>
+      </div>
+      
+      <div style="font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 4px;">
+        💡 Slide left and right to inspect the benthic contour enhancement details.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ---- MODAL SLIDER LOGIC ----
+    const comparisonModal = document.getElementById('comparisonModal');
+    const sliderInput = document.getElementById('sliderInput');
+    const enhancedWrapper = document.getElementById('enhancedWrapper');
+    const sliderHandle = document.getElementById('sliderHandle');
+    
+    sliderInput.addEventListener('input', function() {
+      const val = this.value;
+      // Update clip-path dynamically (left is clipped away, right 100-val % is visible)
+      enhancedWrapper.style.clipPath = `inset(0 0 0 ${val}%)`;
+      sliderHandle.style.left = `${val}%`;
+    });
+    
+    function openComparisonModal(originalUrl, enhancedUrl, snrValue) {
+      document.getElementById('beforeImg').src = originalUrl;
+      document.getElementById('afterImg').src = enhancedUrl;
+      document.getElementById('modalSNR').textContent = snrValue.toFixed(2);
+      
+      // Reset slider to middle (50%)
+      sliderInput.value = 50;
+      enhancedWrapper.style.clipPath = 'inset(0 0 0 50%)';
+      sliderHandle.style.left = '50%';
+      
+      comparisonModal.classList.add('show');
+    }
+    
+    function closeComparisonModal() {
+      comparisonModal.classList.remove('show');
+    }
+    
+    // Close modal if user clicks outside of modal-content
+    comparisonModal.addEventListener('click', function(e) {
+      if (e.target === comparisonModal) {
+        closeComparisonModal();
+      }
+    });
+  </script>
+</body>
+</html>

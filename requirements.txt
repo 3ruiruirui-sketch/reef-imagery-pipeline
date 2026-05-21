@@ -1,0 +1,7 @@
+argparse
+requests
+pystac-client
+planetary-computer
+rasterio
+matplotlib
+numpy

@@ -1,0 +1,41 @@
+import numpy as np
+import cv2
+import matplotlib.pyplot as plt
+import os
+from enhancer import fetch_vsi_patch
+from skimage.restoration import denoise_nl_means, estimate_sigma
+
+lat = 37.06361
+lon = -8.21938
+date_str = "2025-09-25"
+output_dir = "/Users/ssoares/.gemini/antigravity/brain/1485c739-6681-495c-927e-ab890d98ee30/"
+
+print("Fetching VSI patch...")
+b02_ref = fetch_vsi_patch(lat, lon, date_str, buffer_m=2000.0)
+
+vmin, vmax = np.percentile(b02_ref[b02_ref > 0], 1), np.percentile(b02_ref[b02_ref > 0], 95)
+orig_vis = np.clip((b02_ref - vmin) / (vmax - vmin), 0, 1)
+
+print("Applying refinement...")
+p95 = np.percentile(b02_ref[b02_ref > 0], 95)
+b02_glint = np.clip(b02_ref - 0.8 * p95 * 0.05, 0, 1.0)
+
+sigma_est = np.mean(estimate_sigma(b02_glint))
+b02_den = denoise_nl_means(b02_glint, h=0.8 * sigma_est, fast_mode=True, patch_size=5, patch_distance=6)
+
+b02_16 = np.clip(b02_den * 65535, 0, 65535).astype(np.uint16)
+clahe = cv2.createCLAHE(clipLimit=1.1, tileGridSize=(4,4))
+b02_clahe = clahe.apply(b02_16)
+b02_clahe_float = b02_clahe.astype(np.float32) / 65535.0
+
+b02_final = (b02_den * 0.5) + (b02_clahe_float * 0.5)
+
+ref_vmin, ref_vmax = np.percentile(b02_final[b02_final > 0], 1), np.percentile(b02_final[b02_final > 0], 95)
+ref_vis = np.clip((b02_final - ref_vmin) / (ref_vmax - ref_vmin), 0, 1)
+
+print("Saving images...")
+plt.imsave(os.path.join(output_dir, "original_20250925.png"), orig_vis, cmap='gray')
+plt.imsave(os.path.join(output_dir, "refined_20250925.png"), ref_vis, cmap='gray')
+plt.imsave(os.path.join(output_dir, "refined_color_20250925.png"), ref_vis, cmap='viridis')
+
+print("Done!")

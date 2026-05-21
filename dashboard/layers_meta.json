@@ -1,0 +1,342 @@
+[
+  {
+    "dir": "reef_output_ai_prediction_spot",
+    "ratio_tif": "reef_output_ai_prediction_spot/ratio_B02_B03_20240930.tif",
+    "date": "20240930",
+    "bounds": [
+      [
+        37.04016139339995,
+        -8.22813003286279
+      ],
+      [
+        37.076063465175466,
+        -8.191429079739448
+      ]
+    ],
+    "width": 323,
+    "height": 401,
+    "tile_png": "tiles/reef_output_ai_prediction_spot_20240930.png",
+    "tile_b02": "tiles/reef_output_ai_prediction_spot_20240930_b02.png",
+    "tile_b03": "tiles/reef_output_ai_prediction_spot_20240930_b03.png"
+  },
+  {
+    "dir": "reef_output_ai_prediction_spot_2023",
+    "ratio_tif": "reef_output_ai_prediction_spot_2023/ratio_B02_B03_20231001.tif",
+    "date": "20231001",
+    "bounds": [
+      [
+        37.04016139339995,
+        -8.22813003286279
+      ],
+      [
+        37.076063465175466,
+        -8.191429079739448
+      ]
+    ],
+    "width": 323,
+    "height": 401,
+    "tile_png": "tiles/reef_output_ai_prediction_spot_2023_20231001.png",
+    "tile_b02": "tiles/reef_output_ai_prediction_spot_2023_20231001_b02.png",
+    "tile_b03": "tiles/reef_output_ai_prediction_spot_2023_20231001_b03.png"
+  },
+  {
+    "dir": "reef_output_gale_dec_2023_new",
+    "ratio_tif": "reef_output_gale_dec_2023_new/ratio_B02_B03_20231230.tif",
+    "date": "20231230",
+    "bounds": [
+      [
+        37.039045327250946,
+        -8.279705858936916
+      ],
+      [
+        37.07496364385358,
+        -8.243029480669362
+      ]
+    ],
+    "width": 323,
+    "height": 401,
+    "tile_png": "tiles/reef_output_gale_dec_2023_new_20231230.png",
+    "tile_b02": "tiles/reef_output_gale_dec_2023_new_20231230_b02.png",
+    "tile_b03": "tiles/reef_output_gale_dec_2023_new_20231230_b03.png"
+  },
+  {
+    "dir": "reef_output_gal\u00e9_spot",
+    "ratio_tif": "reef_output_gal\u00e9_spot/ratio_B02_B03_20250803.tif",
+    "date": "20250803",
+    "bounds": [
+      [
+        37.037555191129584,
+        -8.247970707800532
+      ],
+      [
+        37.07346354091241,
+        -8.211280271825519
+      ]
+    ],
+    "width": 323,
+    "height": 401,
+    "tile_png": "tiles/reef_output_gal\u00e9_spot_20250803.png",
+    "tile_b02": "tiles/reef_output_gal\u00e9_spot_20250803_b02.png",
+    "tile_b03": "tiles/reef_output_gal\u00e9_spot_20250803_b03.png"
+  },
+  {
+    "dir": "reef_output_jul_2022_12m",
+    "ratio_tif": "reef_output_jul_2022_12m/ratio_B02_B03_20220723.tif",
+    "date": "20220723",
+    "bounds": [
+      [
+        37.03567603706709,
+        -8.181052004764222
+      ],
+      [
+        37.07156332092763,
+        -8.144331347724869
+      ]
+    ],
+    "width": 323,
+    "height": 401,
+    "tile_png": "tiles/reef_output_jul_2022_12m_20220723.png",
+    "tile_b02": "tiles/reef_output_jul_2022_12m_20220723_b02.png",
+    "tile_b03": "tiles/reef_output_jul_2022_12m_20220723_b03.png"
+  },
+  {
+    "dir": "reef_output_mar_2022_new_spot",
+    "ratio_tif": "reef_output_mar_2022_new_spot/ratio_B02_B03_20220228.tif",
+    "date": "20220228",
+    "bounds": [
+      [
+        37.0445703746037,
+        -8.199443521662763
+      ],
+      [
+        37.08046335279365,
+        -8.16272705214492
+      ]
+    ],
+    "width": 323,
+    "height": 401,
+    "tile_png": "tiles/reef_output_mar_2022_new_spot_20220228.png",
+    "tile_b02": "tiles/reef_output_mar_2022_new_spot_20220228_b02.png",
+    "tile_b03": "tiles/reef_output_mar_2022_new_spot_20220228_b03.png"
+  },
+  {
+    "dir": "reef_output_oct_2025_spot",
+    "ratio_tif": "reef_output_oct_2025_spot/ratio_B02_B03_20251002.tif",
+    "date": "20251002",
+    "bounds": [
+      [
+        37.03907230851045,
+        -8.279766830695255
+      ],
+      [
+        37.074990643977735,
+        -8.243090467642553
+      ]
+    ],
+    "width": 323,
+    "height": 401,
+    "tile_png": "tiles/reef_output_oct_2025_spot_20251002.png",
+    "tile_b02": "tiles/reef_output_oct_2025_spot_20251002_b02.png",
+    "tile_b03": "tiles/reef_output_oct_2025_spot_20251002_b03.png"
+  },
+  {
+    "dir": "reef_output_pedra_alto_sep_2023",
+    "ratio_tif": "reef_output_pedra_alto_sep_2023/ratio_B02_B03_20230911.tif",
+    "date": "20230911",
+    "bounds": [
+      [
+        37.04565845014732,
+        -8.237725610995238
+      ],
+      [
+        37.08156347994417,
+        -8.20102643074723
+      ]
+    ],
+    "width": 323,
+    "height": 401,
+    "tile_png": "tiles/reef_output_pedra_alto_sep_2023_20230911.png",
+    "tile_b02": "tiles/reef_output_pedra_alto_sep_2023_20230911_b02.png",
+    "tile_b03": "tiles/reef_output_pedra_alto_sep_2023_20230911_b03.png"
+  },
+  {
+    "dir": "reef_output_pedra_do_alto",
+    "ratio_tif": "reef_output_pedra_do_alto/ratio_B02_B03_20240930.tif",
+    "date": "20240930",
+    "bounds": [
+      [
+        37.04565845014732,
+        -8.237725610995238
+      ],
+      [
+        37.08156347994417,
+        -8.20102643074723
+      ]
+    ],
+    "width": 323,
+    "height": 401,
+    "tile_png": "tiles/reef_output_pedra_do_alto_20240930.png",
+    "tile_b02": "tiles/reef_output_pedra_do_alto_20240930_b02.png",
+    "tile_b03": "tiles/reef_output_pedra_do_alto_20240930_b03.png"
+  },
+  {
+    "dir": "reef_output_pedra_do_alto",
+    "ratio_tif": "reef_output_pedra_do_alto/ratio_B02_B03_20250925.tif",
+    "date": "20250925",
+    "bounds": [
+      [
+        37.04565845014732,
+        -8.237725610995238
+      ],
+      [
+        37.08156347994417,
+        -8.20102643074723
+      ]
+    ],
+    "width": 323,
+    "height": 401,
+    "tile_png": "tiles/reef_output_pedra_do_alto_20250925.png",
+    "tile_b02": "tiles/reef_output_pedra_do_alto_20250925_b02.png",
+    "tile_b03": "tiles/reef_output_pedra_do_alto_20250925_b03.png"
+  },
+  {
+    "dir": "reef_output_pedra_do_alto",
+    "ratio_tif": "reef_output_pedra_do_alto/ratio_B02_B03_20251002.tif",
+    "date": "20251002",
+    "bounds": [
+      [
+        37.04565845014732,
+        -8.237725610995238
+      ],
+      [
+        37.08156347994417,
+        -8.20102643074723
+      ]
+    ],
+    "width": 323,
+    "height": 401,
+    "tile_png": "tiles/reef_output_pedra_do_alto_20251002.png",
+    "tile_b02": "tiles/reef_output_pedra_do_alto_20251002_b02.png",
+    "tile_b03": "tiles/reef_output_pedra_do_alto_20251002_b03.png"
+  },
+  {
+    "dir": "reef_output_pedra_to_gale_20250925",
+    "ratio_tif": "reef_output_pedra_to_gale_20250925/ratio_B02_B03_20250925.tif",
+    "date": "20250925",
+    "bounds": [
+      [
+        37.03259007952588,
+        -8.252008765878685
+      ],
+      [
+        37.08649555620235,
+        -8.197022349161905
+      ]
+    ],
+    "width": 484,
+    "height": 602,
+    "tile_png": "tiles/reef_output_pedra_to_gale_20250925_20250925.png",
+    "tile_b02": "tiles/reef_output_pedra_to_gale_20250925_20250925_b02.png",
+    "tile_b03": "tiles/reef_output_pedra_to_gale_20250925_20250925_b03.png"
+  },
+  {
+    "dir": "reef_output_sep_2025_12m",
+    "ratio_tif": "reef_output_sep_2025_12m/ratio_B02_B03_20250925.tif",
+    "date": "20250925",
+    "bounds": [
+      [
+        37.03567603706709,
+        -8.181052004764222
+      ],
+      [
+        37.07156332092763,
+        -8.144331347724869
+      ]
+    ],
+    "width": 323,
+    "height": 401,
+    "tile_png": "tiles/reef_output_sep_2025_12m_20250925.png",
+    "tile_b02": "tiles/reef_output_sep_2025_12m_20250925_b02.png",
+    "tile_b03": "tiles/reef_output_sep_2025_12m_20250925_b03.png"
+  },
+  {
+    "dir": "reef_output_sep_2025_new_spot",
+    "ratio_tif": "reef_output_sep_2025_new_spot/ratio_B02_B03_20250915.tif",
+    "date": "20250915",
+    "bounds": [
+      [
+        37.0445763671718,
+        -8.199467510515962
+      ],
+      [
+        37.080469352855154,
+        -8.162751049218922
+      ]
+    ],
+    "width": 323,
+    "height": 401,
+    "tile_png": "tiles/reef_output_sep_2025_new_spot_20250915.png",
+    "tile_b02": "tiles/reef_output_sep_2025_new_spot_20250915_b02.png",
+    "tile_b03": "tiles/reef_output_sep_2025_new_spot_20250915_b03.png"
+  },
+  {
+    "dir": "reef_output_sep_2025_new_spot",
+    "ratio_tif": "reef_output_sep_2025_new_spot/ratio_B02_B03_20250925.tif",
+    "date": "20250925",
+    "bounds": [
+      [
+        37.0445763671718,
+        -8.199467510515962
+      ],
+      [
+        37.080469352855154,
+        -8.162751049218922
+      ]
+    ],
+    "width": 323,
+    "height": 401,
+    "tile_png": "tiles/reef_output_sep_2025_new_spot_20250925.png",
+    "tile_b02": "tiles/reef_output_sep_2025_new_spot_20250925_b02.png",
+    "tile_b03": "tiles/reef_output_sep_2025_new_spot_20250925_b03.png"
+  },
+  {
+    "dir": "reef_output_target_12m",
+    "ratio_tif": "reef_output_target_12m/ratio_B02_B03_20250803.tif",
+    "date": "20250803",
+    "bounds": [
+      [
+        37.03567603706709,
+        -8.181052004764222
+      ],
+      [
+        37.07156332092763,
+        -8.144331347724869
+      ]
+    ],
+    "width": 323,
+    "height": 401,
+    "tile_png": "tiles/reef_output_target_12m_20250803.png",
+    "tile_b02": "tiles/reef_output_target_12m_20250803_b02.png",
+    "tile_b03": "tiles/reef_output_target_12m_20250803_b03.png"
+  },
+  {
+    "dir": "reef_output_target_east_reef",
+    "ratio_tif": "reef_output_target_east_reef/ratio_B02_B03_20250925.tif",
+    "date": "20250925",
+    "bounds": [
+      [
+        37.02891766399339,
+        -7.678853338939236
+      ],
+      [
+        37.06464523345356,
+        -7.641903958813204
+      ]
+    ],
+    "width": 323,
+    "height": 401,
+    "tile_png": "tiles/reef_output_target_east_reef_20250925.png",
+    "tile_b02": "tiles/reef_output_target_east_reef_20250925_b02.png",
+    "tile_b03": "tiles/reef_output_target_east_reef_20250925_b03.png"
+  }
+]

@@ -1,0 +1,26 @@
+# Data outputs (large, generated)
+reef_output_*/
+
+# Processed images & GeoTIFFs
+*.tif
+*.tif.aux.xml
+*.tiff
+
+# Logs & caches
+*.log
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# OS
+.DS_Store
+*.swp
+*.swo
+
+# Large test images
+test_wms_ortosat*.tif
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
