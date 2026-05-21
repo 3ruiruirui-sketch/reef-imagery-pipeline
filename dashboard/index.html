@@ -864,33 +864,6 @@
     function groupLayers() {
       locationGroups = {};
       layersData.forEach(layer => {
-        // Create location card
-        const card = document.createElement('div');
-        card.className = 'location-card';
-        card.dataset.key = key;
-        card.dataset.idx = 0;
-        card.innerHTML = `
-          <div class="location-name">${group.name}</div>
-          <div class="location-meta">${group.layers.length} dates available</div>
-          <div class="location-dates" id="dates-${key}"></div>
-          <button class="download-btn" style="margin-top:8px;width:100%;background:var(--accent);color:white;border:none;border-radius:6px;cursor:pointer;padding:8px 12px;font-size:0.85em;font-weight:500;transition:all 0.2s;" onclick="event.stopPropagation();downloadFullDPI('${group.layers[0].ratio_tif}', this)">📥 Download Full DPI</button>
-        `;
-        container.appendChild(card);
-        // Add click handler for selecting location
-        card.addEventListener('click', () => selectLocation(key, 0));
-        // Build date chips
-        const datesContainer = document.getElementById(`dates-${key}`);
-        group.layers.forEach((layer, idx) => {
-          const chip = document.createElement('div');
-          chip.className = 'date-chip';
-          chip.textContent = layer.formattedDate;
-          chip.dataset.idx = idx;
-          chip.addEventListener('click', (e) => {
-            e.stopPropagation();
-            selectLocation(key, Number(chip.dataset.idx));
-          });
-          datesContainer.appendChild(chip);
-        });
         let name = layer.dir
           .replace('reef_output_', '')
           .replace(/_/g, ' ');
