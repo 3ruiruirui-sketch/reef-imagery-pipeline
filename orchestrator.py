@@ -4,10 +4,10 @@ orchestrator.py — Main runner for the Reef Benthic Visibility Pipeline.
 
 Usage (simulated ACOLITE mode, no external tools needed):
   python orchestrator.py \\
-    --image-a reef_output_pedra_to_gale_20250925/S2_B02_20250925.tif \\
-    --image-b reef_output_ai_prediction_spot_2023/S2_B02_20231001.tif \\
-    --b03-a   reef_output_pedra_to_gale_20250925/S2_B03_20250925.tif \\
-    --b03-b   reef_output_ai_prediction_spot_2023/S2_B03_20231001.tif \\
+    --image-a reef_Output_Master/reef_output_pedra_to_gale_20250925/S2_B02_20250925.tif \\
+    --image-b reef_Output_Master/reef_output_ai_prediction_spot_2023/S2_B02_20231001.tif \\
+    --b03-a   reef_Output_Master/reef_output_pedra_to_gale_20250925/S2_B03_20250925.tif \\
+    --b03-b   reef_Output_Master/reef_output_ai_prediction_spot_2023/S2_B03_20231001.tif \\
     --output  reef_output_acolite_comparison
 
 When ACOLITE is installed: replace simulated BOA step by pointing
@@ -28,10 +28,10 @@ log = logging.getLogger(__name__)
 # ── Defaults (pre-filled for this project) ───────────────────────────────────
 PROJECT = Path(__file__).parent
 DEFAULTS = {
-    "image_a": str(PROJECT / "reef_output_pedra_to_gale_20250925/S2_B02_20250925.tif"),
-    "image_b": str(PROJECT / "reef_output_ai_prediction_spot_2023/S2_B02_20231001.tif"),
-    "b03_a":   str(PROJECT / "reef_output_pedra_to_gale_20250925/S2_B03_20250925.tif"),
-    "b03_b":   str(PROJECT / "reef_output_ai_prediction_spot_2023/S2_B03_20231001.tif"),
+    "image_a": str(PROJECT / "reef_Output_Master/reef_output_pedra_to_gale_20250925/S2_B02_20250925.tif"),
+    "image_b": str(PROJECT / "reef_Output_Master/reef_output_ai_prediction_spot_2023/S2_B02_20231001.tif"),
+    "b03_a":   str(PROJECT / "reef_Output_Master/reef_output_pedra_to_gale_20250925/S2_B03_20250925.tif"),
+    "b03_b":   str(PROJECT / "reef_Output_Master/reef_output_ai_prediction_spot_2023/S2_B03_20231001.tif"),
     "output":  str(PROJECT / "reef_output_acolite_comparison"),
     "date_a":  "2025-09-25",
     "date_b":  "2023-10-01",

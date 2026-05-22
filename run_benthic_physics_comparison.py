@@ -18,10 +18,10 @@ import rasterio
 from pyproj import Transformer
 
 # --- Inputs & Configuration ---
-IMAGE_A_B02 = "reef_output_pedra_to_gale_20250925/S2_B02_20250925.tif"
-IMAGE_A_B03 = "reef_output_pedra_to_gale_20250925/S2_B03_20250925.tif"
-IMAGE_B_B02 = "reef_output_ai_prediction_spot_2023/S2_B02_20231001.tif"
-IMAGE_B_B03 = "reef_output_ai_prediction_spot_2023/S2_B03_20231001.tif"
+IMAGE_A_B02 = "reef_Output_Master/reef_output_pedra_to_gale_20250925/S2_B02_20250925.tif"
+IMAGE_A_B03 = "reef_Output_Master/reef_output_pedra_to_gale_20250925/S2_B03_20250925.tif"
+IMAGE_B_B02 = "reef_Output_Master/reef_output_ai_prediction_spot_2023/S2_B02_20231001.tif"
+IMAGE_B_B03 = "reef_Output_Master/reef_output_ai_prediction_spot_2023/S2_B03_20231001.tif"
 
 # Metadados das passagens do satélite
 META = {

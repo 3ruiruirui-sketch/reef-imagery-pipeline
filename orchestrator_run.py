@@ -18,10 +18,10 @@ log = logging.getLogger(__name__)
 
 # ── Config defaults ──────────────────────────────────────────────────────────
 PROJECT_DIR   = Path(__file__).parent
-IMAGE_A_B02   = PROJECT_DIR / "reef_output_pedra_to_gale_20250925/S2_B02_20250925.tif"
-IMAGE_A_B03   = PROJECT_DIR / "reef_output_pedra_to_gale_20250925/S2_B03_20250925.tif"
-IMAGE_B_B02   = PROJECT_DIR / "reef_output_ai_prediction_spot_2023/S2_B02_20231001.tif"
-IMAGE_B_B03   = PROJECT_DIR / "reef_output_ai_prediction_spot_2023/S2_B03_20231001.tif"
+IMAGE_A_B02   = PROJECT_DIR / "reef_Output_Master/reef_output_pedra_to_gale_20250925/S2_B02_20250925.tif"
+IMAGE_A_B03   = PROJECT_DIR / "reef_Output_Master/reef_output_pedra_to_gale_20250925/S2_B03_20250925.tif"
+IMAGE_B_B02   = PROJECT_DIR / "reef_Output_Master/reef_output_ai_prediction_spot_2023/S2_B02_20231001.tif"
+IMAGE_B_B03   = PROJECT_DIR / "reef_Output_Master/reef_output_ai_prediction_spot_2023/S2_B03_20231001.tif"
 OUTPUT_DIR    = PROJECT_DIR / "reef_output_acolite_comparison"
 
 METADATA = {

@@ -1,26 +1,46 @@
-# Data outputs (large, generated)
-reef_output_*/
 
+# Build artifacts
+# Dashboard cache
+# Data outputs (large, generated)
+# Environment files
+# IDE and Editor
+# Jupyter
+# Large output directories
+# Large test images
+# Logs
+# Logs & caches
+# OS
 # Processed images & GeoTIFFs
+# Python
+# Sentinel imagery (large files)
+# Virtual environment
+*.egg
+*.egg-info/
+*.ipynb_checkpoints/
+*.log
+*.pyc
+*.swo
+*.swp
 *.tif
 *.tif.aux.xml
 *.tiff
-
-# Logs & caches
-*.log
-__pycache__/
-*.pyc
-.pytest_cache/
-
-# OS
+*~
 .DS_Store
-*.swp
-*.swo
-
-# Large test images
-test_wms_ortosat*.tif
-
-# Build artifacts
-dist/
+.env
+.env.local
+.idea/
+.ipynb_checkpoints/
+.pytest_cache/
+.venv/
+.vscode/
+__pycache__/
 build/
-*.egg-info/
+dashboard/full_dpi_cache/
+dashboard/tiles/
+dist/
+env/
+reef_Output_Master/
+reef_output_*/
+sentinel_images/
+test_wms_ortosat*.tif
+venv/
