@@ -105,10 +105,9 @@ def test_depth_target_propagation():
     
     if len(set(paths)) == len(paths):
         log.info("✓ PASS: Different depths produce different optical paths")
-        return True
     else:
         log.error("✗ FAIL: All depths produce same optical path (BUG!)")
-        return False
+        assert False, "All depths produce same optical path (BUG!)"
 
 # =============================================================================
 # TEST 2: Nodata Handling
@@ -151,11 +150,10 @@ def test_nodata_handling():
             log.info("✓ PASS: Nodata values correctly converted to NaN")
             log.info(f"  - Original nodata: {nodata_val}")
             log.info(f"  - After read_band: NaN (count: {np.sum(np.isnan(arr_read))})")
-            return True
         else:
             log.error("✗ FAIL: Nodata values NOT converted to NaN")
             log.error(f"  - Values in nodata region: {np.unique(nodata_region)[:5]}")
-            return False
+            assert False, "Nodata values NOT converted to NaN"
 
 # =============================================================================
 # TEST 3: SDB NaN vs Clipping
@@ -190,16 +188,14 @@ def test_sdb_nan_vs_clipping():
             log.info("✓ PASS: Depths >40m correctly set to NaN")
             log.info(f"  - Previous behavior: clipped to 40m")
             log.info(f"  - Current behavior: NaN (preserves info)")
-            return True
         elif np.all(depth_map == 40.0):
             log.warning("⚠ OLD BEHAVIOR: Still clipping to 40m (update needed?)")
-            return False
+            assert False, "Still clipping to 40m"
         else:
             log.error(f"✗ UNEXPECTED: Values are {np.unique(depth_map)[:5]}")
-            return False
+            assert False, "Unexpected clipping behavior"
     else:
         log.info(f"  Note: Test input didn't produce >40m depth (got {expected_depth:.1f}m)")
-        return True
 
 # =============================================================================
 # TEST 4: Window Bounds Clamping
@@ -229,10 +225,9 @@ def test_window_clamping():
         # Window clamping should handle this gracefully
         log.info("✓ PASS: Raster readable, dimensions available for clamping")
         log.info(f"  - Window clamp formula: max(0, min(col-20, width-40))")
-        return True
     except Exception as e:
         log.error(f"✗ FAIL: Could not read raster: {e}")
-        return False
+        assert False, f"Could not read raster: {e}"
 
 # =============================================================================
 # TEST 5: Constants Centralization
@@ -256,7 +251,7 @@ def test_constants_import():
         for const in expected:
             if not hasattr(constants, const):
                 log.error(f"✗ FAIL: Missing constant: {const}")
-                return False
+                assert False, f"Missing constant: {const}"
         
         log.info("✓ PASS: All expected constants present in constants.py")
         log.info(f"  - Total constants: {len(expected)}")
@@ -268,11 +263,10 @@ def test_constants_import():
         assert 0.04 < constants.KD490_TABLE[9] < 0.05  # September Kd
         
         log.info("✓ PASS: Constant values are physically reasonable")
-        return True
     except Exception as e:
         log.error(f"✗ FAIL: {e}")
         traceback.print_exc()
-        return False
+        assert False, str(e)
 
 # =============================================================================
 # TEST 6: Results Comparison (Summary)
@@ -319,7 +313,6 @@ def test_results_comparison():
         log.info(f"    Impact: {info['improvement']}")
     
     log.info("\n✓ Overall: All critical bugs fixed, results should be more reliable")
-    return True
 
 # =============================================================================
 # MAIN
@@ -345,14 +338,24 @@ def main():
         log.info("Some tests will use synthetic data or be skipped")
     
     # Run tests
+    def run_test(func):
+        try:
+            func()
+            return True
+        except AssertionError as e:
+            return False
+        except Exception as e:
+            log.warning(f"Test crashed: {e}")
+            return None
+
     results = {}
     
-    results["depth_target"] = test_depth_target_propagation()
-    results["nodata"] = test_nodata_handling()
-    results["sdb_nan"] = test_sdb_nan_vs_clipping()
-    results["window_clamp"] = test_window_clamping()
-    results["constants"] = test_constants_import()
-    results["comparison"] = test_results_comparison()
+    results["depth_target"] = run_test(test_depth_target_propagation)
+    results["nodata"] = run_test(test_nodata_handling)
+    results["sdb_nan"] = run_test(test_sdb_nan_vs_clipping)
+    results["window_clamp"] = run_test(test_window_clamping)
+    results["constants"] = run_test(test_constants_import)
+    results["comparison"] = run_test(test_results_comparison)
     
     # Summary
     log.info("\n" + "=" * 70)
