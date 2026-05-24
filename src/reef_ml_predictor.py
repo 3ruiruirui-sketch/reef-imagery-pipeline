@@ -35,36 +35,34 @@ def get_seasonal_kd490(month):
     else:
         return 0.080  # Secchi ~12m (Verão normal)
 
-def calculate_physics_score(row, depth):
+def extract_features_from_stac(row, depth):
     cc = row['cloud_cover']
     sun_el = row['sun_elevation']
     month = row['datetime'].month
     
     # 1. Filtro Crítico de Nuvens
-    if cc > 10: return 0.0
-    cloud_transmittance = max(0.0, 1.0 - (cc / 100.0))
+    if cc > 80: 
+        cloud_transmittance = 0.0
+    else:
+        cloud_transmittance = max(0.0, 1.0 - (cc / 100.0))
     
     # 2. Ótica Geométrica (Lei de Snell e Ângulo Zenital)
     sza_air = 90.0 - sun_el  # Solar Zenith Angle no ar
-    if sza_air >= 90: return 0.0
+    if sza_air >= 90: sza_air = 89.9
     
-    # Penalização por Sunglint e Rugosidade da Superfície
-    # Sol extremamente alto (SZA < 30) causa glint severo.
-    # Outubro (início do Outono) traz as primeiras perturbações de vento/mar de sueste,
-    # aumentando o ruído especular por ondas na superfície.
     glint_penalty = 1.0
     if sza_air < 30:
         glint_penalty *= 0.5  # Sol a pino
     if month == 10:
-        glint_penalty *= 0.60  # Penalização sazonal por swells e ventos outonais típicos (Imagem B 2023-10-01)
+        glint_penalty *= 0.60
     elif month == 9:
-        glint_penalty *= 0.95  # Setembro costuma ter mares extremamente calmos ("calmaria de Setembro", Imagem A 2025-09-25)
+        glint_penalty *= 0.95
         
     # Refração na água (SZA_underwater)
     sin_sza_water = math.sin(math.radians(sza_air)) / N_WATER
     sza_water = math.degrees(math.asin(sin_sza_water))
     
-    # Distância real que a luz percorre na água (maior que a profundidade se o sol estiver baixo)
+    # Distância real que a luz percorre na água
     optical_path_length = depth / math.cos(math.radians(sza_water))
     
     # 3. Atenuação da Água (Kd_B02 = Kd490 sazonal para banda azul)
@@ -74,21 +72,27 @@ def calculate_physics_score(row, depth):
     water_trans = math.exp(-2 * kd_b02 * optical_path_length)
     
     # 4. Cálculo do Sinal e Contraste Bentónico
-    # Sinal que volta ao satélite
     sand_sig = SAND_R_REF * water_trans * cloud_transmittance * glint_penalty
     rock_sig = ROCK_R_REF * water_trans * cloud_transmittance * glint_penalty
     
-    if sand_sig <= 0: return 0.0
+    if sand_sig <= 0:
+        contrast = 0.0
+    else:
+        contrast = ((sand_sig - rock_sig) / sand_sig) * 100.0
     
-    # Contraste Aparente (0 a 100%)
-    contrast = ((sand_sig - rock_sig) / sand_sig) * 100.0
-    
-    # Normalizamos o contraste final vezes a força do sinal para evitar dar 100% 
-    # de contraste quando o sinal é escuro como breu (ex: fim de tarde)
     signal_strength = sand_sig / SAND_R_REF
-    final_score = contrast * signal_strength * 100.0
     
-    return max(0.0, final_score)
+    # Return features dict instead of hardcoded score
+    return {
+        'cloud_cover': cc,
+        'sza_air': sza_air,
+        'glint_penalty': glint_penalty,
+        'kd_b02': kd_b02,
+        'water_trans': water_trans,
+        'contrast': contrast,
+        'signal_strength': signal_strength,
+        'cleanliness': 5000  # Default for STAC metadata phase (before image download)
+    }
  
 def predict_top_5_days(lat, lon, depth, years_back=4):
     print(f"🔍 A pesquisar histórico STAC para [{lat:.4f}, {lon:.4f}] com Modelação Físico-Ótica a {depth:.1f} metros...")
@@ -123,9 +127,14 @@ def predict_top_5_days(lat, lon, depth, years_back=4):
         })
         
     df = pd.DataFrame(data)
+    from src.ranking_model import predict_score
     
-    # Aplicar Modelação Física com Profundidade Alvo
-    df['physics_score'] = df.apply(lambda r: calculate_physics_score(r, depth), axis=1)
+    # Aplicar Motor Físico + Modelo de Ranking ML
+    def apply_ranker(r):
+        features = extract_features_from_stac(r, depth)
+        return predict_score(features)
+        
+    df['physics_score'] = df.apply(apply_ranker, axis=1)
     
     df = df.sort_values('physics_score', ascending=False).drop_duplicates('date_str')
     top5 = df.head(5).reset_index(drop=True)

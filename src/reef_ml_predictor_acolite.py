@@ -340,10 +340,17 @@ def run_predictor(boa_b02_path, metadata, output_dir,
     rock_btm = ROCK_R * trans
     contrast  = (sand_btm - rock_btm) / sand_btm if sand_btm > 0 else 0.0
 
-    snr_ok    = min(1.0, snr_mean / 100.0)
-    vis_score = min(1.0, usable_frac * snr_ok * glint_pen * contrast * 5.0)
-    if kd_high_uncert:
-        vis_score *= 0.80
+    # ML Ranker inference instead of manual heuristic
+    from src.ranking_model import predict_score
+    ranker_features = {
+        'kd_b02': kd_b02,
+        'water_transmittance_twoway': trans,
+        'contrast_benthic_mean': contrast * 100.0, # scale to percentage
+        'SNR_mean_16m': snr_mean,
+        'cloud_cover': cloud_pct,
+        'cleanliness': 5000  # Proxy if FFT is not run at this stage
+    }
+    vis_score = predict_score(ranker_features)
 
     # ── Bathymetry-derived features (IH/DGRM) ─────────────────────────────────
     bathy_feats: dict = {}
