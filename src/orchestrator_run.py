@@ -6,7 +6,7 @@ Orquestra: ACOLITE (ou fallback L2A) → física Beer-Lambert/Snell → JSON rep
 Uso: python3 orchestrator_run.py [--image-a PATH] [--image-b PATH] [--depth 16.0]
 """
 
-import os, json, subprocess, logging, argparse, math, shutil
+import os, json, subprocess, logging, argparse, math, shutil, shlex
 from pathlib import Path
 from datetime import datetime
 import numpy as np
@@ -38,9 +38,15 @@ KD490_TABLE    = {9: 0.045, 10: 0.045, 1: 0.055, 2: 0.055, 4: 0.200, 5: 0.200}
 TARGET_LAT, TARGET_LON = 37.05815, -8.20982
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
-def run_shell(cmd: str, check=True):
-    log.info("$ %s", cmd)
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+def run_shell(cmd, check=True):
+    """Run a command safely. Accepts str (will be shlex.split) or list of args.
+    Uses shell=False to prevent command injection."""
+    if isinstance(cmd, str):
+        cmd_list = shlex.split(cmd)
+    else:
+        cmd_list = list(cmd)
+    log.info("$ %s", " ".join(shlex.quote(c) for c in cmd_list))
+    result = subprocess.run(cmd_list, shell=False, capture_output=True, text=True)
     if check and result.returncode != 0:
         raise RuntimeError(f"Command failed:\n{result.stderr}")
     return result
@@ -54,11 +60,17 @@ def snap_gpt_available() -> bool:
 def run_acolite(input_path: Path, output_dir: Path):
     """Run ACOLITE BOA correction with sunglint removal."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    cmd = (
-        f"acolite_cli --input {input_path} --output {output_dir} "
-        f"--product BOA --sensor S2 --proc water --sunglint true "
-        f"--aot-method image --output-format GeoTIFF"
-    )
+    cmd = [
+        "acolite_cli",
+        "--input", str(input_path),
+        "--output", str(output_dir),
+        "--product", "BOA",
+        "--sensor", "S2",
+        "--proc", "water",
+        "--sunglint", "true",
+        "--aot-method", "image",
+        "--output-format", "GeoTIFF",
+    ]
     run_shell(cmd)
     boa = next(output_dir.glob("*BOA*.tif"), None)
     if not boa:
@@ -69,7 +81,7 @@ def run_sen2cor(input_l1c: Path, output_dir: Path):
     """Run Sen2Cor via SNAP GPT if available."""
     output_dir.mkdir(parents=True, exist_ok=True)
     graph = Path(os.environ.get("SEN2COR_GRAPH", "/opt/snap/bin/Sen2Cor-Processor.xml"))
-    run_shell(f"gpt {graph} -Pinput={input_l1c} -Poutput={output_dir}")
+    run_shell(["gpt", str(graph), f"-Pinput={input_l1c}", f"-Poutput={output_dir}"])
     return output_dir
 
 def gdal_extract_b02(boa_tif: Path, out_b02: Path):
@@ -182,9 +194,14 @@ def save_boa_copy(src_b02: Path, src_b03: Path, out_dir: Path, label: str) -> di
     with rasterio.open(src_b02) as src:
         profile = src.profile.copy()
         data = src.read(1).astype(float) / 10000.0
-        sig   = np.mean(data[data > 0])
-        noise = np.std(data[data > 0])
-        snr_px = np.where(data > 0, data / (np.abs(data - sig) + 1e-9), 0).astype(np.float32)
+        valid = data > 0
+        if valid.any():
+            sig = float(np.mean(data[valid]))
+            noise = float(np.std(data[valid]))
+        else:
+            sig, noise = 0.0, 1.0
+        # SNR = signal_mean / noise_std (proper per-pixel proxy: pixel / global noise)
+        snr_px = np.where(valid, data / (noise + 1e-9), 0).astype(np.float32)
         conf_px = np.select([snr_px < 5, snr_px < 30], [0, 1], default=2).astype(np.uint8)
 
     profile.update(dtype=rasterio.float32, count=1)
@@ -196,6 +213,22 @@ def save_boa_copy(src_b02: Path, src_b03: Path, out_dir: Path, label: str) -> di
         dst.write(conf_px, 1)
 
     return {"boa_b02": str(boa_b02), "snr_map": str(snr_map), "confidence_map": str(conf_map)}
+
+def _build_justification(winner: str, loser: str, results: dict, snr_diff: float, depth: float) -> str:
+    """Construct human-readable justification safely (handles zero-division)."""
+    w_cv = results[winner]["b02_cv"]
+    l_cv = results[loser]["b02_cv"]
+    cv_ratio = (l_cv / w_cv) if w_cv > 1e-9 else float("inf")
+    snr_str = f"+{snr_diff:.0f}%" if snr_diff != float("inf") else "+inf%"
+    cv_str = f"{cv_ratio:.1f}×" if cv_ratio != float("inf") else "∞×"
+    return (
+        f"Image {winner} ({results[winner]['date']}) chosen. "
+        f"SNR {results[winner]['SNR_mean_16m']:.1f} vs {results[loser]['SNR_mean_16m']:.1f} "
+        f"({snr_str}). CV {w_cv:.4f} vs {l_cv:.4f} "
+        f"({cv_str} more surface noise in loser). "
+        f"Kd490={results[winner]['kd490_seasonal']:.3f} m⁻¹ | "
+        f"Two-way transmittance={results[winner]['water_transmittance_twoway']:.4f} at {depth:.0f}m."
+    )
 
 def save_csv(results: dict, path: Path):
     import csv
@@ -242,7 +275,8 @@ def main(depth: float = 16.0):
     # Step 4: Decision
     winner = "A" if res_a["visibility_score"] >= res_b["visibility_score"] else "B"
     loser  = "B" if winner == "A" else "A"
-    snr_diff = (results[winner]["SNR_mean_16m"] - results[loser]["SNR_mean_16m"]) / results[loser]["SNR_mean_16m"] * 100
+    loser_snr = results[loser]["SNR_mean_16m"]
+    snr_diff = ((results[winner]["SNR_mean_16m"] - loser_snr) / loser_snr * 100) if loser_snr > 0 else float("inf")
 
     warnings = []
     if res_a["kd_high_uncertainty"]: warnings.append("Kd high uncertainty in Image A")
@@ -265,14 +299,7 @@ def main(depth: float = 16.0):
             "confidence_map_b": maps_b["confidence_map"],
             "summary_csv": str(csv_path),
         },
-        "justification": (
-            f"Image {winner} ({results[winner]['date']}) chosen. "
-            f"SNR {results[winner]['SNR_mean_16m']:.1f} vs {results[loser]['SNR_mean_16m']:.1f} "
-            f"(+{snr_diff:.0f}%). CV {results[winner]['b02_cv']:.4f} vs {results[loser]['b02_cv']:.4f} "
-            f"({results[loser]['b02_cv']/results[winner]['b02_cv']:.1f}× more surface noise in loser). "
-            f"Kd490={results[winner]['kd490_seasonal']:.3f} m⁻¹ | "
-            f"Two-way transmittance={results[winner]['water_transmittance_twoway']:.4f} at {depth:.0f}m."
-        ),
+        "justification": _build_justification(winner, loser, results, snr_diff, depth),
         "assumptions": [
             f"n_water=1.333 (Snell refraction)",
             f"depth_target={depth}m",
