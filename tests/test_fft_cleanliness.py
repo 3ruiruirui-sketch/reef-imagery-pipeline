@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 import sys
-from enhancer import fetch_vsi_patch
+from src.enhancer import fetch_vsi_patch
 
 lat, lon = 37.05811, -8.20978
 

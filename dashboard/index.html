@@ -885,7 +885,7 @@
           'aug 2022 target1': 'Target (Aug 2022)',
           'sep 2025 12m': 'Target (Sep 2025)',
           'sep 2025 new spot': 'Target (Sep 2025)',
-          'target east reef': 'ArmacaoAtuns',
+          'target east reef': 'Target (East Reef)',
           'aug 2025': 'Target (Aug 2025)',
           'dec 2023': 'Target (Dec 2023)',
           'jan 2025': 'Target (Jan 2025)',
@@ -1121,7 +1121,7 @@
         IMAGE_DATE: currentLayer.formattedDate,
         LAT: lat,
         LON: lon,
-        TARGET_SNR: currentLayer.formattedDate === '2025-09-25' ? 27.31 : 119.30,
+        TARGET_SNR: currentLayer.dir === 'reef_output_target_east_reef' ? 27.31 : 119.30,
         TILE_B02: currentLayer.tile_b02,
         ACTIVE_TILE_PATH: activeTile
       };
@@ -1146,7 +1146,10 @@
           }
           
           // Open the comparison modal!
-          openComparisonModal(result.outputs.original_url, result.outputs.enhanced_viridis_url, result.metrics.snr_mean);
+          const label = Array.isArray(result.algorithms_applied)
+            ? result.algorithms_applied.join(' + ')
+            : 'Local NLM + CLAHE + Viridis';
+          openComparisonModal(result.outputs.original_url, result.outputs.enhanced_viridis_url, result.metrics.snr_mean, label);
         } else {
           statusDiv.innerHTML = `<span style="color:var(--danger)">❌ Failed: ${result.message || 'Unknown error'}</span>`;
         }
@@ -1163,7 +1166,7 @@
       <span class="close-button" onclick="closeComparisonModal()">&times;</span>
       <div class="modal-header">
         <div class="modal-title">✨ Geophysical Pipeline Result</div>
-        <div class="modal-subtitle">NLM Denoising + Smooth CLAHE + Viridis Colormap</div>
+        <div class="modal-subtitle" id="modalPipelineLabel">NLM Denoising + Smooth CLAHE + Viridis Colormap</div>
       </div>
       
       <div style="display: flex; justify-content: space-between; font-size: 11px; padding: 6px 12px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid var(--border); font-family: monospace;">
@@ -1213,11 +1216,12 @@
       sliderHandle.style.left = `${val}%`;
     });
     
-    function openComparisonModal(originalUrl, enhancedUrl, snrValue) {
+    function openComparisonModal(originalUrl, enhancedUrl, snrValue, pipelineLabel) {
       document.getElementById('beforeImg').src = originalUrl;
       document.getElementById('afterImg').src = enhancedUrl;
-      document.getElementById('modalSNR').textContent = snrValue.toFixed(2);
-      
+      document.getElementById('modalSNR').textContent = typeof snrValue === 'number' ? snrValue.toFixed(2) : snrValue;
+      document.querySelector('.modal-subtitle').textContent =
+        pipelineLabel || 'NLM Denoising + CLAHE + Viridis Colormap';
       // Reset slider to middle (50%)
       sliderInput.value = 50;
       enhancedWrapper.style.clipPath = 'inset(0 0 0 50%)';

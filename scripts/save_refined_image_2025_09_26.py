@@ -2,16 +2,16 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 import os
-from enhancer import fetch_vsi_patch
+from src.enhancer import fetch_vsi_patch
 from skimage.restoration import denoise_nl_means, estimate_sigma
 import sys
 
 lat = 37.05811
 lon = -8.20978
-date_str = "2022-09-26"
+date_str = "2025-09-26"
 output_dir = "/Users/ssoares/.gemini/antigravity/brain/1485c739-6681-495c-927e-ab890d98ee30/"
 
-print(f"Fetching VSI patch for {date_str}...")
+print("Fetching VSI patch...")
 try:
     b02_ref = fetch_vsi_patch(lat, lon, date_str, buffer_m=2000.0)
 except Exception as e:
@@ -39,8 +39,8 @@ ref_vmin, ref_vmax = np.percentile(b02_final[b02_final > 0], 1), np.percentile(b
 ref_vis = np.clip((b02_final - ref_vmin) / (ref_vmax - ref_vmin), 0, 1)
 
 print("Saving images...")
-plt.imsave(os.path.join(output_dir, "original_20220926.png"), orig_vis, cmap='gray')
-plt.imsave(os.path.join(output_dir, "refined_20220926.png"), ref_vis, cmap='gray')
-plt.imsave(os.path.join(output_dir, "refined_color_20220926.png"), ref_vis, cmap='viridis')
+plt.imsave(os.path.join(output_dir, "original_20250926.png"), orig_vis, cmap='gray')
+plt.imsave(os.path.join(output_dir, "refined_20250926.png"), ref_vis, cmap='gray')
+plt.imsave(os.path.join(output_dir, "refined_color_20250926.png"), ref_vis, cmap='viridis')
 
 print("Done!")
