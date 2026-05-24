@@ -13,8 +13,9 @@ producing reef-candidate polygons as GeoJSON.
 ## Quick start
 
 ```bash
-# Install additional dependencies
-pip install -r requirements_v3.txt -r requirements_bathy.txt
+# Install dependencies (includes bathymetry requirements)
+pip install -r requirements.txt
+# Or install full package: pip install -e ".[dev]"
 
 # Run bathy step only (uses all sources, default depth range)
 python scripts/reef_imagery_pipeline_v3.py \
