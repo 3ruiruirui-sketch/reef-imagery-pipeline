@@ -1,0 +1,16 @@
+site,lon,lat,snr_mean_16m,kd_b02_estimated,water_transmittance_twoway,nearest_isobath_distance_m,nearest_isobath_depth_m,dist_to_isobath_10m,dist_to_isobath_20m,dist_to_isobath_30m,dist_to_isobath_50m,dist_to_isobath_100m,bathy_zone_class,bathy_slope_proxy,contour_density_proxy,n_isobaths_aoi,visibility_score
+pedra_do_alto,-8.2193,37.0636,47.48,0.0436,0.8824,100.3,10.0,100.3,1723.5,3557.1,inf,inf,very_shallow,5.0,1245616.92,125,0.72
+albufeira_reef,-8.210492,37.069071,52.62,0.0427,0.8383,180.7,10.0,180.7,2260.0,4183.9,inf,inf,very_shallow,0.0,1245616.92,125,0.68
+gale_spot,-8.2296,37.0562,32.9,0.0727,0.5765,919.8,20.0,951.4,919.8,2773.5,inf,inf,nearshore_mid,5.0,1245616.92,125,0.65
+east_reef,-7.6603,37.0468,37.71,0.0504,0.7267,306.1,20.0,2369.9,306.1,683.1,1592.2,inf,shallow_reef,0.0,1744837.06,171,0.58
+target_main,-8.20982,37.05815,26.21,0.0459,0.5138,1017.2,10.0,1017.2,1076.2,2970.5,inf,inf,nearshore_mid,5.0,1245616.92,125,0.7
+albufeira_north,-8.2,37.07,22.19,0.0549,0.6157,329.5,10.0,329.5,2623.7,4344.8,inf,inf,nearshore_mid,0.0,1245616.92,125,0.6
+albufeira_west,-8.25,37.05,20.46,0.0509,0.6733,783.5,20.0,2621.5,783.5,2218.7,inf,inf,nearshore_mid,0.0,1245616.92,125,0.55
+olhos_de_agua,-8.15,37.1,13.87,0.0807,0.3788,4663.7,10.0,4663.7,inf,inf,inf,inf,offshore,0.0,566934.2,55,0.62
+faro_east,-8.0,37.1,12.28,0.0811,0.3925,inf,,inf,inf,inf,inf,inf,unknown,0.0,0.0,0,0.5
+tavira,-7.8,37.0,26.88,0.059,0.5854,1187.5,10.0,1187.5,1431.9,1754.8,2188.7,inf,nearshore_mid,0.0,1744837.06,171,0.45
+sagres,-8.5,37.0,11.99,0.0985,0.4493,295.9,50.0,inf,inf,inf,295.9,inf,offshore,0.0,499220.14,46,0.75
+vilamoura,-8.3,37.08,19.71,0.0732,0.539,1249.0,10.0,1249.0,5045.4,inf,inf,inf,nearshore_mid,0.0,928633.58,93,0.58
+alvor,-8.1,37.15,16.04,0.0604,0.3836,inf,,inf,inf,inf,inf,inf,unknown,0.0,0.0,0,0.63
+sagres_south,-8.4,36.95,15.98,0.0874,0.4586,2715.5,100.0,inf,inf,inf,3308.0,2715.5,offshore,0.0,1032276.46,85,0.7
+vila_real_sto_antonio,-7.5,37.1,24.42,0.062,0.5261,748.0,20.0,5302.2,748.0,924.4,3502.4,inf,nearshore_mid,0.0,1744837.06,171,0.4
