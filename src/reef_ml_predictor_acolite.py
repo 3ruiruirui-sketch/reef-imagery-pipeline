@@ -19,6 +19,12 @@ try:
 except ImportError:
     _BATHY_AVAILABLE = False
 
+try:
+    from src.ih_bathy_features import get_bathy_features_for_summary
+    _IH_BATHY_FEATURES_AVAILABLE = True
+except ImportError:
+    _IH_BATHY_FEATURES_AVAILABLE = False
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 # ── Physical constants ────────────────────────────────────────────────────────
@@ -174,7 +180,8 @@ def run_predictor(boa_b02_path, metadata, output_dir,
                   snr_threshold: float = 3.0, date: str | None = None,
                   b03_path: str | None = None, b04_path: str | None = None,
                   lat: float | None = None, lon: float | None = None,
-                  depth_target: float = DEFAULT_DEPTH_TARGET) -> dict:
+                  depth_target: float = DEFAULT_DEPTH_TARGET,
+                  with_bathy_features: bool = False) -> dict:
 
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -338,6 +345,21 @@ def run_predictor(boa_b02_path, metadata, output_dir,
     if kd_high_uncert:
         vis_score *= 0.80
 
+    # ── Bathymetry-derived features (IH/DGRM) ─────────────────────────────────
+    bathy_feats: dict = {}
+    if with_bathy_features and _IH_BATHY_FEATURES_AVAILABLE and lat is not None and lon is not None:
+        try:
+            bathy_feats = get_bathy_features_for_summary(lon=lon, lat=lat)
+            logging.info(
+                "IH bathy features | zone=%s | nearest=%sm (%.0fm) | slope_proxy=%.2f",
+                bathy_feats.get("bathymetry_zone_class"),
+                bathy_feats.get("nearest_isobath_distance_m"),
+                bathy_feats.get("nearest_isobath_depth_m", 0),
+                bathy_feats.get("bathymetry_slope_proxy", 0),
+            )
+        except Exception as bf_err:
+            logging.warning("Bathymetry feature generation failed: %s", bf_err)
+
     # ── Save GeoTIFFs ─────────────────────────────────────────────────────────
     write_band(str(out / "snr_map.tif"),         snr_map,                          profile)
     write_band(str(out / "confidence_map.tif"),  conf_map.astype(np.float32),      profile)
@@ -375,6 +397,18 @@ def run_predictor(boa_b02_path, metadata, output_dir,
         "bathy_calibration_rmse_m": bathy_result.get("calibration", {}).get("rmse_m") if bathy_result else None,
         "sdb_vs_chart_bias_m": bathy_result.get("validation", {}).get("overall", {}).get("overall_bias_m") if bathy_result else None,
         "sdb_vs_chart_rmse_m": bathy_result.get("validation", {}).get("overall", {}).get("overall_rmse_m") if bathy_result else None,
+        # --- IH/DGRM bathymetry-derived features (new) ---
+        "bathy_nearest_isobath_dist_m": bathy_feats.get("nearest_isobath_distance_m") if bathy_feats else None,
+        "bathy_nearest_isobath_depth_m": bathy_feats.get("nearest_isobath_depth_m") if bathy_feats else None,
+        "bathy_dist_10m_m": bathy_feats.get("dist_to_isobath_10m") if bathy_feats else None,
+        "bathy_dist_20m_m": bathy_feats.get("dist_to_isobath_20m") if bathy_feats else None,
+        "bathy_dist_30m_m": bathy_feats.get("dist_to_isobath_30m") if bathy_feats else None,
+        "bathy_dist_50m_m": bathy_feats.get("dist_to_isobath_50m") if bathy_feats else None,
+        "bathy_dist_100m_m": bathy_feats.get("dist_to_isobath_100m") if bathy_feats else None,
+        "bathy_zone_class": bathy_feats.get("bathymetry_zone_class") if bathy_feats else None,
+        "bathy_slope_proxy": bathy_feats.get("bathymetry_slope_proxy") if bathy_feats else None,
+        "bathy_contour_density": bathy_feats.get("contour_density_proxy") if bathy_feats else None,
+        "bathy_n_isobaths_aoi": bathy_feats.get("n_isobaths_in_aoi") if bathy_feats else None,
     }
     pd.DataFrame([summary]).to_csv(out / "summary.csv", index=False)
     logging.info("Done | date=%s | Kd=%s(%.4f) | vis=%.4f | SNR=%.2f | SDB_mean=%.1fm",
@@ -392,8 +426,11 @@ if __name__ == "__main__":
     p.add_argument("--output",   required=True)
     p.add_argument("--depth",    type=float, default=16.0)
     p.add_argument("--snr-threshold", type=float, default=3.0)
+    p.add_argument("--with-bathy-features", action="store_true",
+                   help="Compute IH/DGRM bathymetry-derived features (requires lat/lon)")
     args = p.parse_args()
     from src.utils import compute_metadata_stub
     run_predictor(args.boa_b02, compute_metadata_stub(args.date), args.output,
                   date=args.date, b03_path=args.b03, b04_path=args.b04,
-                  snr_threshold=args.snr_threshold, depth_target=args.depth)
+                  snr_threshold=args.snr_threshold, depth_target=args.depth,
+                  with_bathy_features=args.with_bathy_features)
