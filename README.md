@@ -40,46 +40,151 @@ reef_imagery_pipeline/
 
 ```mermaid
 flowchart TB
-    subgraph A["📡 Data Acquisition"]
-        S2[Sentinel-2 STAC<br/>Planetary Computer / CDSE]
-        ORTO[Orthophotos<br/>OrtoSat2023 / DGT 2018/2021]
-        IH[Bathymetry IH<br/>ArcGIS REST DGRM]
-        ICE[ICESat-2<br/>Validation Ground-Truth]
+    %% ============================================
+    %% STYLING DEFINITIONS
+    %% ============================================
+    classDef input fill:#e1f5fe,stroke:#01579b,stroke-width:2px,color:#000
+    classDef process fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000
+    classDef algorithm fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px,color:#000
+    classDef calibration fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#000
+    classDef output fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#000
+    classDef validation fill:#fff8e1,stroke:#ff8f00,stroke-width:2px,stroke-dasharray: 5 5,color:#000
+
+    %% ============================================
+    %% DATA INPUT LAYER
+    %% ============================================
+    subgraph INPUT_LAYER["📡 DATA ACQUISITION LAYER"]
+        direction TB
+        S2["🛰️ Sentinel-2 MSI<br/>10m resolution<br/>B02(490nm) | B03(560nm) | B04(665nm)"]
+        ORTO["📷 High-Res Orthophotos<br/>OrtoSat2023 30cm<br/>DGT 2018/2021 25cm"]
+        AUX["📊 Auxiliary Data<br/>Solar geometry | Cloud cover<br/>Wind | Tides"]
     end
 
-    subgraph B["⚙️ Core Processing (src/)"]
-        BOA["Atmospheric Correction<br/>ACOLITE / L2A"]
-        QAA["QAA Inversion<br/>Kd Gordon"]
-        SDB["Satellite Derived Bathymetry<br/>Stumpf Log-Ratio"]
-        SNR["SNR Analysis<br/>Quality Assessment"]
-        IH_CAL["IH Calibration<br/>m0/m1 coefficients"]
+    %% ============================================
+    %% GROUND TRUTH LAYER
+    %% ============================================
+    subgraph GT_LAYER["🎯 GROUND TRUTH & VALIDATION"]
+        direction TB
+        IH["⚓ Instituto Hidrográfico<br/>Nautical Charts<br/>Isobaths 10/20/30m"]
+        ICE["🛰️ ICESat-2 ATL03/ATL08<br/>Photon bathymetry<br/>Validation data"]
     end
 
-    subgraph C["📊 Outputs"]
-        DEPTH["Depth Maps<br/>sdb_depth_map.tif"]
-        KD["Kd Maps<br/>kd_b02/kd_b03/kd_b04"]
-        CONF["Confidence<br/>confidence_map.tif"]
-        VIS["Visibility Score<br/>visibility_report.json"]
-        QGIS["QGIS Project<br/>*.qgs + *.qml"]
+    %% ============================================
+    %% PREPROCESSING LAYER
+    %% ============================================
+    subgraph PREPROC_LAYER["🔧 PREPROCESSING"]
+        direction LR
+        VSI["VSI Stream<br/>COG Window Read"]
+        DN["DN → BOA<br/>Reflectance scaling<br/>1/10000"]
+        ACOLITE["ACOLITE<br/>Atmospheric correction<br/>Rayleigh + aerosol"]
     end
 
-    S2 --> BOA
-    ORTO --> BOA
-    BOA --> QAA
-    QAA --> SDB
-    BOA --> SNR
-    IH --> IH_CAL
-    IH_CAL --> SDB
-    SDB --> DEPTH
-    QAA --> KD
-    SNR --> CONF
-    DEPTH --> VIS
-    KD --> VIS
-    CONF --> VIS
-    DEPTH --> QGIS
-    KD --> QGIS
+    %% ============================================
+    %% PHYSICAL INVERSION LAYER
+    %% ============================================
+    subgraph PHYS_LAYER["⚙️ PHYSICAL INVERSION ENGINE"]
+        direction TB
+        
+        subgraph QAA_BLOCK["Quasi-Analytical Algorithm (QAA)"]
+            direction LR
+            RRS["Rrs(λ)<br/>Remote sensing reflectance"]
+            ABB["a(λ) + bb(λ)<br/>IOP inversion"]
+            KD_QAA["Kd(λ) = a + bb<br/>Attenuation coefficient"]
+        end
+        
+        subgraph SDB_BLOCK["Stumpf SDB Algorithm"]
+            direction LR
+            RATIO["ln(B02/B03)<br/>Blue/Green ratio"]
+            DEPTH_CALC["Z = m₀ - m₁×ln(ratio)/ln(n)<br/>Depth estimation"]
+        end
+        
+        subgraph QUALITY_BLOCK["Quality Assessment"]
+            direction LR
+            SNR["SNR Map<br/>μ/σ window analysis"]
+            UNC["Uncertainty<br/>Kd saturation check"]
+        end
+    end
+
+    %% ============================================
+    %% CALIBRATION LAYER
+    %% ============================================
+    subgraph CAL_LAYER["🎚️ CALIBRATION & REFINEMENT"]
+        direction TB
+        IH_QUERY["ArcGIS REST Query<br/>Bounding box isobath fetch"]
+        ISO_MATCH["Pixel-Isobath Matching<br/>Buffer sampling"]
+        OPT_M0M1["Optimize m₀, m₁<br/>Minimize RMSE vs IH"]
+        VALIDATE["Cross-validation<br/>Bias | RMSE | R²"]
+    end
+
+    %% ============================================
+    %% OUTPUT LAYER
+    %% ============================================
+    subgraph OUTPUT_LAYER["📊 OUTPUT PRODUCTS"]
+        direction TB
+        
+        subgraph RASTER_OUT["GeoTIFF Rasters"]
+            SDB_R["sdb_depth_map.tif<br/>Float32 | EPSG:32629<br/>[0-40m]"]
+            KD_R["kd_b02.tif | kd_b03.tif<br/>Attenuation maps"]
+            CONF_R["confidence_map.tif<br/>SNR-based quality"]
+        end
+        
+        subgraph VECTOR_OUT["Vector & Report"]
+            META["metadata.json<br/>Processing lineage"]
+            SCORE["visibility_score.json<br/>Quality metrics"]
+        end
+        
+        subgraph VIS_OUT["Visualization"]
+            QGIS_PROJ["reef_project_YYYYMMDD.qgs<br/>Styled QGIS project"]
+            QML_STYLE["ratio_style.qml<br/>RdYlBu ramp 0.8-1.2"]
+            PLOTS["analysis_plots.png<br/>Diagnostic figures"]
+        end
+    end
+
+    %% ============================================
+    %% FLOW CONNECTIONS
+    %% ============================================
+    S2 --> VSI
+    ORTO --> VSI
+    AUX --> ACOLITE
     
-    ICE -.->|Validation| SDB
+    VSI --> DN
+    DN --> ACOLITE
+    ACOLITE --> RRS
+    
+    RRS --> ABB --> KD_QAA
+    RRS --> RATIO --> DEPTH_CALC
+    ACOLITE --> SNR --> UNC
+    
+    KD_QAA --> SDB_R
+    KD_QAA --> KD_R
+    SNR --> CONF_R
+    
+    IH --> IH_QUERY --> ISO_MATCH --> OPT_M0M1 --> VALIDATE
+    VALIDATE --> DEPTH_CALC
+    OPT_M0M1 --> RATIO
+    
+    DEPTH_CALC --> SDB_R
+    UNC --> SCORE
+    KD_QAA --> SCORE
+    
+    SDB_R --> QGIS_PROJ
+    KD_R --> QGIS_PROJ
+    CONF_R --> QGIS_PROJ
+    
+    META --> QGIS_PROJ
+    SCORE --> PLOTS
+    
+    ICE -.->|Independent validation| VALIDATE
+    
+    %% ============================================
+    %% STYLE ASSIGNMENTS
+    %% ============================================
+    class S2,ORTO,AUX input
+    class VSI,DN,ACOLITE,RATIO,RRS,ABB process
+    class KD_QAA,DEPTH_CALC,SNR,UNC algorithm
+    class IH,IH_QUERY,ISO_MATCH,OPT_M0M1,VALIDATE calibration
+    class SDB_R,KD_R,CONF_R,META,SCORE,QGIS_PROJ,QML_STYLE,PLOTS output
+    class ICE validation
 ```
 
 ---
