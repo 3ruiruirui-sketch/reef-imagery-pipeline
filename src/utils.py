@@ -6,15 +6,23 @@ import math
 import numpy as np
 import rasterio
 
-def read_band(path):
+def read_band(path, handle_nodata=True):
+    """Read raster band as float32. If handle_nodata=True, converts nodata to np.nan."""
     with rasterio.open(path) as src:
         arr = src.read(1).astype(np.float32)
-        profile = src.profile
+        profile = src.profile.copy()
+        nodata = src.nodata
+        if handle_nodata and nodata is not None:
+            arr = np.where(arr == nodata, np.nan, arr)
     return arr, profile
 
-def write_band(path, arr, profile):
+def write_band(path, arr, profile, nodata=None):
+    """Write array to GeoTIFF. If nodata is None and arr contains NaN, uses np.nan as nodata."""
     profile = profile.copy()
-    profile.update(dtype=rasterio.float32, count=1, compress='lzw')
+    has_nan = np.isnan(arr).any()
+    if nodata is None and has_nan:
+        nodata = np.nan
+    profile.update(dtype=rasterio.float32, count=1, compress='lzw', nodata=nodata)
     with rasterio.open(str(path), 'w', **profile) as dst:
         dst.write(arr.astype(np.float32), 1)
 

@@ -22,11 +22,17 @@ except ImportError:
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 # ── Physical constants ────────────────────────────────────────────────────────
-DEPTH_TARGET   = 16.0
-N_WATER        = 1.333
-SAND_R, ROCK_R = 0.25, 0.05
-DEFAULT_KD_TABLE = {"09":0.045,"10":0.045,"01":0.055,"02":0.055,"04":0.200,"05":0.200}
-GLINT_PENALTY    = {9: 0.95, 10: 0.60}
+from src.constants import (
+    DEFAULT_DEPTH_TARGET, SDB_OPTICAL_LIMIT_M,
+    STUMPF_M0_DEFAULT, STUMPF_M1_DEFAULT, STUMPF_M1_LITERATURE, STUMPF_N,
+    KD490_TABLE, KD490_DEFAULT, GLINT_PENALTY, GLINT_PENALTY_DEFAULT,
+    N_WATER, SNR_THRESHOLD, BUF_PIX, SAND_R, ROCK_R,
+    REFLECTANCE_DN_SCALE, REFLECTANCE_DN_THRESHOLD,
+)
+
+# Aliases for backward compat
+DEPTH_TARGET    = DEFAULT_DEPTH_TARGET
+DEFAULT_KD_TABLE = KD490_TABLE
 
 # Sentinel-2 band pure-water attenuation (aw, m⁻¹) — Pope & Fry 1997
 AW = {"B02": 0.0145, "B03": 0.0612, "B04": 0.4300}
@@ -114,13 +120,15 @@ def _kd_from_band(band: np.ndarray, aw: float) -> float:
 
 # ── B: Stumpf Log-Ratio SDB depth map ────────────────────────────────────────
 def stumpf_sdb(b02: np.ndarray, b03: np.ndarray,
-               m0: float = -16.0, m1: float = 20.0,
-               n: float = 1000.0) -> np.ndarray:
+               m0: float = STUMPF_M0_DEFAULT,
+               m1: float = STUMPF_M1_DEFAULT,
+               n: float = STUMPF_N) -> np.ndarray:
     """
     Stumpf et al. (2003) log-ratio Satellite Derived Bathymetry:
         depth = m1 * ln(n * B02) / ln(n * B03) + m0
     Default m0/m1 calibrated for Algarve oligotrophic waters (Kd≈0.045).
-    Returns depth map in metres (positive = deeper). Values > 30m clipped.
+    Returns depth map in metres (positive = deeper). Values >40m set to NaN
+    (optical limit exceeded, unreliable extrapolation).
     """
     eps = 1e-6
     with np.errstate(divide='ignore', invalid='ignore'):
@@ -130,7 +138,10 @@ def stumpf_sdb(b02: np.ndarray, b03: np.ndarray,
             np.nan
         )
     depth = m1 * ratio + m0
-    return np.clip(depth, 0, 40).astype(np.float32)
+    # Clip negative values to 0, but set beyond optical limit to NaN
+    depth = np.where(depth < 0, 0, depth)
+    depth = np.where(depth > SDB_OPTICAL_LIMIT_M, np.nan, depth)
+    return depth.astype(np.float32)
 
 # ── C: Integrated Kd estimator (simple band-ratio, fallback when QAA fails) ──
 def estimate_kd_bandratio(b02: np.ndarray, b03: np.ndarray,
@@ -163,7 +174,7 @@ def run_predictor(boa_b02_path, metadata, output_dir,
                   snr_threshold: float = 3.0, date: str | None = None,
                   b03_path: str | None = None, b04_path: str | None = None,
                   lat: float | None = None, lon: float | None = None,
-                  depth_target: float = DEPTH_TARGET) -> dict:
+                  depth_target: float = DEFAULT_DEPTH_TARGET) -> dict:
 
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -235,9 +246,10 @@ def run_predictor(boa_b02_path, metadata, output_dir,
 
     if b03_arr is not None:
         # Try to calibrate Stumpf coefficients from IH isobaths
+        calibration_status = "skipped_no_location"  # default if lat/lon missing
         if _BATHY_AVAILABLE and lat is not None and lon is not None:
+            calibration_status = "skipped_no_transform"  # will be overwritten if transform exists
             try:
-                # Derive raster geographic bounds from profile
                 tf = profile.get("transform")
                 if tf is not None:
                     h, w = b02_arr.shape
@@ -253,23 +265,28 @@ def run_predictor(boa_b02_path, metadata, output_dir,
                     )
                     stumpf_m0 = bathy_result.get("recommended_m0", -16.0)
                     stumpf_m1 = bathy_result.get("recommended_m1", 20.0)
-                    zone_info  = bathy_result.get("zone", {})
+                    zone_info = bathy_result.get("zone", {})
+                    calibrated = bathy_result.get("calibration", {}).get("calibrated", False)
+                    calibration_status = "success" if calibrated else "failed_insufficient_data"
                     logging.info(
                         "IH bathy zone=%s | optically_viable=%s | "
-                        "Stumpf m0=%.2f m1=%.2f (calibrated=%s)",
+                        "Stumpf m0=%.2f m1=%.2f (calibrated=%s, status=%s)",
                         zone_info.get("zone"), zone_info.get("optically_viable"),
-                        stumpf_m0, stumpf_m1,
-                        bathy_result.get("calibration", {}).get("calibrated", False)
+                        stumpf_m0, stumpf_m1, calibrated, calibration_status
                     )
                 else:
-                    logging.warning("No raster transform in profile — skipping IH calibration")
+                    logging.warning("IH calibration skipped: no raster transform in profile")
             except Exception as bathy_err:
-                logging.warning("IH bathy integration failed: %s — using Stumpf defaults", bathy_err)
+                calibration_status = f"failed_error: {type(bathy_err).__name__}"
+                logging.warning("IH calibration failed with error: %s — using Stumpf defaults", bathy_err)
         else:
             if not _BATHY_AVAILABLE:
-                logging.info("bathy_calibrator not available — using Stumpf defaults")
+                calibration_status = "skipped_module_unavailable"
+                logging.info("IH calibration skipped: bathy_calibrator module not available")
             elif lat is None or lon is None:
-                logging.info("lat/lon not provided — skipping IH calibration")
+                calibration_status = "skipped_no_location"
+                logging.info("IH calibration skipped: lat/lon not provided")
+        bathy_result["calibration_status"] = calibration_status
 
         # Compute SDB with (possibly calibrated) coefficients
         sdb_map = stumpf_sdb(b02_arr, b03_arr, m0=stumpf_m0, m1=stumpf_m1)

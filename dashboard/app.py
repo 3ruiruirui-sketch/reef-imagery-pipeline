@@ -12,11 +12,18 @@ matplotlib.use('Agg')  # Non-interactive backend for Flask threads
 import matplotlib.pyplot as plt
 import rasterio
 
-# Add parent directory and src/ to path so we can import enhancer and utils
+# sys.path setup:
+#   _PROJECT_ROOT first → enables `from src.X import Y` (package-style)
+#   _PROJECT_ROOT/src second → enables `import enhancer` (flat, legacy style)
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, _PROJECT_ROOT)
-sys.path.insert(0, os.path.join(_PROJECT_ROOT, 'src'))
-from src import enhancer
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+_SRC = os.path.join(_PROJECT_ROOT, 'src')
+if _SRC not in sys.path:
+    sys.path.insert(1, _SRC)
+
+import enhancer  # found via _SRC on sys.path
+
 
 
 app = Flask(__name__, static_folder='.', static_url_path='')

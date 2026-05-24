@@ -9,7 +9,10 @@ import sys
 lat = 37.05811
 lon = -8.20978
 date_str = "2024-09-30"
-output_dir = "/Users/ssoares/.gemini/antigravity/brain/1485c739-6681-495c-927e-ab890d98ee30/"
+from pathlib import Path
+_PROJECT_ROOT = Path(__file__).parent.parent
+output_dir = _PROJECT_ROOT / "outputs" / date_str
+output_dir.mkdir(parents=True, exist_ok=True)
 
 print(f"Fetching VSI patch for {date_str}...")
 try:
