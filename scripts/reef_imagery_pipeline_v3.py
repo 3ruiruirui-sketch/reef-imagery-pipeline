@@ -52,6 +52,14 @@ try:
 except ImportError:
     HAS_BATHY = False
 
+# IH/DGRM bathymetry features (new — for ML-enhanced predictions)
+try:
+    sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+    from ih_bathy_features import BathyFeatureEngine, get_bathy_features_for_summary
+    HAS_IH_BATHY = True
+except ImportError:
+    HAS_IH_BATHY = False
+
 # Load .env variables securely if python-dotenv is present
 try:
     from dotenv import load_dotenv

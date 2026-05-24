@@ -1,0 +1,24 @@
+{
+  "model_version": "1.0",
+  "training_date": "2026-05-24T23:09:09.731621",
+  "algorithm": "RandomForestRegressor",
+  "features": [
+    "kd_b02",
+    "water_trans",
+    "contrast",
+    "signal_strength",
+    "cleanliness"
+  ],
+  "metrics": {
+    "validation_mse": 2.5000000000000045e-05,
+    "validation_accuracy": 1.0
+  },
+  "feature_importance": {
+    "signal_strength": 0.23,
+    "kd_b02": 0.22,
+    "cleanliness": 0.21,
+    "water_trans": 0.19,
+    "contrast": 0.15
+  },
+  "dataset_size_pairs": 100
+}

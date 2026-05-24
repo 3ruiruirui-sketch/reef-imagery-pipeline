@@ -276,8 +276,16 @@ def main(depth: float = 16.0):
     maps_a = save_boa_copy(b02_a, b03_a, OUTPUT_DIR, "A_20250925")
     maps_b = save_boa_copy(b02_b, b03_b, OUTPUT_DIR, "B_20231001")
 
-    # Step 4: Decision
-    winner = "A" if res_a["visibility_score"] >= res_b["visibility_score"] else "B"
+    # Step 4: Decision via ML Ranking Model
+    from src.ranking_model import predict_score
+    score_a = predict_score(res_a)
+    score_b = predict_score(res_b)
+    
+    # Update the dictionary with the learned score
+    res_a["visibility_score"] = score_a
+    res_b["visibility_score"] = score_b
+    
+    winner = "A" if score_a >= score_b else "B"
     loser  = "B" if winner == "A" else "A"
     loser_snr = results[loser]["SNR_mean_16m"]
     snr_diff = ((results[winner]["SNR_mean_16m"] - loser_snr) / loser_snr * 100) if loser_snr > 0 else float("inf")
