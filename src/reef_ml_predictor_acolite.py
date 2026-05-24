@@ -350,7 +350,9 @@ def run_predictor(boa_b02_path, metadata, output_dir,
         'cloud_cover': cloud_pct,
         'cleanliness': 5000  # Proxy if FFT is not run at this stage
     }
-    vis_score = predict_score(ranker_features)
+    prediction = predict_score(ranker_features)
+    vis_score = prediction["score"]
+    ranker_mode = prediction["mode"]
 
     # ── Bathymetry-derived features (IH/DGRM) ─────────────────────────────────
     bathy_feats: dict = {}
@@ -392,6 +394,7 @@ def run_predictor(boa_b02_path, metadata, output_dir,
         "percent_area_high_confidence": round(pct_high_conf, 2),
         "contrast_benthic_mean": round(contrast, 5),
         "visibility_score": round(vis_score, 5),
+        "ranker_mode": ranker_mode,
         "sdb_depth_mean_m": round(sdb_mean, 2) if sdb_mean else None,
         "snr_map": str(out / "snr_map.tif"),
         "confidence_map": str(out / "confidence_map.tif"),

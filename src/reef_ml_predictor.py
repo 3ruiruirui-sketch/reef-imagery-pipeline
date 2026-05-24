@@ -132,7 +132,7 @@ def predict_top_5_days(lat, lon, depth, years_back=4):
     # Aplicar Motor Físico + Modelo de Ranking ML
     def apply_ranker(r):
         features = extract_features_from_stac(r, depth)
-        return predict_score(features)
+        return predict_score(features)["score"]
         
     df['physics_score'] = df.apply(apply_ranker, axis=1)
     

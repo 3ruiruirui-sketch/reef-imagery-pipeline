@@ -1,7 +1,8 @@
 import planetary_computer as pc
 from pystac_client import Client
 import pandas as pd
-from src.reef_ml_predictor import calculate_physics_score
+from src.reef_ml_predictor import extract_features_from_stac
+from src.ranking_model import predict_score
 
 catalog = Client.open('https://planetarycomputer.microsoft.com/api/stac/v1', modifier=pc.sign_inplace)
 search = catalog.search(
@@ -22,6 +23,6 @@ for item in items:
         'sun_elevation': props.get('view:sun_elevation', 45)
     })
 df = pd.DataFrame(data)
-df['physics_score'] = df.apply(lambda r: calculate_physics_score(r, 16.0), axis=1)
+df['physics_score'] = df.apply(lambda r: predict_score(extract_features_from_stac(r, 16.0))["score"], axis=1)
 df = df.sort_values('physics_score', ascending=False).drop_duplicates('date_str')
 print(df[df['date_str'] == '2025-09-25'])
