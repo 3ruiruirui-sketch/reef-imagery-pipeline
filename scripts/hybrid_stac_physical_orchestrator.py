@@ -24,8 +24,8 @@ import warnings
 warnings.filterwarnings("ignore", category=rasterio.errors.NotGeoreferencedWarning)
 
 # Re-use your physics logic
-from reef_ml_predictor import calculate_physics_score
-from reef_ml_predictor_acolite import make_snr_map, estimate_kd_bandratio
+from src.reef_ml_predictor import calculate_physics_score
+from src.reef_ml_predictor_acolite import make_snr_map, estimate_kd_bandratio
 import logging
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

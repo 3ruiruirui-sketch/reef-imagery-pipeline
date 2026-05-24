@@ -12,7 +12,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from utils import read_band, write_band, snell_sza, optical_path, beer_lambert_transmittance, get_kd490
+from src.utils import read_band, write_band, snell_sza, optical_path, beer_lambert_transmittance, get_kd490
+try:
+    from src.bathy_calibrator import run_bathy_integration
+    _BATHY_AVAILABLE = True
+except ImportError:
+    _BATHY_AVAILABLE = False
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -156,7 +161,8 @@ def make_snr_map(arr: np.ndarray, window: int = 7) -> np.ndarray:
 def run_predictor(boa_b02_path, metadata, output_dir,
                   kd_prior: dict | None = None, cloud_threshold: float = 0.2,
                   snr_threshold: float = 3.0, date: str | None = None,
-                  b03_path: str | None = None, b04_path: str | None = None) -> dict:
+                  b03_path: str | None = None, b04_path: str | None = None,
+                  lat: float | None = None, lon: float | None = None) -> dict:
 
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -220,14 +226,78 @@ def run_predictor(boa_b02_path, metadata, output_dir,
     snr_mean   = float(np.nanmean(snr_map))
     snr_median = float(np.nanmedian(snr_map))
 
-    # ── SDB depth map (Stumpf) ────────────────────────────────────────────────
+    # ── SDB depth map (Stumpf) — with IH chart calibration ───────────────────
     sdb_map = None
+    bathy_result = {}
+    stumpf_m0 = -16.0
+    stumpf_m1 = 20.0
+
     if b03_arr is not None:
-        sdb_map = stumpf_sdb(b02_arr, b03_arr)
+        # Try to calibrate Stumpf coefficients from IH isobaths
+        if _BATHY_AVAILABLE and lat is not None and lon is not None:
+            try:
+                # Derive raster geographic bounds from profile
+                tf = profile.get("transform")
+                if tf is not None:
+                    h, w = b02_arr.shape
+                    min_lon_r = tf.c
+                    max_lat_r = tf.f
+                    max_lon_r = tf.c + tf.a * w
+                    min_lat_r = tf.f + tf.e * h
+                    bounds_wgs = (min_lat_r, min_lon_r, max_lat_r, max_lon_r)
+                    bathy_result = run_bathy_integration(
+                        lat=lat, lon=lon,
+                        b02_arr=b02_arr, b03_arr=b03_arr,
+                        bounds_wgs84=bounds_wgs,
+                    )
+                    stumpf_m0 = bathy_result.get("recommended_m0", -16.0)
+                    stumpf_m1 = bathy_result.get("recommended_m1", 20.0)
+                    zone_info  = bathy_result.get("zone", {})
+                    logging.info(
+                        "IH bathy zone=%s | optically_viable=%s | "
+                        "Stumpf m0=%.2f m1=%.2f (calibrated=%s)",
+                        zone_info.get("zone"), zone_info.get("optically_viable"),
+                        stumpf_m0, stumpf_m1,
+                        bathy_result.get("calibration", {}).get("calibrated", False)
+                    )
+                else:
+                    logging.warning("No raster transform in profile — skipping IH calibration")
+            except Exception as bathy_err:
+                logging.warning("IH bathy integration failed: %s — using Stumpf defaults", bathy_err)
+        else:
+            if not _BATHY_AVAILABLE:
+                logging.info("bathy_calibrator not available — using Stumpf defaults")
+            elif lat is None or lon is None:
+                logging.info("lat/lon not provided — skipping IH calibration")
+
+        # Compute SDB with (possibly calibrated) coefficients
+        sdb_map = stumpf_sdb(b02_arr, b03_arr, m0=stumpf_m0, m1=stumpf_m1)
         sdb_path = out / "sdb_depth_map.tif"
         write_band(str(sdb_path), sdb_map, profile)
         sdb_mean = float(np.nanmean(sdb_map[sdb_map > 0]))
         logging.info("SDB depth map: mean=%.1fm, written to %s", sdb_mean, sdb_path)
+
+        # Validate SDB vs IH chart (if calibration ran)
+        if bathy_result and _BATHY_AVAILABLE and lat is not None:
+            try:
+                from src.bathy_calibrator import validate_sdb_vs_chart, fetch_isobaths_for_bbox
+                deg_buf = 3000 / 111_000.0
+                feats = fetch_isobaths_for_bbox(
+                    lon - deg_buf, lat - deg_buf, lon + deg_buf, lat + deg_buf
+                )
+                if tf is not None:
+                    val = validate_sdb_vs_chart(sdb_map, feats, bounds_wgs)
+                    bathy_result["validation"] = val
+                    ov = val.get("overall", {})
+                    if ov:
+                        logging.info(
+                            "SDB validation vs IH chart: bias=%.2fm RMSE=%.2fm n=%d",
+                            ov.get("overall_bias_m", 0),
+                            ov.get("overall_rmse_m", 0),
+                            ov.get("n_total", 0)
+                        )
+            except Exception as val_err:
+                logging.warning("SDB validation failed: %s", val_err)
     else:
         sdb_path, sdb_mean = None, None
 
@@ -280,6 +350,13 @@ def run_predictor(boa_b02_path, metadata, output_dir,
         "confidence_map": str(out / "confidence_map.tif"),
         "bottom_est_map": str(out / "bottom_est.tif"),
         "sdb_depth_map": str(sdb_path) if sdb_path else None,
+        "stumpf_m0_used": stumpf_m0,
+        "stumpf_m1_used": stumpf_m1,
+        "bathy_zone":     bathy_result.get("zone", {}).get("zone") if bathy_result else None,
+        "bathy_optically_viable": bathy_result.get("zone", {}).get("optically_viable") if bathy_result else None,
+        "bathy_calibration_rmse_m": bathy_result.get("calibration", {}).get("rmse_m") if bathy_result else None,
+        "sdb_vs_chart_bias_m": bathy_result.get("validation", {}).get("overall", {}).get("overall_bias_m") if bathy_result else None,
+        "sdb_vs_chart_rmse_m": bathy_result.get("validation", {}).get("overall", {}).get("overall_rmse_m") if bathy_result else None,
     }
     pd.DataFrame([summary]).to_csv(out / "summary.csv", index=False)
     logging.info("Done | date=%s | Kd=%s(%.4f) | vis=%.4f | SNR=%.2f | SDB_mean=%.1fm",
@@ -298,7 +375,7 @@ if __name__ == "__main__":
     p.add_argument("--depth",    type=float, default=16.0)
     p.add_argument("--snr-threshold", type=float, default=3.0)
     args = p.parse_args()
-    from utils import compute_metadata_stub
+    from src.utils import compute_metadata_stub
     DEPTH_TARGET = args.depth
     run_predictor(args.boa_b02, compute_metadata_stub(args.date), args.output,
                   date=args.date, b03_path=args.b03, b04_path=args.b04,

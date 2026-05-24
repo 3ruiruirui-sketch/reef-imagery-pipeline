@@ -14,8 +14,8 @@ import sys
 warnings.filterwarnings("ignore")
 
 # Re-use your physics logic
-from reef_ml_predictor import calculate_physics_score
-from reef_ml_predictor_acolite import make_snr_map, estimate_kd_bandratio
+from src.reef_ml_predictor import calculate_physics_score
+from src.reef_ml_predictor_acolite import make_snr_map, estimate_kd_bandratio
 
 lat, lon = 37.05811, -8.20978
 years = 10

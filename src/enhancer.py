@@ -8,7 +8,7 @@ from rasterio.windows import from_bounds
 from pyproj import Transformer
 from datetime import datetime
 import warnings
-from reef_ml_predictor_acolite import make_snr_map
+from src.reef_ml_predictor_acolite import make_snr_map
 
 warnings.filterwarnings("ignore")
 

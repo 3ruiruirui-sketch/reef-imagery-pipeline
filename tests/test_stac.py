@@ -1,7 +1,7 @@
 import planetary_computer as pc
 from pystac_client import Client
 import pandas as pd
-from reef_ml_predictor import calculate_physics_score
+from src.reef_ml_predictor import calculate_physics_score
 
 catalog = Client.open('https://planetarycomputer.microsoft.com/api/stac/v1', modifier=pc.sign_inplace)
 search = catalog.search(

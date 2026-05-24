@@ -18,9 +18,9 @@ import json, logging, argparse
 import numpy as np
 from pathlib import Path
 
-from utils import simulate_acolite_boa, compute_metadata_stub
-from reef_ml_predictor_acolite import run_predictor
-from comparator import compare_models
+from src.utils import simulate_acolite_boa, compute_metadata_stub
+from src.reef_ml_predictor_acolite import run_predictor
+from archive.comparator import compare_models
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)

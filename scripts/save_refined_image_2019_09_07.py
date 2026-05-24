@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 import os
-from enhancer import fetch_vsi_patch
+from src.enhancer import fetch_vsi_patch
 
 lat = 37.05811
 lon = -8.20978
