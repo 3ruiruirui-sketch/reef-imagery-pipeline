@@ -26,6 +26,7 @@ SDB_OPTICAL_LIMIT_M = 40.0
 
 # Default target depth for benthic visibility analysis (metres)
 DEFAULT_DEPTH_TARGET = 16.0
+DEPTH_TARGET = DEFAULT_DEPTH_TARGET  # Alias for backward compatibility
 
 # =============================================================================
 # STUMPF SDB ALGORITHM PARAMETERS
