@@ -2,6 +2,7 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 import os
+from pathlib import Path
 from src.enhancer import fetch_vsi_patch
 from skimage.restoration import denoise_nl_means, estimate_sigma
 import sys
@@ -9,9 +10,13 @@ import sys
 lat = 37.05811
 lon = -8.20978
 dates = ["2022-09-11", "2024-09-10"]
-output_dir = "/Users/ssoares/.gemini/antigravity/brain/1485c739-6681-495c-927e-ab890d98ee30/"
+_PROJECT_ROOT = Path(__file__).parent.parent
+base_output_dir = _PROJECT_ROOT / "outputs"
+base_output_dir.mkdir(parents=True, exist_ok=True)
 
 for date_str in dates:
+    output_dir = base_output_dir / date_str
+    output_dir.mkdir(parents=True, exist_ok=True)
     print(f"Fetching VSI patch for {date_str}...")
     try:
         # Fetching patch with 2000m buffer

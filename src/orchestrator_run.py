@@ -13,6 +13,10 @@ import numpy as np
 import rasterio
 from pyproj import Transformer
 
+from src.constants import (
+    N_WATER, CLOUD_THRESHOLD, SNR_THRESHOLD, KD490_TABLE, KD490_DEFAULT
+)
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
@@ -28,12 +32,6 @@ METADATA = {
     "A": {"date":"2025-09-25","sza":40.498,"saa":158.883,"cloud":1.245,"level":"L2A","month":9},
     "B": {"date":"2023-10-01","sza":42.413,"saa":160.459,"cloud":0.007,"level":"L2A","month":10},
 }
-
-# Physical constants
-N_WATER        = 1.333
-CLOUD_THRESHOLD = 5.0   # %
-SNR_THRESHOLD   = 3.0
-KD490_TABLE    = {9: 0.045, 10: 0.045, 1: 0.055, 2: 0.055, 4: 0.200, 5: 0.200}
 
 TARGET_LAT, TARGET_LON = 37.05815, -8.20982
 
@@ -121,7 +119,7 @@ def sunglint_correction(arr: np.ndarray, b03: np.ndarray) -> np.ndarray:
 
 def analyse_band(b02_path: Path, b03_path: Path, meta: dict, depth: float) -> dict:
     """Full physical analysis for one image."""
-    kd   = KD490_TABLE.get(meta["month"], 0.080)
+    kd   = KD490_TABLE.get(meta["month"], KD490_DEFAULT)
     opt_path, sza_w = snell_optical_path(meta["sza"], depth)
     trans = beer_lambert(kd, opt_path)
     kd_uncert = False
@@ -130,7 +128,13 @@ def analyse_band(b02_path: Path, b03_path: Path, meta: dict, depth: float) -> di
         t = Transformer.from_crs("EPSG:4326", s2.crs, always_xy=True)
         x, y = t.transform(TARGET_LON, TARGET_LAT)
         row, col = s2.index(x, y)
-        win = rasterio.windows.Window(col-20, row-20, 40, 40)
+        height, width = s2.height, s2.width
+        # Clamp window to raster bounds (prevent negative indices or overflow)
+        col_off = max(0, min(col - 20, width - 40))
+        row_off = max(0, min(row - 20, height - 40))
+        win_w = min(40, width - col_off)
+        win_h = min(40, height - row_off)
+        win = rasterio.windows.Window(col_off, row_off, win_w, win_h)
         b02 = s2.read(1, window=win).astype(float) / 10000.0
         b03 = s3.read(1, window=win).astype(float) / 10000.0
 

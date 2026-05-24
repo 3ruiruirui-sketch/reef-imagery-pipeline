@@ -8,7 +8,10 @@ from skimage.restoration import denoise_nl_means, estimate_sigma
 lat = 37.06361
 lon = -8.21938
 date_str = "2025-09-25"
-output_dir = "/Users/ssoares/.gemini/antigravity/brain/1485c739-6681-495c-927e-ab890d98ee30/"
+from pathlib import Path
+_PROJECT_ROOT = Path(__file__).parent.parent
+output_dir = _PROJECT_ROOT / "outputs" / date_str
+output_dir.mkdir(parents=True, exist_ok=True)
 
 print("Fetching VSI patch...")
 b02_ref = fetch_vsi_patch(lat, lon, date_str, buffer_m=2000.0)
