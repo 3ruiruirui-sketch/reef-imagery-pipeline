@@ -1,0 +1,76 @@
+{
+  "model_type": "RandomForestRegressor",
+  "n_estimators": 200,
+  "max_depth": 5,
+  "n_training_sites": 15,
+  "metrics": {
+    "mae": 0.08623783333333312,
+    "rmse": 0.10194807286292305,
+    "r2": -0.09717422872495551
+  },
+  "feature_importance": [
+    {
+      "feature": "dist_to_isobath_30m",
+      "importance": 0.20664319132875913
+    },
+    {
+      "feature": "dist_to_isobath_10m",
+      "importance": 0.14356259623757803
+    },
+    {
+      "feature": "nearest_isobath_distance_m",
+      "importance": 0.11329645203365184
+    },
+    {
+      "feature": "n_isobaths_aoi",
+      "importance": 0.09300495903045898
+    },
+    {
+      "feature": "snr_mean_16m",
+      "importance": 0.07265625341075291
+    },
+    {
+      "feature": "kd_b02_estimated",
+      "importance": 0.07193196512529895
+    },
+    {
+      "feature": "water_transmittance_twoway",
+      "importance": 0.0667227067801226
+    },
+    {
+      "feature": "contour_density_proxy",
+      "importance": 0.06436836031365073
+    },
+    {
+      "feature": "dist_to_isobath_20m",
+      "importance": 0.04624846994960612
+    },
+    {
+      "feature": "dist_to_isobath_50m",
+      "importance": 0.044023276467126365
+    },
+    {
+      "feature": "nearest_isobath_depth_m",
+      "importance": 0.03418709287127449
+    },
+    {
+      "feature": "bathy_zone_class_enc",
+      "importance": 0.025965268600064057
+    },
+    {
+      "feature": "bathy_slope_proxy",
+      "importance": 0.017389407851656033
+    },
+    {
+      "feature": "dist_to_isobath_100m",
+      "importance": 0.0
+    }
+  ],
+  "zone_label_mapping": {
+    "nearshore_mid": 0,
+    "offshore": 1,
+    "shallow_reef": 2,
+    "unknown": 3,
+    "very_shallow": 4
+  }
+}
