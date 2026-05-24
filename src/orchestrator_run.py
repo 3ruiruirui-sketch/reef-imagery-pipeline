@@ -278,12 +278,17 @@ def main(depth: float = 16.0):
 
     # Step 4: Decision via ML Ranking Model
     from src.ranking_model import predict_score
-    score_a = predict_score(res_a)
-    score_b = predict_score(res_b)
+    pred_a = predict_score(res_a)
+    pred_b = predict_score(res_b)
+    
+    score_a = pred_a["score"]
+    score_b = pred_b["score"]
     
     # Update the dictionary with the learned score
     res_a["visibility_score"] = score_a
+    res_a["ranker_mode"] = pred_a["mode"]
     res_b["visibility_score"] = score_b
+    res_b["ranker_mode"] = pred_b["mode"]
     
     winner = "A" if score_a >= score_b else "B"
     loser  = "B" if winner == "A" else "A"

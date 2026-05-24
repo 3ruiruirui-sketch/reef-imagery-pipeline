@@ -26,6 +26,7 @@ from datetime import datetime
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score, accuracy_score
+from sklearn.inspection import permutation_importance
 
 log = logging.getLogger(__name__)
 
@@ -152,21 +153,39 @@ def main():
     
     log.info(f"Resultados Validação -> MSE: {mse:.4f} | Precisão (Ranking Binário): {acc:.2%}")
     
-    # 5. Importância das Features
+    # 5. Importância das Features e Permutation Importance
     importance = model.feature_importances_
     feat_importance = sorted(zip(FEATURE_COLS, importance), key=lambda x: x[1], reverse=True)
-    log.info("Importância das Features Físicas no Modelo:")
+    log.info("Importância Gini das Features:")
     for feat, imp in feat_importance:
         log.info(f"  - {feat}: {imp:.4f}")
+        
+    log.info("A calcular Permutation Importance no conjunto de teste...")
+    perm_importance = permutation_importance(model, X_test, y_test, n_repeats=10, random_state=42)
+    perm_importance_dict = {}
+    log.info("Permutation Importance:")
+    for i, col in enumerate(FEATURE_COLS):
+        perm_importance_dict[col] = {
+            "mean": float(perm_importance.importances_mean[i]),
+            "std": float(perm_importance.importances_std[i])
+        }
+        log.info(f"  - {col}: {perm_importance.importances_mean[i]:.4f} +/- {perm_importance.importances_std[i]:.4f}")
+        
+    # Export Permutation Importance to artifacts
+    perm_path = os.path.join(ARTIFACTS_DIR, 'permutation_importance.json')
+    with open(perm_path, 'w') as f:
+        json.dump(perm_importance_dict, f, indent=2)
+    log.info(f"Permutation Importance guardada em: {perm_path}")
         
     # 6. Guardar Modelo e Metadados
     model_path = os.path.join(MODELS_DIR, 'feature_ranker_model.pkl')
     with open(model_path, 'wb') as f:
         pickle.dump(model, f)
         
+    import datetime
     metadata = {
         "model_version": "1.0",
-        "training_date": datetime.utcnow().isoformat(),
+        "training_date": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "algorithm": "RandomForestRegressor",
         "features": FEATURE_COLS,
         "metrics": {

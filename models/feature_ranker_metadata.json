@@ -1,6 +1,6 @@
 {
   "model_version": "1.0",
-  "training_date": "2026-05-24T23:09:09.731621",
+  "training_date": "2026-05-24T23:19:35.315246+00:00",
   "algorithm": "RandomForestRegressor",
   "features": [
     "kd_b02",
