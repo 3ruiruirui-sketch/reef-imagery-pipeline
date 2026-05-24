@@ -250,6 +250,25 @@ def generate_full_dpi():
     except Exception as e:
         return jsonify({"status": "error", "message": f"Full DPI generation failed: {str(e)}"}), 500
 
+@app.route('/api/candidates')
+def get_candidates():
+    layer = request.args.get('layer', '')
+    # Load and return validated candidates GeoJSON
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    if layer == 'regional':
+        geojson_path = os.path.join(project_root, 'reef_Output_Master', 'reef_output_v3', 'regional_mounds.geojson')
+    else:
+        geojson_path = os.path.join(project_root, 'reef_Output_Master', 'reef_output_v3', 'reef_candidates_20260524_validated.geojson')
+        
+    if os.path.isfile(geojson_path):
+        try:
+            with open(geojson_path, 'r') as f:
+                data = json.load(f)
+            return jsonify(data)
+        except Exception as e:
+            return jsonify({"status": "error", "message": f"Could not load geojson: {e}"}), 500
+    return jsonify({"type": "FeatureCollection", "features": []})
+
 @app.route('/download/<path:filename>')
 def download_file(filename):
     # Serve files from the project root directory
