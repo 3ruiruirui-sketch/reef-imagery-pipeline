@@ -53,9 +53,10 @@ def simulate_acolite_boa(input_tif, output_tif, b03_tif=None, sunglint_strength=
     return str(output_tif)
 
 def snell_air_to_water(theta_air_rad, n_water=1.333):
+    """Snell's law: returns refracted angle (radians) in water for ray entering from air."""
     s = math.sin(theta_air_rad) / n_water
     s = max(-0.999999, min(0.999999, s))
-    return math.acos(0) - math.asin(1 - s)  # keep in [0, pi/2]
+    return math.asin(s)  # angle in [0, pi/2]
 
 def snell_sza(sza_deg, n_water=1.333):
     """Return (sza_water_deg, theta_water_rad)."""

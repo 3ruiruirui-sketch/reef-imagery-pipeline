@@ -45,6 +45,13 @@ from pystac_client import Client
 import planetary_computer as pc
 from datetime import datetime
 
+# Bathymetry module (optional — loaded on demand for --step bathy)
+try:
+    from reef_bathy_module import run_bathy_step
+    HAS_BATHY = True
+except ImportError:
+    HAS_BATHY = False
+
 # Load .env variables securely if python-dotenv is present
 try:
     from dotenv import load_dotenv
@@ -732,7 +739,7 @@ print('Export task created. Run from Tasks tab.');
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-STEPS = ["capabilities", "ortho", "sentinel", "ratio", "qgis", "gee"]
+STEPS = ["capabilities", "ortho", "sentinel", "ratio", "qgis", "gee", "bathy"]
 
 def main():
     parser = argparse.ArgumentParser(
@@ -754,6 +761,37 @@ def main():
     parser.add_argument("--cdse-totp",   default="", help="Copernicus Data Space 2FA TOTP code (if generating token)")
     parser.add_argument("--enable-dgt-download", action="store_true", help="Force WCS download of the DGT 2018 orthophoto")
 
+    # ── Bathymetry step arguments ─────────────────────────────────────────
+    parser.add_argument(
+        "--bathy-source",
+        choices=["emodnet", "gebco", "geomar", "etopo", "s2", "all"],
+        default="all",
+        dest="bathy_source",
+        help=(
+            "Bathymetry data source(s) for --step bathy: "
+            "'emodnet' (EMODnet WCS ~115 m), "
+            "'gebco' (GEBCO 2024 sub-grid ~460 m), "
+            "'geomar' (Portugal IHM WCS ~100 m), "
+            "'etopo' (NOAA ETOPO ~1.8 km), "
+            "'s2' (Sentinel-2 Stumpf depth inversion from B02/B03), "
+            "'all' (try all sources, use best available)."
+        ),
+    )
+    parser.add_argument(
+        "--depth-min",
+        type=float,
+        default=-50.0,
+        dest="depth_min",
+        help="Minimum depth for reef candidate detection (m, negative = below sea level, e.g. -50)",
+    )
+    parser.add_argument(
+        "--depth-max",
+        type=float,
+        default=-1.0,
+        dest="depth_max",
+        help="Maximum depth for reef candidate detection (m, e.g. -1)",
+    )
+
     args = parser.parse_args()
 
     setup_output_dir(args.output_dir)
@@ -770,10 +808,35 @@ def main():
         cdse_user=args.cdse_user,
         cdse_pass=args.cdse_pass,
         cdse_totp=args.cdse_totp,
-        enable_dgt_download=args.enable_dgt_download
+        enable_dgt_download=args.enable_dgt_download,
+        bathy_source=args.bathy_source,
+        depth_min=args.depth_min,
+        depth_max=args.depth_max,
     )
 
     run = [args.step] if args.step != "all" else STEPS
+
+    def _step_bathy(**ctx):
+        if not HAS_BATHY:
+            log.error(
+                "reef_bathy_module not found. "
+                "Make sure reef_bathy_module.py is in the same directory "
+                "and requirements_bathy.txt dependencies are installed."
+            )
+            return
+        # Build a simple namespace from ctx for run_bathy_step
+        import types
+        bathy_args = types.SimpleNamespace(
+            output_dir   = ctx["output_dir"],
+            lat          = ctx["lat"],
+            lon          = ctx["lon"],
+            buffer_m     = ctx["buffer_m"],
+            bathy_source = ctx.get("bathy_source", "all"),
+            depth_min    = ctx.get("depth_min", -50.0),
+            depth_max    = ctx.get("depth_max", -1.0),
+            date         = ctx.get("date", ""),
+        )
+        run_bathy_step(bathy_args)
 
     step_fns = {
         "capabilities": step_capabilities,
@@ -782,6 +845,7 @@ def main():
         "ratio":        step_ratio,
         "qgis":         step_qgis,
         "gee":          step_gee,
+        "bathy":        _step_bathy,
     }
 
     for s in run:

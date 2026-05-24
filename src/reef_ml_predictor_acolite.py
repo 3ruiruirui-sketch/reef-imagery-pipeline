@@ -162,7 +162,8 @@ def run_predictor(boa_b02_path, metadata, output_dir,
                   kd_prior: dict | None = None, cloud_threshold: float = 0.2,
                   snr_threshold: float = 3.0, date: str | None = None,
                   b03_path: str | None = None, b04_path: str | None = None,
-                  lat: float | None = None, lon: float | None = None) -> dict:
+                  lat: float | None = None, lon: float | None = None,
+                  depth_target: float = DEPTH_TARGET) -> dict:
 
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -215,7 +216,7 @@ def run_predictor(boa_b02_path, metadata, output_dir,
     # ── Physics: Snell + Beer-Lambert ─────────────────────────────────────────
     sza_deg = metadata.get("solar_zenith_deg", 40.5)
     sza_water_deg, theta_water = snell_sza(sza_deg)
-    path_m = optical_path(DEPTH_TARGET, theta_water)
+    path_m = optical_path(depth_target, theta_water)
     trans  = beer_lambert_transmittance(kd_b02, path_m)
 
     # ── Bottom reflectance estimate ───────────────────────────────────────────
@@ -376,7 +377,6 @@ if __name__ == "__main__":
     p.add_argument("--snr-threshold", type=float, default=3.0)
     args = p.parse_args()
     from src.utils import compute_metadata_stub
-    DEPTH_TARGET = args.depth
     run_predictor(args.boa_b02, compute_metadata_stub(args.date), args.output,
                   date=args.date, b03_path=args.b03, b04_path=args.b04,
-                  snr_threshold=args.snr_threshold)
+                  snr_threshold=args.snr_threshold, depth_target=args.depth)
