@@ -478,5 +478,29 @@
     "tile_png": "tiles/reef_output_v3_20230203.png",
     "tile_b02": "tiles/reef_output_v3_20230203_b02.png",
     "tile_b03": "tiles/reef_output_v3_20230203_b03.png"
+  },
+  {
+    "dir": "reef_new_37.053N_8.271W",
+    "ratio_tif": "outputs/reef_2024-08-26_B02_B03_B04_37.053N_8.271W.tif",
+    "date": "20240826",
+    "spot_name": "New Reef 37.053N 8.271W",
+    "bounds": [
+      [
+        37.033,
+        -8.291
+      ],
+      [
+        37.073,
+        -8.250
+      ]
+    ],
+    "width": 400,
+    "height": 400,
+    "tile_png": "tiles/reef_2024-08-26_TrueColor_37.053N_8.271W.png",
+    "tile_b02": "tiles/reef_2024-08-26_EnhancedRGB_37.053N_8.271W.png",
+    "tile_b03": "tiles/reef_2024-08-26_DepthViz_37.053N_8.271W.png",
+    "depth_m": 22,
+    "snr": 99.7,
+    "bvi": 0.701
   }
 ]

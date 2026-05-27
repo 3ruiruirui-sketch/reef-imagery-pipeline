@@ -42,33 +42,73 @@ os.makedirs(MODELS_DIR, exist_ok=True)
 FEATURE_COLS = [
     'kd_b02', 
     'water_trans', 
-    'contrast', 
     'signal_strength', 
     'cleanliness'
 ]
 
+# Features temporarily disabled from model training (non-discriminative in production)
+DISABLED_FEATURES = {
+    'contrast': 'Constant proxy (0.8) — does not discriminate images. Will reactivate when real benthic contrast is available.'
+}
+
+def load_real_pairwise_data():
+    """
+    Tenta carregar pares semi-reais de data/real_pairwise_*.csv.
+    Retorna (df_features, df_labels) ou (None, None) se não disponível.
+    """
+    real_features_path = os.path.join(PROJECT_DIR, 'data', 'real_pairwise_features.csv')
+    real_labels_path = os.path.join(PROJECT_DIR, 'data', 'real_pairwise_labels.csv')
+    
+    if not os.path.exists(real_features_path) or not os.path.exists(real_labels_path):
+        log.info("Real pairwise data not found, will use synthetic.")
+        return None, None
+    
+    try:
+        df_features = pd.read_csv(real_features_path)
+        df_labels = pd.read_csv(real_labels_path)
+        
+        # Validate required columns
+        required_cols = ['image_id'] + FEATURE_COLS
+        missing = [c for c in required_cols if c not in df_features.columns]
+        if missing:
+            log.warning(f"Real data missing columns: {missing}, falling back to synthetic.")
+            return None, None
+        
+        log.info(f"Loaded real pairwise data: {len(df_labels)} pairs from {len(df_features)} records")
+        return df_features, df_labels
+    except Exception as e:
+        log.warning(f"Failed to load real data: {e}, falling back to synthetic.")
+        return None, None
+
+
 def generate_dummy_pairwise_data(num_pairs=50):
     """
     Gera dados sintéticos de pares de imagens para demonstração do pipeline.
-    Na prática, o utilizador deverá substituir isto pelo carregamento dos seus rótulos reais.
+    Usado como fallback quando dados reais não estão disponíveis.
     """
     np.random.seed(42)
     records = []
     labels = []
     
     for i in range(num_pairs):
-        # Imagem A (Simulação de uma boa imagem: baixo kd, alto contraste, alta limpeza)
-        a_kd = np.random.uniform(0.04, 0.06)
-        a_trans = np.random.uniform(0.7, 0.9)
-        a_contrast = np.random.uniform(40, 80)
-        a_signal = np.random.uniform(15, 25)
+        # CANONICAL UNITS (must match production output of analyse_band / reef_ml_predictor_acolite):
+        #   kd_b02:          Kd490 [1/m]       — typical Algarve range [0.04, 0.12]
+        #   water_trans:     ratio at depth     — Beer-Lambert two-way at ~16m, range [0.05, 0.50]
+        #   contrast:        ratio [0, 1]       — (sand_btm - rock_btm)/sand_btm
+        #   signal_strength: SNR linear         — sig_mean/noise_std at 16m window, range [5, 200]
+        #   cleanliness:     FFT proxy score    — range [1000, 15000]
+        # Imagem A (boa: água clara, alto SNR, alta limpeza)
+        a_kd = np.random.uniform(0.040, 0.060)
+        a_trans = np.random.uniform(0.20, 0.45)
+        a_contrast = np.random.uniform(0.60, 0.90)
+        a_signal = np.random.uniform(60, 180)
         a_clean = np.random.uniform(8000, 15000)
-        
-        # Imagem B (Simulação de uma má imagem: alto kd, baixo contraste, glint/ondas)
-        b_kd = np.random.uniform(0.06, 0.12)
-        b_trans = np.random.uniform(0.4, 0.6)
-        b_contrast = np.random.uniform(10, 35)
-        b_signal = np.random.uniform(5, 15)
+
+        # Imagem B (má: água turva, baixo SNR, ruído)
+        b_kd = np.random.uniform(0.070, 0.120)
+        b_trans = np.random.uniform(0.05, 0.18)
+        b_contrast = np.random.uniform(0.10, 0.45)
+        b_signal = np.random.uniform(5, 40)
         b_clean = np.random.uniform(1000, 4000)
         
         # Ocasionalmente inverter para o modelo aprender ambas as direções
@@ -121,8 +161,19 @@ def main():
     log.info("=== Treino do Ranker de Features Físicas ===")
     
     # 1. Carregar/Gerar Dados
-    log.info("A gerar dataset pairwise...")
-    df_features, df_labels = generate_dummy_pairwise_data(num_pairs=100)
+    log.info("Loading dataset...")
+    
+    # Try real data first
+    df_features, df_labels = load_real_pairwise_data()
+    data_source = "real"
+    
+    # Fall back to synthetic if needed
+    if df_features is None:
+        log.info("Generating synthetic pairwise data...")
+        df_features, df_labels = generate_dummy_pairwise_data(num_pairs=100)
+        data_source = "synthetic"
+    
+    log.info(f"Using {data_source} data: {len(df_labels)} pairs")
     
     # Exportar datasets para auditabilidade
     features_csv = os.path.join(ARTIFACTS_DIR, 'training_features.csv')
@@ -184,10 +235,17 @@ def main():
         
     import datetime
     metadata = {
-        "model_version": "1.0",
+        "model_version": "1.2",
+        "schema_version": "2.0",
+        "canonical": True,
         "training_date": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "algorithm": "RandomForestRegressor",
         "features": FEATURE_COLS,
+        "disabled_features": DISABLED_FEATURES,
+        "deprecated_models": {
+            "visibility_rf_bathy.pkl": "Legacy bathy-only predictor. Not used by production ranking flow."
+        },
+        "data_source": data_source,
         "metrics": {
             "validation_mse": mse,
             "validation_accuracy": acc

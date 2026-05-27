@@ -345,7 +345,7 @@ def run_predictor(boa_b02_path, metadata, output_dir,
     ranker_features = {
         'kd_b02': kd_b02,
         'water_transmittance_twoway': trans,
-        'contrast_benthic_mean': contrast * 100.0, # scale to percentage
+        'contrast_benthic_mean': contrast,  # canonical: ratio [0, 1] (NOT percentage)
         'SNR_mean_16m': snr_mean,
         'cloud_cover': cloud_pct,
         'cleanliness': 5000  # Proxy if FFT is not run at this stage

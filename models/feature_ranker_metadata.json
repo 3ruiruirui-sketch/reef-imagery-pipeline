@@ -1,24 +1,31 @@
 {
-  "model_version": "1.0",
-  "training_date": "2026-05-24T23:19:35.315246+00:00",
+  "model_version": "1.2",
+  "schema_version": "2.0",
+  "canonical": true,
+  "training_date": "2026-05-25T00:05:49.214507+00:00",
   "algorithm": "RandomForestRegressor",
   "features": [
     "kd_b02",
     "water_trans",
-    "contrast",
     "signal_strength",
     "cleanliness"
   ],
+  "disabled_features": {
+    "contrast": "Constant proxy (0.8) \u2014 does not discriminate images. Will reactivate when real benthic contrast is available."
+  },
+  "deprecated_models": {
+    "visibility_rf_bathy.pkl": "Legacy bathy-only predictor. Not used by production ranking flow. Retained for standalone batch predictions via scripts/predict_bathy_ml.py."
+  },
+  "data_source": "real",
   "metrics": {
-    "validation_mse": 2.5000000000000045e-05,
-    "validation_accuracy": 1.0
+    "validation_mse": 0.32799756414595427,
+    "validation_accuracy": 0.5476190476190477
   },
   "feature_importance": {
-    "signal_strength": 0.23,
-    "kd_b02": 0.22,
-    "cleanliness": 0.21,
-    "water_trans": 0.19,
-    "contrast": 0.15
+    "signal_strength": 0.31215256548785686,
+    "cleanliness": 0.24205983142544774,
+    "water_trans": 0.2232645576708961,
+    "kd_b02": 0.22252304541579934
   },
-  "dataset_size_pairs": 100
+  "dataset_size_pairs": 103
 }

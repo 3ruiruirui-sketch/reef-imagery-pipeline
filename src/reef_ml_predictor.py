@@ -95,6 +95,15 @@ def extract_features_from_stac(row, depth):
     }
  
 def predict_top_5_days(lat, lon, depth, years_back=4):
+    # Drift monitoring: reset at batch start (shadow mode, best-effort)
+    try:
+        from src.drift_monitor import reset as drift_reset, log_summary as drift_log_summary
+        from src.drift_export import export_to_file as drift_export_file
+        drift_reset()
+        _has_drift = True
+    except ImportError:
+        _has_drift = False
+
     print(f"🔍 A pesquisar histórico STAC para [{lat:.4f}, {lon:.4f}] com Modelação Físico-Ótica a {depth:.1f} metros...")
     catalog = Client.open('https://planetarycomputer.microsoft.com/api/stac/v1', modifier=pc.sign_inplace)
     
@@ -136,6 +145,15 @@ def predict_top_5_days(lat, lon, depth, years_back=4):
         
     df['physics_score'] = df.apply(apply_ranker, axis=1)
     
+    # Drift monitoring: batch-end summary (shadow mode, best-effort)
+    if _has_drift:
+        try:
+            batch_id = f"stac_{lat:.4f}_{lon:.4f}_{depth:.0f}m"
+            drift_log_summary()
+            drift_export_file(batch_id=batch_id)
+        except Exception:
+            pass
+
     df = df.sort_values('physics_score', ascending=False).drop_duplicates('date_str')
     top5 = df.head(5).reset_index(drop=True)
     
