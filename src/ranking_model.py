@@ -69,7 +69,7 @@ def _load_resources():
     """Loads the ML ranker model and metadata schema from disk."""
     global _RANKER_MODEL, _FEATURE_SCHEMA, _DISABLED_FEATURES, _SCHEMA_FINGERPRINT, _IS_FALLBACK
     
-    if _RANKER_MODEL is not None and _FEATURE_SCHEMA is not None:
+    if _RANKER_MODEL is not None and _FEATURE_SCHEMA is not None and not _IS_FALLBACK:
         return
         
     _IS_FALLBACK = True

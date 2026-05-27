@@ -20,7 +20,7 @@ _PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT))
 sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 
-from ih_bathy_features import (
+from src.ih_bathy_features import (
     IHBathyDownloader,
     BathyFeatureEngine,
     get_bathy_features_for_summary,

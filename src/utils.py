@@ -82,7 +82,7 @@ def beer_lambert_transmittance(kd, path_m):
     return math.exp(-2 * kd * path_m)
 
 def get_kd490(month, kd_prior: dict):
-    return kd_prior.get(str(month).zfill(2), kd_prior.get(str(month), 0.080))
+    return kd_prior.get(int(month), kd_prior.get(str(month), 0.080))
 
 def compute_metadata_stub(date):
     """

@@ -256,6 +256,7 @@ def run_predictor(boa_b02_path, metadata, output_dir,
         calibration_status = "skipped_no_location"  # default if lat/lon missing
         if _BATHY_AVAILABLE and lat is not None and lon is not None:
             calibration_status = "skipped_no_transform"  # will be overwritten if transform exists
+            tf = profile.get("transform") if isinstance(profile, dict) else None
             try:
                 tf = profile.get("transform")
                 if tf is not None:
@@ -395,7 +396,7 @@ def run_predictor(boa_b02_path, metadata, output_dir,
         "contrast_benthic_mean": round(contrast, 5),
         "visibility_score": round(vis_score, 5),
         "ranker_mode": ranker_mode,
-        "sdb_depth_mean_m": round(sdb_mean, 2) if sdb_mean else None,
+        "sdb_depth_mean_m": round(sdb_mean, 2) if sdb_mean is not None else None,
         "snr_map": str(out / "snr_map.tif"),
         "confidence_map": str(out / "confidence_map.tif"),
         "bottom_est_map": str(out / "bottom_est.tif"),
