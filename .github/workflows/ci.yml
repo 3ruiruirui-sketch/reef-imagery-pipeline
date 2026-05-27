@@ -28,7 +28,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements_v3.txt
+        pip install -r requirements.txt
         pip install pytest pytest-cov flake8 black mypy
     
     - name: Lint with flake8
@@ -107,7 +107,7 @@ jobs:
     
     - name: Check dependencies with Safety
       run: |
-        pip install -r requirements_v3.txt
+        pip install -r requirements.txt
         safety check --json 2>&1 || echo "Dependency vulnerabilities found (review needed)"
       continue-on-error: true
 
@@ -131,7 +131,7 @@ jobs:
     
     - name: Build distribution packages
       run: |
-        python -m pip install -r requirements_v3.txt
+        python -m pip install -r requirements.txt
         echo "✓ Build environment verified"
     
     - name: Final verification
