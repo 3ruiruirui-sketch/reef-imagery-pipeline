@@ -141,10 +141,8 @@
       z-index:1000;pointer-events:none;
     `;
 
-    // Compute metres per pixel at current zoom
-    const mPerPixel = map.getMapPane().clientAreaRect
-      ? 0
-      : (156543.033 * Math.cos(map.getCenter().lat * Math.PI / 180)) / Math.pow(2, map.getZoom());
+    // metres per pixel using standard Web Mercator scale formula
+    const mPerPixel = (156543.033 * Math.cos(map.getCenter().lat * Math.PI / 180)) / Math.pow(2, map.getZoom());
 
     const scaleMeters = Math.round(maxWidth * mPerPixel);
     const paddedMeters = scaleMeters > 1000

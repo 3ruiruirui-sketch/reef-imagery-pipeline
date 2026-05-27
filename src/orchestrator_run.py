@@ -8,7 +8,7 @@ Uso: python3 orchestrator_run.py [--image-a PATH] [--image-b PATH] [--depth 16.0
 
 import os, json, subprocess, logging, argparse, math, shutil, shlex
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 import numpy as np
 import rasterio
 from pyproj import Transformer
@@ -16,6 +16,23 @@ from pyproj import Transformer
 from src.constants import (
     N_WATER, CLOUD_THRESHOLD, SNR_THRESHOLD, KD490_TABLE, KD490_DEFAULT
 )
+
+try:
+    from src.ih_bathy_features import get_bathy_features_for_summary
+    HAS_IH_BATHY = True
+except ImportError:
+    HAS_IH_BATHY = False
+
+# Drift monitoring (shadow mode — best-effort, never blocks pipeline)
+try:
+    from src.drift_monitor import reset as drift_reset, log_summary as drift_log_summary, observe as drift_observe
+    from src.drift_export import export_to_file as drift_export_file
+    from src.drift_history import export_history_json as drift_history_json
+    from src.drift_history import export_history_csv as drift_history_csv
+    from src.drift_report import export_html as drift_export_html
+    HAS_DRIFT_MONITOR = True
+except ImportError:
+    HAS_DRIFT_MONITOR = False
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -44,7 +61,7 @@ def run_shell(cmd, check=True):
     else:
         cmd_list = list(cmd)
     log.info("$ %s", " ".join(shlex.quote(c) for c in cmd_list))
-    result = subprocess.run(cmd_list, shell=False, capture_output=True, text=True)
+    result = subprocess.run(cmd_list, shell=False, capture_output=True, text=True, timeout=600)
     if check and result.returncode != 0:
         raise RuntimeError(f"Command failed:\n{result.stderr}")
     return result
@@ -87,7 +104,7 @@ def gdal_extract_b02(boa_tif: Path, out_b02: Path):
     with rasterio.open(boa_tif) as src:
         profile = src.profile.copy()
         profile.update(count=1)
-        b02 = src.read(2)   # band index 2 = B02 in Sentinel-2 BOA stack
+        b02 = src.read(2)   # rasterio 1-based: band 2 = B02 in Sentinel-2 L2A BOA stack
     with rasterio.open(out_b02, 'w', **profile) as dst:
         dst.write(b02, 1)
     log.info("Extracted B02 → %s", out_b02)
@@ -167,7 +184,31 @@ def analyse_band(b02_path: Path, b03_path: Path, meta: dict, depth: float) -> di
     # Confidence map proxy
     high_conf_pct = 100.0 if snr >= SNR_THRESHOLD and cv < 0.02 else 50.0 if snr >= SNR_THRESHOLD else 0.0
 
-    return {
+    # Bathymetry contextual features
+    bathy_feats = {}
+    if HAS_IH_BATHY:
+        try:
+            bathy_feats = get_bathy_features_for_summary(lon=TARGET_LON, lat=TARGET_LAT)
+        except Exception as e:
+            log.warning("Bathymetry feature extraction failed: %s", e)
+
+    # Fallback/default values if missing
+    def _b(key, default=-1.0):
+        val = bathy_feats.get(key)
+        if val is None:
+            return default
+        try:
+            v = float(val)
+            if np.isnan(v) or np.isinf(v):
+                return default
+            return v
+        except (TypeError, ValueError):
+            return default
+
+    zone_val = bathy_feats.get("bathymetry_zone_class")
+    zone_class = str(zone_val) if zone_val is not None else "unknown"
+
+    features_dict = {
         "date": meta["date"],
         "sza_air_deg": meta["sza"],
         "sza_water_deg": round(sza_w, 3),
@@ -184,7 +225,22 @@ def analyse_band(b02_path: Path, b03_path: Path, meta: dict, depth: float) -> di
         "percent_pixels_useful": round(usable * 100, 2),
         "percent_area_high_confidence": round(high_conf_pct, 1),
         "visibility_score": round(vis_score, 4),
+        "cleanliness": 5000, # proxy default
+        # --- Bathymetry Features ---
+        "nearest_isobath_distance_m": _b("nearest_isobath_distance_m"),
+        "nearest_isobath_depth_m": _b("nearest_isobath_depth_m"),
+        "dist_to_isobath_10m": _b("dist_to_isobath_10m"),
+        "dist_to_isobath_20m": _b("dist_to_isobath_20m"),
+        "dist_to_isobath_30m": _b("dist_to_isobath_30m"),
+        "dist_to_isobath_50m": _b("dist_to_isobath_50m"),
+        "dist_to_isobath_100m": _b("dist_to_isobath_100m"),
+        "bathymetry_zone_class": zone_class,
+        "bathy_slope_proxy": _b("bathymetry_slope_proxy"),
+        "contour_density_proxy": _b("contour_density_proxy"),
+        "n_isobaths_in_aoi": _b("n_isobaths_in_aoi", default=0.0)
     }
+
+    return features_dict
 
 # ── Output writers ───────────────────────────────────────────────────────────
 def save_boa_copy(src_b02: Path, src_b03: Path, out_dir: Path, label: str) -> dict:
@@ -251,6 +307,13 @@ def main(depth: float = 16.0):
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     log.info("=== Reef Orchestrator — depth=%.1fm ===", depth)
 
+    # Drift monitoring: reset counters at batch start (shadow mode)
+    if HAS_DRIFT_MONITOR:
+        try:
+            drift_reset()
+        except Exception:
+            pass
+
     # Step 1: ACOLITE or direct L2A fallback
     use_acolite = acolite_available()
     log.info("ACOLITE: %s | SNAP/gpt: %s", "YES" if use_acolite else "NO (fallback L2A)", "YES" if snap_gpt_available() else "NO")
@@ -280,16 +343,31 @@ def main(depth: float = 16.0):
     from src.ranking_model import predict_score
     pred_a = predict_score(res_a)
     pred_b = predict_score(res_b)
-    
+
     score_a = pred_a["score"]
     score_b = pred_b["score"]
-    
+
     # Update the dictionary with the learned score
     res_a["visibility_score"] = score_a
     res_a["ranker_mode"] = pred_a["mode"]
     res_b["visibility_score"] = score_b
     res_b["ranker_mode"] = pred_b["mode"]
-    
+
+    # Drift monitoring: observe each prediction (shadow mode, best-effort)
+    if HAS_DRIFT_MONITOR:
+        for res in (res_a, res_b):
+            try:
+                drift_features = {
+                    "kd_b02": res.get("kd490_estimated", 0.08),
+                    "water_trans": res.get("water_transmittance_twoway", 0.5),
+                    "contrast": res.get("contrast_benthic_mean", 0.0),
+                    "signal_strength": res.get("SNR_mean_16m", 15.0),
+                    "cleanliness": res.get("cleanliness", 5000),
+                }
+                drift_observe(drift_features, res["visibility_score"])
+            except Exception:
+                pass
+
     winner = "A" if score_a >= score_b else "B"
     loser  = "B" if winner == "A" else "A"
     loser_snr = results[loser]["SNR_mean_16m"]
@@ -345,6 +423,20 @@ def main(depth: float = 16.0):
     log.info("Winner: %s | Score A=%.4f B=%.4f", report["chosen_image"], res_a["visibility_score"], res_b["visibility_score"])
     log.info("JSON → %s", report_path)
     log.info("CSV  → %s", csv_path)
+
+    # Drift monitoring: batch-end summary + export (shadow mode, best-effort)
+    if HAS_DRIFT_MONITOR:
+        try:
+            ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M%SZ")
+            batch_id = f"reef-orchestrator-{ts}-depth{int(depth)}"
+            drift_log_summary()
+            drift_export_file(batch_id=batch_id)
+            drift_history_json()
+            drift_history_csv()
+            drift_export_html()
+        except Exception as e:
+            log.debug("Drift reporting (non-critical): %s", e)
+
     return report
 
 if __name__ == "__main__":
