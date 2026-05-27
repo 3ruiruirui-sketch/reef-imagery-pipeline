@@ -739,6 +739,57 @@
         Interactive light transmittance & Stumpf log-ratio depth profile models.
       </div>
     </div>
+
+    <!-- Option 4: Carta Náutica (IHO S-4) -->
+    <div class="sidebar-section" id="nauticalChartSection">
+      <div class="sidebar-section-title">⛵ Carta Náutica (IHO S-4)</div>
+
+      <!-- Isobath layer toggles -->
+      <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px;">
+        <label style="font-size:11px;color:var(--text-secondary);margin-bottom:2px;">Isobaths</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;">
+          <input type="checkbox" id="iso10" checked> <span style="color:#005FBF;font-weight:700;">—</span> 10m
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;">
+          <input type="checkbox" id="iso20" checked> <span style="color:#1E7FE0;font-weight:700;">—</span> 20m
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;">
+          <input type="checkbox" id="iso30" checked> <span style="color:#5EAEF5;font-weight:700;">—</span> 30m
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;">
+          <input type="checkbox" id="iso50"> <span style="color:#9DC8FF;font-weight:700;">--</span> 50m
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;">
+          <input type="checkbox" id="iso100"> <span style="color:#C8E5FF;font-weight:700;">--</span> 100m
+        </label>
+      </div>
+
+      <!-- Depth soundings -->
+      <div style="margin-top:10px;display:flex;flex-direction:column;gap:5px;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;">
+          <input type="checkbox" id="showSoundings"> 🔎 Sounding tool
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;">
+          <input type="checkbox" id="showDanger"> ⚠️ Danger zones
+        </label>
+      </div>
+
+      <!-- Action buttons -->
+      <button class="band-btn" id="btnLoadNautical" onclick="loadNauticalChart()" style="width:100%;justify-content:center;margin-top:10px;background:rgba(59,130,246,0.15);border-color:rgba(59,130,246,0.3);color:var(--accent);">
+        <span class="band-icon">🗺️</span> Load Carta Náutica
+      </button>
+
+      <!-- Zone info -->
+      <div id="nauticalZoneInfo" style="margin-top:8px;font-size:11px;color:var(--text-muted);display:none;">
+        <div id="zoneLabel" style="font-weight:600;color:var(--accent);"></div>
+        <div id="zoneNote" style="margin-top:2px;"></div>
+      </div>
+
+      <!-- Danger legend note -->
+      <div style="margin-top:8px;font-size:10px;color:var(--text-muted);line-height:1.3;">
+        ⚠️ Zones with confiança <30% shown as danger areas (orange/red dashed outline).
+      </div>
+    </div>
   </div>
 
   <button class="sidebar-toggle" id="sidebarToggle">◀</button>
@@ -1484,6 +1535,147 @@
         }
       });
     }
+
+    // ─── Phase D: IHO Nautical Chart ──────────────────────────────────────
+
+    let isobathLayer = null;
+    let soundingsLayer = null;
+    let dangerLayer = null;
+    let loadNauticalChartActive = false;
+
+    async function loadNauticalChart() {
+      if (!window.IHOChart) {
+        alert('IHO chart library not loaded. Please refresh.');
+        return;
+      }
+
+      const selectedDepths = [];
+      if (document.getElementById('iso10').checked) selectedDepths.push(10);
+      if (document.getElementById('iso20').checked) selectedDepths.push(20);
+      if (document.getElementById('iso30').checked) selectedDepths.push(30);
+      if (document.getElementById('iso50').checked) selectedDepths.push(50);
+      if (document.getElementById('iso100').checked) selectedDepths.push(100);
+
+      if (selectedDepths.length === 0) {
+        alert('Select at least one isobath depth.');
+        return;
+      }
+
+      const bounds = map.getBounds();
+      const bbox = {
+        minLon: bounds.getWest(),
+        minLat: bounds.getSouth(),
+        maxLon: bounds.getEast(),
+        maxLat: bounds.getNorth(),
+      };
+
+      try {
+        // 1. Load isobaths
+        const isoParams = new URLSearchParams({
+          minlon: bbox.minLon.toFixed(4),
+          minlat: bbox.minLat.toFixed(4),
+          maxlon: bbox.maxLon.toFixed(4),
+          maxlat: bbox.maxLat.toFixed(4),
+          depths: selectedDepths.join(','),
+        });
+
+        const isoRes = await fetch(`/api/isobaths?${isoParams.toString()}`);
+        if (!isoRes.ok) throw new Error('Isobars request failed');
+        const isoGeoJSON = await isoRes.json();
+
+        if (isobathLayer) map.removeLayer(isobathLayer);
+        isobathLayer = L.geoJSON(isoGeoJSON, {
+          style: (feature) => {
+            const depth = parseInt(feature.properties?.depth || 0);
+            const colors = { 10:'#005FBF', 20:'#1E7FE0', 30:'#5EAEF5', 50:'#9DC8FF', 100:'#C8E5FF' };
+            return { color: colors[depth]||'#ffffff', weight: depth <= 30 ? 3 : 2, dashArray: depth >= 50 ? '6,4' : null, fillOpacity: 0 };
+          },
+          onEachFeature: (f, layer) => {
+            layer.bindTooltip(`${f.properties.depth}m`, { permanent: false, direction: 'center', className: 'iho-tooltip' });
+          },
+        });
+        isobathLayer.addTo(map);
+
+        // 2. Load depth soundings (optional)
+        if (document.getElementById('showSoundings').checked) {
+          const soundingsRes = await fetch(`/api/depth-soundings?bounds=${bbox.minLon},${bbox.minLat},${bbox.maxLon},${bbox.maxLat}&n=80`);
+          if (soundingsRes.ok) {
+            const soundingsData = await soundingsRes.json();
+            if (soundingsLayer) map.removeLayer(soundingsLayer);
+            soundingsLayer = L.featureGroup();
+            (soundingsData.points || []).forEach(pt => {
+              const color = IHOChart.depthToColor(pt.depth_m);
+              const marker = L.circleMarker([pt.lat, pt.lon], {
+                radius: 5, fillColor: color, color: '#ffffff', weight: 1, fillOpacity: 0.9,
+              });
+              marker.bindTooltip(`${pt.depth_m.toFixed(1)} m`, { permanent: false, direction: 'top', className: 'iho-tooltip' });
+              soundingsLayer.addLayer(marker);
+            });
+            soundingsLayer.addTo(map);
+          }
+        }
+
+        // 3. Load danger zones (optional)
+        if (document.getElementById('showDanger').checked) {
+          if (window.IHOChart) {
+            try {
+              const danger = await IHOChart.renderDangerZones(map, { threshold: 30 });
+              if (dangerLayer) map.removeLayer(dangerLayer);
+              dangerLayer = danger;
+              dangerLayer.addTo(map);
+            } catch (e) { console.warn('Danger zones unavailable:', e); }
+          }
+        }
+
+        // 4. Show zone info for map centre
+        const centre = map.getCenter();
+        try {
+          const zoneRes = await fetch(`/api/chart-zones?lat=${centre.lat.toFixed(5)}&lon=${centre.lng.toFixed(5)}`);
+          if (zoneRes.ok) {
+            const zoneData = await zoneRes.json();
+            const z = zoneData.zone || {};
+            const zoneNames = {
+              very_shallow: 'Zona Muito Shallow (0–10m)',
+              shallow_reef: 'Recife Shallow (10–20m)',
+              nearshore_mid: 'Nearshore Mid (10–30m)',
+              mid_depth: 'Profundidade Média (20–30m)',
+              offshore: 'Offshore (>30m)',
+            };
+            document.getElementById('zoneLabel').textContent = zoneNames[z.zone] || z.zone || 'Unknown';
+            document.getElementById('zoneNote').textContent = z.note || '';
+            document.getElementById('nauticalZoneInfo').style.display = 'block';
+          }
+        } catch (e) { console.warn('Zone info unavailable'); }
+
+        // 5. Add IHO depth legend
+        if (window.IHOChart) {
+          const zoneEl = document.querySelector('.iho-legend') || IHOChart.buildDepthLegend(document.querySelector('.leaflet-control-container'));
+        }
+
+        document.getElementById('btnLoadNautical').textContent = '✓ Carta Náutica Carregada';
+        document.getElementById('btnLoadNautical').style.background = 'rgba(6,214,160,0.2)';
+        document.getElementById('btnLoadNautical').style.color = 'var(--accent-secondary)';
+        loadNauticalChartActive = true;
+
+      } catch (err) {
+        alert('Erro ao carregar carta náutica: ' + err.message);
+      }
+    }
+
+    // Load chart libraries when dashboard starts
+    function loadChartLibraries() {
+      if (typeof IHOChart !== 'undefined') return;
+      const script1 = document.createElement('script');
+      script1.src = 'static/chart_layers.js';
+      script1.onload = () => {
+        const script2 = document.createElement('script');
+        script2.src = 'static/ihocharts.js';
+        document.head.appendChild(script2);
+      };
+      document.head.appendChild(script1);
+    }
+
+    loadChartLibraries();
   </script>
 
   <!-- SPECTRAL & SDB ANALYSIS MODAL (OPTION 3 INTEGRATION) -->

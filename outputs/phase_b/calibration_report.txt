@@ -1,0 +1,26 @@
+======================================================================
+  PHASE B CALIBRATION REPORT — ICESat-2 / Sentinel-2 SDB
+======================================================================
+
+Generated: 2026-05-25T02:36:25Z
+Phase A date: 20250925
+
+Status: NOT CALIBRATED (fallback)
+
+Not calibrated reason: insufficient_samples(0)
+
+Possible causes:
+  - No ICESat-2 credentials (NASA EarthData login required)
+  - No ATL03 granules over this bbox
+  - Too few matched samples (< 4 required)
+  - ATL03 download / processing failure
+
+How to interpret:
+  Phase A (Stumpf SDB) produces raw depth estimates using
+  literature m0/m1 coefficients that may not fit Algarve.
+  Phase B applies an ICESat-2 derived correction to reduce bias.
+
+Next steps:
+  1. Review RMSE — should be < 2m for acceptable calibration
+  2. If R² is low (< 0.5), the linear model may not be appropriate
+  3. Check sample_pairs.csv to identify spatial patterns in error
