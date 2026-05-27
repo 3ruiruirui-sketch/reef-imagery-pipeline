@@ -250,6 +250,8 @@ def run_predictor(boa_b02_path, metadata, output_dir,
     bathy_result = {}
     stumpf_m0 = -16.0
     stumpf_m1 = 20.0
+    tf = None
+    bounds_wgs = None
 
     if b03_arr is not None:
         # Try to calibrate Stumpf coefficients from IH isobaths
@@ -304,7 +306,7 @@ def run_predictor(boa_b02_path, metadata, output_dir,
         logging.info("SDB depth map: mean=%.1fm, written to %s", sdb_mean, sdb_path)
 
         # Validate SDB vs IH chart (if calibration ran)
-        if bathy_result and _BATHY_AVAILABLE and lat is not None:
+        if bathy_result and _BATHY_AVAILABLE and lat is not None and tf is not None and bounds_wgs is not None:
             try:
                 from src.bathy_calibrator import validate_sdb_vs_chart, fetch_isobaths_for_bbox
                 deg_buf = 3000 / 111_000.0
@@ -339,7 +341,8 @@ def run_predictor(boa_b02_path, metadata, output_dir,
 
     sand_btm = SAND_R * trans
     rock_btm = ROCK_R * trans
-    contrast  = (sand_btm - rock_btm) / sand_btm if sand_btm > 0 else 0.0
+    contrast  = ((sand_btm - rock_btm) / sand_btm * glint_pen
+                 if sand_btm > 0 else 0.0)
 
     # ML Ranker inference instead of manual heuristic
     from src.ranking_model import predict_score
