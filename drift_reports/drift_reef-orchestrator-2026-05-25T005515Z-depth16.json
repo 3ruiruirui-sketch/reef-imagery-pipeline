@@ -1,0 +1,23 @@
+{
+  "timestamp": "2026-05-25T00:55:15.851247+00:00",
+  "pipeline": "reef_imagery_pipeline",
+  "model_version": "1.2",
+  "schema_version": "2.0",
+  "batch_id": "reef-orchestrator-2026-05-25T005515Z-depth16",
+  "observations": 4,
+  "alerts": {
+    "ok": 0,
+    "warning": 0,
+    "critical": 4
+  },
+  "feature_drift_count": 2,
+  "score_drift_count": 4,
+  "null_spike_count": 0,
+  "highest_severity": "critical",
+  "worst_alert": {
+    "feature": "score_value",
+    "level": "CRITICAL",
+    "reason": "z=5.4 (score=1.4135)"
+  },
+  "summary": "4 critical drift events in batch"
+}

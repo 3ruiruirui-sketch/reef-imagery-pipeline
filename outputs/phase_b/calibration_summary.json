@@ -1,0 +1,23 @@
+{
+  "timestamp": "2026-05-25T01:36:24Z",
+  "phase_a_date": "20250925",
+  "site_name": "pedra_do_alto",
+  "calibrated": false,
+  "outputs": {
+    "calibrated_tif": "/Users/ssoares/Downloads/PI-PROJE/reef_imagery_pipeline/outputs/phase_b/calibrated_SDB_20250925.tif"
+  },
+  "n_samples": 0,
+  "a": 1.0,
+  "b": 0.0,
+  "rmse_m": null,
+  "mae_m": null,
+  "bias_m": null,
+  "r2": null,
+  "reason": "insufficient_samples(0)",
+  "bounds_wgs84": [
+    566525.4270416864,
+    4098749.2428153562,
+    571365.4270416864,
+    4104769.2428153562
+  ]
+}

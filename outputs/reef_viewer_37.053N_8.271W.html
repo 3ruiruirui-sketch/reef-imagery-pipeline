@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reef Imagery — 37.05295°N  8.27072°W | 22m</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0a1628;
+    color: #e8edf5;
+    padding: 24px;
+  }
+  h1 {
+    color: #7ec8e3;
+    font-size: 1.4rem;
+    margin-bottom: 4px;
+  }
+  .subtitle {
+    color: #6b7f94;
+    font-size: 0.85rem;
+    margin-bottom: 24px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+    gap: 20px;
+  }
+  .card {
+    background: #12213a;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+  }
+  .card img {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  .card-body {
+    padding: 14px 16px;
+  }
+  .card-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #a8c5da;
+    margin-bottom: 4px;
+  }
+  .card-desc {
+    font-size: 0.78rem;
+    color: #6b7f94;
+    line-height: 1.5;
+  }
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .metric {
+    background: #12213a;
+    border-radius: 8px;
+    padding: 14px 18px;
+  }
+  .metric .value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #7ec8e3;
+  }
+  .metric .label {
+    font-size: 0.72rem;
+    color: #6b7f94;
+    margin-top: 2px;
+  }
+  .badge {
+    display: inline-block;
+    background: #1a3a5c;
+    color: #7ec8e3;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 0.72rem;
+    margin-top: 6px;
+  }
+  .tif-note {
+    background: #1a2744;
+    border: 1px solid #1e3a5c;
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-top: 20px;
+    font-size: 0.82rem;
+    color: #6b7f94;
+    line-height: 1.6;
+  }
+  .tif-note strong { color: #a8c5da; }
+</style>
+</head>
+<body>
+
+<h1>Reef Imagery — GPS 37.05295°N  8.27072°W</h1>
+<p class="subtitle">2024-08-26 | Sentinel-2 L2A | Tile T29SNB | Cloud: 2.1% | Depth: ~22m</p>
+
+<div class="metrics">
+  <div class="metric">
+    <div class="value">99.7</div>
+    <div class="label">SNR</div>
+    <span class="badge">Highest BVI=0.701</span>
+  </div>
+  <div class="metric">
+    <div class="value">0.701</div>
+    <div class="label">BVI Score</div>
+  </div>
+  <div class="metric">
+    <div class="value">34.3</div>
+    <div class="label">SNR mean (2km)</div>
+  </div>
+  <div class="metric">
+    <div class="value">~33%</div>
+    <div class="label">Light @ 22m</div>
+    <span class="badge">Kd≈0.05</span>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <img src="reef_2024-08-26_TrueColor_37.053N_8.271W.png" alt="True Color">
+    <div class="card-body">
+      <div class="card-title">True Color (visual band)</div>
+      <div class="card-desc">Cor verdadeira — RGB padrão do Sentinel-2. Janela de 4km×4km (400×400px @ 10m/px).</div>
+    </div>
+  </div>
+  <div class="card">
+    <img src="reef_2024-08-26_EnhancedRGB_37.053N_8.271W.png" alt="Enhanced RGB">
+    <div class="card-body">
+      <div class="card-title">Enhanced RGB (B04/B03/B02)</div>
+      <div class="card-desc">RGB melhorado com contraste a 3.5×. Realça estruturas bentônicas e transições areia/rocha.</div>
+    </div>
+  </div>
+  <div class="card">
+    <img src="reef_2024-08-26_DepthViz_37.053N_8.271W.png" alt="Depth Visualization">
+    <div class="card-body">
+      <div class="card-title">Depth-Informed False Color</div>
+      <div class="card-desc">B08 suprimido para reduzir glint solar. B02 azul = profundidade, B03+B02 = claridade da água. Zonas mais claras = mais fundo.</div>
+    </div>
+  </div>
+</div>
+
+<div class="tif-note">
+  <strong>Ficheiros GeoTIFF científicos:</strong><br>
+  <code>reef_2024-08-26_B02_B03_B04_37.053N_8.271W.tif</code> — Stack B02/B03/B04 (3 bandas, 745KB) — abrir no QGIS para análise de bandas<br>
+  <code>reef_2024-08-26_SNR_37.053N_8.271W.tif</code> — Mapa SNR 2D — abrir no QGIS para mapear qualidade por pixel
+</div>
+
+</body>
+</html>

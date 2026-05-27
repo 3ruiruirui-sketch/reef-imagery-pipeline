@@ -1,0 +1,25 @@
+{
+  "source": "training_features.csv",
+  "n_sites": 15,
+  "n_pairs": 103,
+  "sites": [
+    "pedra_do_alto",
+    "albufeira_reef",
+    "gale_spot",
+    "east_reef",
+    "target_main",
+    "albufeira_north",
+    "albufeira_west",
+    "olhos_de_agua",
+    "faro_east",
+    "tavira",
+    "sagres",
+    "vilamoura",
+    "alvor",
+    "sagres_south",
+    "vila_real_sto_antonio"
+  ],
+  "generation_method": "all_combinations_with_visibility_score_labels",
+  "s2_features": "semi_synthetic_zone_based",
+  "bathy_features": "real_ih_dgrm"
+}
