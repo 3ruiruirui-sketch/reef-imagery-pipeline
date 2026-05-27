@@ -2,7 +2,7 @@
  * chart_layers.js — IHO S-4 Nautical Chart Rendering for Leaflet
  * ================================================================
  * Provides IHO depth colour scheme, isobath polylines, depth soundings,
- * danger zones and nautical symbology for the Carta Náutica dashboard panel.
+ * danger zones and nautical symbology for Carta Náutica dashboard panel.
  *
  * IHO S-4 depth colour scheme (standard for nautical charts):
  *   0–5m   : Very dark navy  (#000080 → #000050)
@@ -10,7 +10,7 @@
  *   10–20m : Blue            (#0050BF)
  *   20–30m : Medium blue     (#1E7FE0)
  *   30–50m : Light blue      (#7FAEF5)
- *   >50m   : Very light      (#C8E0FF)
+ *   >50m   : Very light      (#C8E5FF)
  *   Land   : Ochre/brown     (#B5A679)
  */
 
@@ -39,7 +39,7 @@
    * Returns the IHO S-4 band colour for a given depth in metres.
    */
   function depthToColor(depth_m) {
-    if (depth_m < 0 || depth_m === null || depth_m === undefined) return IHO_LAND_COLOR;
+    if (depth_m == null || depth_m < 0) return IHO_LAND_COLOR;
     for (const band of IHO_BANDS) {
       if (depth_m < band.max) return band.color;
     }
@@ -60,11 +60,6 @@
   /**
    * renderDepthBandsOnCanvas(canvas, depthArray2D, bounds)
    * Paints IHO S-4 colour bands onto a canvas element from a 2D depth array.
-   *
-   * @param {HTMLCanvasElement} canvas
-   * @param {number[][]} depthArray — 2D array [row][col] of depth values in metres
-   * @param {object} bounds — { minLon, minLat, maxLon, maxLat }
-   * @param {object} options — { landAtZero: bool }
    */
   function renderDepthBandsOnCanvas(canvas, depthArray, bounds, options = {}) {
     const { landAtZero = true } = options;
@@ -86,10 +81,6 @@
 
   /**
    * Build IHO depth colour legend HTML element.
-   * Appends to map._controlContainer or a given parent element.
-   *
-   * @param {HTMLElement} parent
-   * @returns {HTMLElement} legend container
    */
   function buildDepthLegend(parent) {
     const container = document.createElement("div");
@@ -126,7 +117,6 @@
       container.appendChild(row);
     });
 
-    // Land swatch
     const landRow = document.createElement("div");
     landRow.style.cssText = "display:flex;align-items:center;gap:8px;margin-top:6px;";
     const landSwatch = document.createElement("div");
@@ -144,15 +134,36 @@
   // ── Isobath Layer Management ─────────────────────────────────────────────────
 
   /**
-   * Fetch IH/DGRM isobath polylines via the dashboard API proxy.
-   * Returns a Leaflet L.geoJSON layer styled per IHO depth conventions.
-   *
-   * @param {L.Map} map
-   * @param {object} bounds — { minLon, minLat, maxLon, maxLat }
-   * @param {number[]} depths — e.g. [10, 20, 30] — which isobaths to fetch
-   * @returns {Promise<L.GeoJSON>}
+   * Interpolate isobath style: bucket to nearest known depth band
+   * so non-standard depths (e.g. 15m) still get a visible style.
    */
-  async function fetchIsobathLayer(map, bounds, depths = [10, 20, 30]) {
+  function getIsobarStyle(depth) {
+    // Known isobath styles keyed by depth value
+    const isobathStyles = {
+      0:   { color: "#001050", weight: 3, dashArray: null },
+      2:   { color: "#001870", weight: 3, dashArray: null },
+      10:  { color: "#003FBF", weight: 3, dashArray: null },
+      20:  { color: "#1E7FE0", weight: 3, dashArray: null },
+      30:  { color: "#5EAEF5", weight: 3, dashArray: null },
+      50:  { color: "#9DC8FF", weight: 2, dashArray: "6,4" },
+      100: { color: "#C8E5FF", weight: 2, dashArray: "6,4" },
+    };
+    // Direct hit
+    if (isobathStyles[depth] !== undefined) return isobathStyles[depth];
+    // Bucket to nearest known style (e.g. 15m → 10m style)
+    const knownDepths = Object.keys(isobathStyles).map(Number).sort((a, b) => a - b);
+    let nearest = knownDepths[0];
+    for (const d of knownDepths) {
+      if (Math.abs(d - depth) < Math.abs(nearest - depth)) nearest = d;
+    }
+    const base = isobathStyles[nearest];
+    return { color: base.color, weight: base.weight, dashArray: base.dashArray };
+  }
+
+  /**
+   * Fetch IH/DGRM isobath polylines via the dashboard API proxy.
+   */
+  async function fetchIsobarLayer(map, bounds, depths = [10, 20, 30]) {
     const params = new URLSearchParams({
       minlon: bounds.minLon,
       minlat: bounds.minLat,
@@ -163,29 +174,6 @@
 
     const url = `/api/isobaths?${params.toString()}`;
 
-    // Isobath IHO style table by depth
-    const isobathStyles = {
-      0:   { color: "#001050", weight: 3, dashArray: null },
-      2:   { color: "#001870", weight: 3, dashArray: null },
-      10:  { color: "#003FBF", weight: 3, dashArray: null },
-      20:  { color: "#1E7FE0", weight: 3, dashArray: null },
-      30:  { color: "#5EAEF5", weight: 3, dashArray: null },
-      50:  { color: "#9DC8FF", weight: 2, dashArray: "6,4" },
-      100: { color: "#C8E5FF", weight: 2, dashArray: "6,4" },
-    };
-
-    const getStyle = (feature) => {
-      const depth = parseInt(feature.properties?.Depth || feature.properties?.depth || 0);
-      const s = isobathStyles[depth] || { color: "#ffffff", weight: 2, dashArray: null };
-      return {
-        color: s.color,
-        weight: s.weight,
-        dashArray: s.dashArray,
-        opacity: 0.85,
-        fillOpacity: 0,
-      };
-    };
-
     return new Promise((resolve, reject) => {
       fetch(url)
         .then(res => {
@@ -194,7 +182,17 @@
         })
         .then(geojson => {
           const layer = L.geoJSON(geojson, {
-            style: getStyle,
+            style: (feature) => {
+              const depth = parseInt(feature.properties?.Depth || feature.properties?.depth || 0);
+              const s = getIsobarStyle(depth);
+              return {
+                color: s.color,
+                weight: s.weight,
+                dashArray: s.dashArray,
+                opacity: 0.85,
+                fillOpacity: 0,
+              };
+            },
             onEachFeature: (feature, layer) => {
               const d = feature.properties?.Depth || feature.properties?.depth || "?";
               layer.bindTooltip(`${d}m`, {
@@ -214,11 +212,6 @@
 
   /**
    * Fetch n depth soundings from the API and render as labelled markers.
-   *
-   * @param {L.Map} map
-   * @param {object} bounds
-   * @param {number} n
-   * @returns {Promise<L.LayerGroup>}
    */
   async function fetchDepthSoundings(map, bounds, n = 50) {
     const params = new URLSearchParams({
@@ -235,8 +228,12 @@
           return res.json();
         })
         .then(data => {
+          if (data.status !== "ok" || !data.points) {
+            resolve(L.featureGroup());
+            return;
+          }
           const group = L.featureGroup();
-          (data.points || []).forEach(pt => {
+          data.points.forEach(pt => {
             const color = depthToColor(pt.depth_m);
             const marker = L.circleMarker([pt.lat, pt.lon], {
               radius: 5,
@@ -262,10 +259,6 @@
 
   /**
    * Activate "click for depth" tool on the map.
-   * Shows a popup at clicked point with depth from the nearest bathy source.
-   *
-   * @param {L.Map} map
-   * @param {Function} getDepthPromise — fn(lat, lon) → Promise{ depth_m }
    */
   function activateDepthClickTool(map, getDepthPromise) {
     map._depthClickHandler = (e) => {
@@ -273,7 +266,7 @@
       getDepthPromise(lat, lng)
         .then(depth => {
           const color = depthToColor(depth);
-          const popup = L.popup()
+          L.popup()
             .setLatLng(e.latlng)
             .setContent(`
               <div style="font-family:Inter,sans-serif;font-size:12px;text-align:center;padding:4px 8px;">
@@ -298,25 +291,20 @@
   // ── Danger Zones from Reef Candidates ───────────────────────────────────────
 
   /**
-   * Render candidate reef areas with confidence < threshold as danger zones.
-   *
-   * @param {L.Map} map
-   * @param {object} options — { threshold: 30, color: '#ff4444' }
-   * @returns {Promise<L.GeoJSON>}
+   * Render candidate reef areas with confidence <= threshold as danger zones.
    */
   async function renderDangerZones(map, options = {}) {
     const { threshold = 30, color = "#ff4444" } = options;
 
-    const url = "/api/candidates";
     return new Promise((resolve, reject) => {
-      fetch(url)
+      fetch("/api/candidates")
         .then(res => res.ok ? res.json() : Promise.reject(res.status))
         .then(data => {
           const dangerous = {
             type: "FeatureCollection",
             features: (data.features || []).filter(f => {
               const score = f.properties?.confidence_score ?? f.properties?.score ?? 100;
-              return score < threshold;
+              return score <= threshold;
             }),
           };
 
@@ -348,7 +336,7 @@
 
   /**
    * Generate an IHO standard danger symbol SVG.
-   * type: 'rock' | 'w recharted' | 'wreck' | 'obstruction'
+   * type: 'rock' | 'wreck' | 'obstruction'
    */
   function dangerSymbolSVG(type = "rock") {
     const symbols = {
@@ -373,12 +361,13 @@
     depthToRgba,
     renderDepthBandsOnCanvas,
     buildDepthLegend,
-    fetchIsobathLayer,
+    fetchIsobarLayer,
     fetchDepthSoundings,
     activateDepthClickTool,
     deactivateDepthClickTool,
     renderDangerZones,
     dangerSymbolSVG,
+    getIsobarStyle,
   };
 
 })();

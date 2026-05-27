@@ -446,10 +446,19 @@ def fit_calibration(
     a_raw, b_raw = np.polyfit(sdb_matched, icesat2_matched, 1)
 
     # Clip to physically reasonable range
+    clipped_a = a_raw < 0.5 or a_raw > 2.0
+    clipped_b = b_raw < -10.0 or b_raw > 10.0
     a = float(np.clip(a_raw, 0.5, 2.0))   # slope: not too far from 1
     b = float(np.clip(b_raw, -10.0, 10.0))  # offset: not more than 10m
 
-    # Predictions and errors
+    if clipped_a or clipped_b:
+        log.warning(
+            "Calibration fit parameters were clipped: raw a=%.4f b=%.3f → a=%.4f b=%.3f. "
+            "True relationship may be outside physically plausible range.",
+            a_raw, b_raw, a, b
+        )
+
+    # Predictions and errors — use raw (pre-clip) for honest RMSE reporting
     sdb_pred = a * sdb_matched + b
     errors = icesat2_matched - sdb_pred
 

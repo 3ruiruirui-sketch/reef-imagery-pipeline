@@ -212,8 +212,9 @@ def observe(features_dict, score, schema_features=None):
         _null_spike_count += 1
     if overall == CRITICAL or (overall == WARNING and _worst_level == OK):
         _worst_level = overall
-        all_a = feat_drift["alerts"] + score_drift["alerts"]
-        _worst_alert = all_a[0] if all_a else None
+    all_a = feat_drift["alerts"] + score_drift["alerts"]
+    level_rank = {OK: 0, WARNING: 1, CRITICAL: 2}
+    _worst_alert = max(all_a, key=lambda a: level_rank.get(a[1], 0)) if len(all_a) > 0 else None
     
     # Throttled logging: log on level change or periodic reminder
     level_changed = (overall != _last_logged_level)
@@ -231,7 +232,7 @@ def observe(features_dict, score, schema_features=None):
             log.warning(f"Drift CRITICAL: {crit_alerts}")
         else:
             warn_alerts = [(f, r) for f, l, r in all_alerts if l == WARNING]
-            log.info(f"Drift WARNING: {warn_alerts}")
+            log.warning(f"Drift WARNING: {warn_alerts}")
         _calls_since_log = 1
     elif overall != OK:
         _calls_since_log += 1

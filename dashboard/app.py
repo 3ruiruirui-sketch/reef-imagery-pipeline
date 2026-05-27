@@ -214,7 +214,12 @@ def get_isobaths():
     max_lon = float(request.args.get('maxlon', -7.5))
     max_lat = float(request.args.get('maxlat', 37.1))
     depths_str = request.args.get('depths', '10,20,30')
-    depths = [int(d) for d in depths_str.split(',') if d.strip().isdigit()]
+    try:
+        depths = [int(d) for d in depths_str.split(',') if d.strip().lstrip('-').isdigit()]
+    except ValueError:
+        depths = []
+    if not depths:
+        return jsonify({"status": "error", "message": "depths must be comma-separated integers e.g. 10,20,30"}), 400
 
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     cache_dir = os.path.join(project_root, 'data', 'cache')
@@ -316,29 +321,25 @@ def get_depth_soundings():
                 if valid_coords.shape[0] < 5:
                     continue
 
-                # Seeded RNG for reproducibility
-                np.random.seed(42)
-                idx = np.random.choice(valid_coords.shape[0],
-                                     size=min(n, valid_coords.shape[0]), replace=False)
+                # Seeded RNG for reproducibility — local instance, no global state mutation
+                rng = np.random.default_rng(42)
+                idx = rng.choice(valid_coords.shape[0],
+                                 size=min(n, valid_coords.shape[0]), replace=False)
 
-                # Convert pixel coords to world coords
+                # Batch transform — single Transformer call, no per-pixel allocation
                 win_transform = src.window_transform(win)
                 transformer = Transformer.from_crs(src.crs, "EPSG:4326", always_xy=True)
+                cols_a = win.col_off + valid_coords[idx][:, 1]
+                rows_a = win.row_off + valid_coords[idx][:, 0]
+                xs, ys = win_transform * (cols_a, rows_a)
+                lons, lats = transformer.transform(xs, ys)
+                depths = arr[valid_coords[idx][:, 0], valid_coords[idx][:, 1]]
 
-                points = []
-                for [r, c] in valid_coords[idx]:
-                    col_a = win.col_off + c
-                    row_a = win.row_off + r
-                    x_w = win_transform * (col_a, row_a)
-                    lon_w, lat_w = transformer.transform(x_w[0], x_w[1])
-                    depth_m = float(arr[r, c])
-                    if depth_m <= 0:
-                        continue
-                    points.append({
-                        "lon": round(lon_w, 6),
-                        "lat": round(lat_w, 6),
-                        "depth_m": round(depth_m, 2),
-                    })
+                points = [
+                    {"lon": round(lon, 6), "lat": round(lat, 6), "depth_m": round(float(d), 2)}
+                    for lon, lat, d in zip(lons, lats, depths)
+                    if float(d) >= 0
+                ]
 
                 if points:
                     return jsonify({
