@@ -21,10 +21,10 @@ import sys
 import os
 import json
 import tempfile
-import traceback
 from pathlib import Path
 import numpy as np
 import logging
+import pytest
 
 # Add src to path
 _PROJECT_ROOT = Path(__file__).parent.parent
@@ -103,11 +103,8 @@ def test_depth_target_propagation():
     depths = [r["depth"] for r in results]
     paths = [r["optical_path"] for r in results]
     
-    if len(set(paths)) == len(paths):
-        log.info("✓ PASS: Different depths produce different optical paths")
-    else:
-        log.error("✗ FAIL: All depths produce same optical path (BUG!)")
-        assert False, "All depths produce same optical path (BUG!)"
+    assert len(set(paths)) == len(paths), "All depths produce same optical path (BUG!)"
+    log.info("✓ PASS: Different depths produce different optical paths")
 
 # =============================================================================
 # TEST 2: Nodata Handling
@@ -146,14 +143,12 @@ def test_nodata_handling():
         
         # Check that nodata became NaN
         nodata_region = arr_read[20:30, 20:30]
-        if np.all(np.isnan(nodata_region)):
-            log.info("✓ PASS: Nodata values correctly converted to NaN")
-            log.info(f"  - Original nodata: {nodata_val}")
-            log.info(f"  - After read_band: NaN (count: {np.sum(np.isnan(arr_read))})")
-        else:
-            log.error("✗ FAIL: Nodata values NOT converted to NaN")
-            log.error(f"  - Values in nodata region: {np.unique(nodata_region)[:5]}")
-            assert False, "Nodata values NOT converted to NaN"
+        assert np.all(np.isnan(nodata_region)), (
+            f"Nodata values NOT converted to NaN. Got: {np.unique(nodata_region)[:5]}"
+        )
+        log.info("✓ PASS: Nodata values correctly converted to NaN")
+        log.info(f"  - Original nodata: {nodata_val}")
+        log.info(f"  - After read_band: NaN (count: {np.sum(np.isnan(arr_read))})")
 
 # =============================================================================
 # TEST 3: SDB NaN vs Clipping
@@ -169,9 +164,10 @@ def test_sdb_nan_vs_clipping():
     # Stumpf: depth = m1 * ln(n*B02) / ln(n*B03) + m0
     # To get depth >40 with m0=-16, m1=20:
     # 40 < 20 * ratio - 16  =>  ratio > 2.8
+    # ln(1000*0.08)/ln(1000*0.004) = 4.38/1.39 = 3.16 => depth ~47m
     
-    b02 = np.full((50, 50), 0.01, dtype=np.float32)  # Low B02
-    b03 = np.full((50, 50), 0.003, dtype=np.float32)  # Even lower B03
+    b02 = np.full((50, 50), 0.08, dtype=np.float32)
+    b03 = np.full((50, 50), 0.004, dtype=np.float32)
     
     # Calculate expected ratio manually
     n = 1000.0
@@ -182,20 +178,15 @@ def test_sdb_nan_vs_clipping():
     
     depth_map = stumpf_sdb(b02, b03, m0=-16.0, m1=20.0, n=1000.0)
     
-    if expected_depth > 40:
-        # Should be NaN, not 40
-        if np.all(np.isnan(depth_map)):
-            log.info("✓ PASS: Depths >40m correctly set to NaN")
-            log.info(f"  - Previous behavior: clipped to 40m")
-            log.info(f"  - Current behavior: NaN (preserves info)")
-        elif np.all(depth_map == 40.0):
-            log.warning("⚠ OLD BEHAVIOR: Still clipping to 40m (update needed?)")
-            assert False, "Still clipping to 40m"
-        else:
-            log.error(f"✗ UNEXPECTED: Values are {np.unique(depth_map)[:5]}")
-            assert False, "Unexpected clipping behavior"
-    else:
-        log.info(f"  Note: Test input didn't produce >40m depth (got {expected_depth:.1f}m)")
+    assert expected_depth > 40, f"Test input didn't produce >40m depth (got {expected_depth:.1f}m)"
+    # Should be NaN, not 40
+    assert not np.any(depth_map == 40.0), "Still clipping to 40m (old behavior)"
+    assert np.all(np.isnan(depth_map)), (
+        f"Depths >40m not set to NaN. Got: {np.unique(depth_map)[:5]}"
+    )
+    log.info("✓ PASS: Depths >40m correctly set to NaN")
+    log.info(f"  - Previous behavior: clipped to 40m")
+    log.info(f"  - Current behavior: NaN (preserves info)")
 
 # =============================================================================
 # TEST 4: Window Bounds Clamping
@@ -209,25 +200,32 @@ def test_window_clamping():
     
     rasters = find_test_rasters()
     if not rasters:
-        log.warning("⚠ SKIP: No real test rasters found")
-        return None
+        pytest.skip("No real test rasters found in reef_Output_Master/")
     
     test_raster = rasters[0]
     log.info(f"  Using: {test_raster['name']}")
     
-    # Read just to check dimensions
-    try:
-        arr, profile = read_band(test_raster["b02"])
-        height, width = arr.shape
-        log.info(f"  Raster size: {width}x{height}")
-        
-        # Simulate edge case: target near corner
-        # Window clamping should handle this gracefully
-        log.info("✓ PASS: Raster readable, dimensions available for clamping")
-        log.info(f"  - Window clamp formula: max(0, min(col-20, width-40))")
-    except Exception as e:
-        log.error(f"✗ FAIL: Could not read raster: {e}")
-        assert False, f"Could not read raster: {e}"
+    # Read and verify dimensions are valid for clamping logic
+    arr, profile = read_band(test_raster["b02"])
+    height, width = arr.shape
+    log.info(f"  Raster size: {width}x{height}")
+    
+    assert height > 0 and width > 0, "Raster has zero dimension"
+    
+    # Verify edge clamping formula produces valid bounds
+    col, row = width - 5, height - 5  # Near corner
+    col_off = max(0, min(col - 20, width - 40))
+    row_off = max(0, min(row - 20, height - 40))
+    win_w = min(40, width - col_off)
+    win_h = min(40, height - row_off)
+    
+    assert col_off >= 0, f"col_off negative: {col_off}"
+    assert row_off >= 0, f"row_off negative: {row_off}"
+    assert col_off + win_w <= width, f"Window exceeds width: {col_off}+{win_w} > {width}"
+    assert row_off + win_h <= height, f"Window exceeds height: {row_off}+{win_h} > {height}"
+    
+    log.info("✓ PASS: Window clamping produces valid bounds at edge")
+    log.info(f"  - Edge point ({col},{row}): offset=({col_off},{row_off}), size=({win_w},{win_h})")
 
 # =============================================================================
 # TEST 5: Constants Centralization
@@ -239,34 +237,27 @@ def test_constants_import():
     log.info("TEST 5: Constants Centralization")
     log.info("=" * 60)
     
-    try:
-        # Check all expected constants exist
-        expected = [
-            "DEPTH_TARGET", "SDB_OPTICAL_LIMIT_M",
-            "STUMPF_M0_DEFAULT", "STUMPF_M1_DEFAULT", "STUMPF_N",
-            "KD490_TABLE", "KD490_DEFAULT",
-            "N_WATER", "SNR_THRESHOLD", "CLOUD_THRESHOLD",
-        ]
-        
-        for const in expected:
-            if not hasattr(constants, const):
-                log.error(f"✗ FAIL: Missing constant: {const}")
-                assert False, f"Missing constant: {const}"
-        
-        log.info("✓ PASS: All expected constants present in constants.py")
-        log.info(f"  - Total constants: {len(expected)}")
-        
-        # Verify values are reasonable
-        assert constants.N_WATER == 1.333
-        assert constants.SDB_OPTICAL_LIMIT_M == 40.0
-        assert constants.STUMPF_M1_DEFAULT == 20.0
-        assert 0.04 < constants.KD490_TABLE[9] < 0.05  # September Kd
-        
-        log.info("✓ PASS: Constant values are physically reasonable")
-    except Exception as e:
-        log.error(f"✗ FAIL: {e}")
-        traceback.print_exc()
-        assert False, str(e)
+    # Check all expected constants exist
+    expected = [
+        "DEPTH_TARGET", "SDB_OPTICAL_LIMIT_M",
+        "STUMPF_M0_DEFAULT", "STUMPF_M1_DEFAULT", "STUMPF_N",
+        "KD490_TABLE", "KD490_DEFAULT",
+        "N_WATER", "SNR_THRESHOLD", "CLOUD_THRESHOLD",
+    ]
+    
+    for const in expected:
+        assert hasattr(constants, const), f"Missing constant: {const}"
+    
+    log.info("✓ PASS: All expected constants present in constants.py")
+    log.info(f"  - Total constants: {len(expected)}")
+    
+    # Verify values are reasonable
+    assert constants.N_WATER == 1.333
+    assert constants.SDB_OPTICAL_LIMIT_M == 40.0
+    assert constants.STUMPF_M1_DEFAULT == 20.0
+    assert 0.04 < constants.KD490_TABLE[9] < 0.05, "September Kd out of range"
+    
+    log.info("✓ PASS: Constant values are physically reasonable")
 
 # =============================================================================
 # TEST 6: Results Comparison (Summary)
@@ -306,7 +297,10 @@ def test_results_comparison():
         },
     }
     
+    # Assert structure is valid (guards against accidental corruption)
+    assert len(comparison) == 5, "Expected 5 comparison entries"
     for metric, info in comparison.items():
+        assert "before" in info and "after" in info, f"Malformed entry: {metric}"
         log.info(f"\n  {metric}:")
         log.info(f"    Before: {info['before']}")
         log.info(f"    After:  {info['after']}")
