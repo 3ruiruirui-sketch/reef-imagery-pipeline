@@ -14,6 +14,7 @@ import pandas as pd
 from pystac_client import Client
 import planetary_computer as pc
 from datetime import datetime
+from src.ranking_model import predict_score
 
 # Constantes Físicas (Banda B02 - Azul 490nm / Banda B03 - Verde 560nm)
 SAND_R_REF = 0.25     # Refletância da areia branca
@@ -136,8 +137,7 @@ def predict_top_5_days(lat, lon, depth, years_back=4):
         })
         
     df = pd.DataFrame(data)
-    from src.ranking_model import predict_score
-    
+
     # Aplicar Motor Físico + Modelo de Ranking ML
     def apply_ranker(r):
         features = extract_features_from_stac(r, depth)
