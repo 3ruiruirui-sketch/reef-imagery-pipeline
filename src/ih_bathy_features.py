@@ -382,9 +382,12 @@ class BathyFeatureEngine:
         slope_proxy = self._slope_proxy(features, lon, lat)
 
         # Contour density: total line length (m) / AOI area (km²)
-        aoi_km2 = (buffer_m * 2 / 1000) ** 2
-        total_length = sum(f.get("shape_leng", 0.0) for f in features)
-        density_proxy = total_length / aoi_km2 if aoi_km2 > 0 else 0.0
+        M_PER_DEG = 111_320.0
+        total_length_m = sum(
+            f.get("shape_leng", 0.0) * M_PER_DEG for f in features
+        )
+        aoi_m2 = (buffer_m * 2) ** 2
+        density_proxy = total_length_m / aoi_m2 if aoi_m2 > 0 else 0.0
 
         return {
             "nearest_isobath_distance_m": round(float(nearest_dist), 1),
@@ -472,7 +475,10 @@ class BathyFeatureEngine:
                 if feat["depth"] != float(target_depth):
                     continue
                 for node in feat["coords"]:
-                    nx, ny = transformer.transform(node[0], node[1])
+                    try:
+                        nx, ny = transformer.transform(node[0], node[1])
+                    except Exception:
+                        continue
                     d = float(np.hypot(px - nx, py - ny))
                     if d < min_d:
                         min_d = d
