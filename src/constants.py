@@ -41,6 +41,8 @@ STUMPF_N = 1000.0           # Log scaling factor
 
 # Literature m1 for Stumpf n=1000 in clear oligotrophic waters
 # Range validated against Dierssen et al. 2003 and regional studies
+# Distinct from STUMPF_M1_DEFAULT: used as a physically-grounded fixed slope
+# in single-isobath offset calibration, not as a fallback default.
 STUMPF_M1_LITERATURE = 20.0
 
 # =============================================================================

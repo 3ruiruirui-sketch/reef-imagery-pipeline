@@ -544,12 +544,23 @@ class BathyFeatureEngine:
 
     @staticmethod
     def _slope_proxy(features: list[dict], lon: float, lat: float) -> float:
-        """Proxy for local bathymetric slope: std of depths among nearby contours."""
-        # Gather depths of all contours within ~2km of the point
+        """Proxy for local bathymetric slope: std of depths among nearby contours.
+
+        Samples vertices at a uniform stride across the full polyline (up to
+        MAX_SAMPLE vertices) so that long contours are not mis-classified by
+        checking only the first few coordinates.
+        """
+        MAX_SAMPLE = 20  # max vertices to check per polyline
         nearby_depths = []
         for feat in features:
-            # Check if any vertex is within ~2km (rough)
-            for node in feat["coords"][:5]:  # sample first 5 vertices
+            coords = feat["coords"]
+            n = len(coords)
+            if n == 0:
+                continue
+            # Uniform stride: always includes first and last vertex
+            stride = max(1, n // MAX_SAMPLE)
+            sampled = coords[::stride]
+            for node in sampled:
                 d = float(np.hypot((node[0] - lon) * M_PER_DEG * np.cos(np.radians(lat)),
                                    (node[1] - lat) * M_PER_DEG))
                 if d < 2000:

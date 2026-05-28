@@ -35,7 +35,9 @@ import io
 import json
 import logging
 import os
+import shutil
 import sys
+import tempfile
 import zipfile
 from datetime import datetime
 
@@ -47,7 +49,6 @@ from rasterio.features import shapes as rasterio_shapes
 from rasterio.transform import from_bounds, Affine
 from rasterio.warp import transform_bounds, reproject, Resampling
 from scipy.ndimage import (
-    generic_filter,
     uniform_filter,
     label as ndimage_label,
 )
@@ -65,6 +66,36 @@ try:
     HAS_PYPROJ = True
 except ImportError:
     HAS_PYPROJ = False
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _safe_write_tif(out_path: str, profile: dict, arr) -> None:
+    """Write a numpy array to a GeoTIFF safely.
+
+    On virtiofs / FUSE mounts GDAL cannot unlink existing files, so we write
+    to a temp file in the system temp dir then copy the bytes over the existing
+    path using shutil.copy2 (which only needs write permission, not unlink).
+    """
+    if os.path.exists(out_path):
+        tmp_fd, tmp_path = tempfile.mkstemp(
+            suffix=".tif", dir=tempfile.gettempdir()
+        )
+        try:
+            os.close(tmp_fd)  # close early so rasterio can open it
+            with rasterio.open(tmp_path, "w", **profile) as dst:
+                dst.write(arr)
+            shutil.copy2(tmp_path, out_path)
+        finally:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+    else:
+        with rasterio.open(out_path, "w", **profile) as dst:
+            dst.write(arr)
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -296,8 +327,7 @@ def _nc_to_geotiff(nc_path: str, out_path: str, varname: str = "elevation") -> b
                 "compress":  "lzw",
                 "nodata":    np.nan,
             }
-            with rasterio.open(out_path, "w", **profile) as dst:
-                dst.write(data, 1)
+            _safe_write_tif(out_path, profile, data[np.newaxis, ...] if data.ndim == 2 else data)
         return True
     except Exception as exc:
         log.warning("   NC→GeoTIFF conversion failed: %s", exc)
@@ -492,8 +522,7 @@ def compute_s2_depth_inversion(
         depth = np.where((depth > 0) | (depth < -60), np.nan, depth)
 
         profile.update(dtype=rasterio.float32, count=1, compress="lzw", nodata=np.nan)
-        with rasterio.open(out_path, "w", **profile) as dst:
-            dst.write(depth.astype(np.float32), 1)
+        _safe_write_tif(out_path, profile, depth.astype(np.float32)[np.newaxis, ...])
 
         valid_pct = 100.0 * np.sum(np.isfinite(depth)) / depth.size
         d_med = float(np.nanmedian(depth))
@@ -583,8 +612,7 @@ def ascii_to_geotiff(
             "compress":  "lzw",
             "nodata":    np.nan,
         }
-        with rasterio.open(out_path, "w", **profile) as dst:
-            dst.write(grid, 1)
+        _safe_write_tif(out_path, profile, grid[np.newaxis, ...])
 
         log.info("   ✓ ASCII→GeoTIFF → %s (%dx%d px)", out_path, nx, ny)
         return out_path
@@ -641,8 +669,7 @@ def compute_bathy_indices(
 
         def _write(name: str, arr: np.ndarray) -> str:
             path = os.path.join(output_dir, f"{base}_{name}.tif")
-            with rasterio.open(path, "w", **profile) as dst:
-                dst.write(arr.astype(np.float32), 1)
+            _safe_write_tif(path, profile, arr.astype(np.float32)[np.newaxis, ...])
             return path
 
         # --- Slope ---
@@ -653,16 +680,22 @@ def compute_bathy_indices(
         results["slope_deg"] = _write("slope_deg", slope)
         log.info("   ✓ Slope → %s", results["slope_deg"])
 
-        # --- TRI (Terrain Ruggedness Index) ---
-        # TRI = sqrt(sum((neighbour - centre)²) / 8)
-        def _tri_kernel(x: np.ndarray) -> float:
-            centre = x[len(x) // 2]
-            diffs = x - centre
-            diffs[len(x) // 2] = 0.0
-            return float(np.sqrt(np.sum(diffs**2) / 8.0))
-
+        # --- TRI (Terrain Ruggedness Index) — fully vectorised ---
+        # TRI = sqrt( sum((neighbour - centre)²) / 8 )  [Riley 1999]
+        # Uses np.pad + slicing to replicate 'nearest' boundary mode,
+        # avoiding Python-level per-pixel callbacks (~262k calls on 512×512).
         dem_filled = np.where(np.isfinite(dem), dem, 0.0)
-        tri = generic_filter(dem_filled, _tri_kernel, size=3, mode="nearest")
+        _pad = np.pad(dem_filled, 1, mode="edge")
+        _centre = _pad[1:-1, 1:-1]
+        _sq_sum = np.zeros_like(dem_filled, dtype=np.float64)
+        for _dr in range(3):
+            for _dc in range(3):
+                if _dr == 1 and _dc == 1:
+                    continue  # skip centre
+                _nbr = _pad[_dr:_dr + dem_filled.shape[0],
+                            _dc:_dc + dem_filled.shape[1]]
+                _sq_sum += (_nbr - _centre) ** 2
+        tri = np.sqrt(_sq_sum / 8.0)
         tri = np.where(np.isfinite(dem), tri, np.nan)
         results["tri"] = _write("tri", tri)
         log.info("   ✓ TRI → %s", results["tri"])

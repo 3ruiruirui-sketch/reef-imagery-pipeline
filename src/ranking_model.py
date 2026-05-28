@@ -222,7 +222,8 @@ def predict_score(features_dict):
     # Fallback Heuristic
     clarity_score = max(0, 0.045 / max(kd, 0.001))
     edge_score = contrast
-    stability_score = np.log10(max(cleanliness, 1))
+    stability_score = min(1.0, np.log10(max(cleanliness, 1)) / 4.0)
+    # Normalise: log10(10000)=4 as practical ceiling for cleanliness
     semantic_score_proxy = snr / 100.0
     
     score = (

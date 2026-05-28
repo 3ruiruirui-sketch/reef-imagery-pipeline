@@ -34,6 +34,7 @@ sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 from src.utils import read_band, write_band, snell_sza, optical_path, beer_lambert_transmittance
 from src.reef_ml_predictor_acolite import run_predictor, stumpf_sdb
 from src import constants
+from rasterio.transform import from_origin
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -132,7 +133,7 @@ def test_nodata_handling():
             "count": 1,
             "dtype": "float32",
             "crs": "EPSG:32629",
-            "transform": [10, 0, 0, 0, -10, 1000],
+            "transform": from_origin(0, 1000, 10, 10),
             "nodata": nodata_val,
         }
         

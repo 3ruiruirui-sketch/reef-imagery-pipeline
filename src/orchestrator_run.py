@@ -226,6 +226,7 @@ def analyse_band(b02_path: Path, b03_path: Path, meta: dict, depth: float) -> di
         "percent_area_high_confidence": round(high_conf_pct, 1),
         "visibility_score": round(vis_score, 4),
         "cleanliness": 5000, # proxy default
+        "cloud_cover": meta["cloud"],
         # --- Bathymetry Features ---
         "nearest_isobath_distance_m": _b("nearest_isobath_distance_m"),
         "nearest_isobath_depth_m": _b("nearest_isobath_depth_m"),

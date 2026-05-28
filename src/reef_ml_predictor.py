@@ -15,26 +15,13 @@ from pystac_client import Client
 import planetary_computer as pc
 from datetime import datetime
 from src.ranking_model import predict_score
+from src.constants import KD490_TABLE
+from src.utils import get_kd490
 
 # Constantes Físicas (Banda B02 - Azul 490nm / Banda B03 - Verde 560nm)
 SAND_R_REF = 0.25     # Refletância da areia branca
 ROCK_R_REF = 0.05     # Refletância do recife escuro
 N_WATER = 1.333       # Índice de refração da água do mar
-
-def get_seasonal_kd490(month):
-    """
-    Estimação do coeficiente de atenuação difusa (Kd490) com base no histórico
-    sazonal da costa sul algarvia (substitui a falta de dados Secchi em tempo real).
-    Secchi = 1 / Kd490
-    """
-    if month in [9, 10]:
-        return 0.045  # Secchi ~22m (Águas oligotróficas de Outono)
-    elif month in [1, 2]:
-        return 0.055  # Secchi ~18m (Águas frias e limpas de Inverno)
-    elif month in [4, 5]:
-        return 0.200  # Secchi ~5m (Fitoplâncton/Upwelling de Primavera)
-    else:
-        return 0.080  # Secchi ~12m (Verão normal)
 
 def extract_features_from_stac(row, depth):
     cc = row['cloud_cover']
@@ -67,7 +54,7 @@ def extract_features_from_stac(row, depth):
     optical_path_length = depth / math.cos(math.radians(sza_water))
     
     # 3. Atenuação da Água (Kd_B02 = Kd490 sazonal para banda azul)
-    kd_b02 = get_seasonal_kd490(month)
+    kd_b02 = get_kd490(month, KD490_TABLE)
     
     # Transmitância da coluna de água (ida e volta)
     water_trans = math.exp(-2 * kd_b02 * optical_path_length)
