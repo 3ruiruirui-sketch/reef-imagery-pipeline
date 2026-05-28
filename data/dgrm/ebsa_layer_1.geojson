@@ -1,0 +1,16 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": 0,
+      "geometry": null,
+      "properties": {
+        "FID": 0,
+        "GLOBAL_ID": "NEA_7",
+        "NAME": "Desertas",
+        "Workshop": "North-East Atlantic"
+      }
+    }
+  ]
+}

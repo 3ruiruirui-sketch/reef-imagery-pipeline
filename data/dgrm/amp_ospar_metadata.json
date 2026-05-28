@@ -1,0 +1,523 @@
+{
+  "currentVersion": 11.5,
+  "cimVersion": "3.5.0",
+  "id": 0,
+  "name": "OSPA_MPA_2021_07_01",
+  "type": "Feature Layer",
+  "description": "",
+  "geometryType": "esriGeometryPolygon",
+  "sourceSpatialReference": {
+    "wkid": 102100,
+    "latestWkid": 3857,
+    "xyTolerance": 0.001,
+    "zTolerance": 0.001,
+    "mTolerance": 0.001,
+    "falseX": -20037700,
+    "falseY": -30241100,
+    "xyUnits": 148923141.92838538,
+    "falseZ": -100000,
+    "zUnits": 10000,
+    "falseM": -100000,
+    "mUnits": 10000
+  },
+  "spatialReference": {
+    "wkid": 4326,
+    "latestWkid": 4326,
+    "xyTolerance": 8.983152841195215e-09,
+    "zTolerance": 0.001,
+    "mTolerance": 0.001,
+    "falseX": -400,
+    "falseY": -400,
+    "xyUnits": 11258999068426.24,
+    "falseZ": -100000,
+    "zUnits": 10000,
+    "falseM": -100000,
+    "mUnits": 10000
+  },
+  "copyrightText": "",
+  "parentLayer": null,
+  "subLayers": [],
+  "minScale": 0,
+  "maxScale": 0,
+  "referenceScale": 0.0,
+  "drawingInfo": {
+    "renderer": {
+      "type": "uniqueValue",
+      "field1": "desig_prt",
+      "uniqueValueGroups": [
+        {
+          "heading": "",
+          "classes": [
+            {
+              "label": "Area marinha protegida OSPAR",
+              "description": "Area marinha protegida OSPAR",
+              "symbol": {
+                "type": "esriSFS",
+                "style": "esriSFSSolid",
+                "color": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "outline": {
+                  "type": "esriSLS",
+                  "style": "esriSLSSolid",
+                  "color": [
+                    255,
+                    170,
+                    0,
+                    255
+                  ],
+                  "width": 2
+                }
+              },
+              "values": [
+                [
+                  "Area marinha protegida OSPAR"
+                ]
+              ]
+            }
+          ]
+        }
+      ],
+      "uniqueValueInfos": [
+        {
+          "symbol": {
+            "type": "esriSFS",
+            "style": "esriSFSSolid",
+            "color": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "outline": {
+              "type": "esriSLS",
+              "style": "esriSLSSolid",
+              "color": [
+                255,
+                170,
+                0,
+                255
+              ],
+              "width": 2
+            }
+          },
+          "value": "Area marinha protegida OSPAR",
+          "label": "Area marinha protegida OSPAR"
+        }
+      ],
+      "fieldDelimiter": ",",
+      "authoringInfo": {
+        "colorRamp": {
+          "type": "multipart",
+          "colorRamps": [
+            {
+              "type": "algorithmic",
+              "algorithm": "esriHSVAlgorithm",
+              "fromColor": [
+                56,
+                168,
+                0,
+                255
+              ],
+              "toColor": [
+                255,
+                255,
+                0,
+                255
+              ]
+            },
+            {
+              "type": "algorithmic",
+              "algorithm": "esriHSVAlgorithm",
+              "fromColor": [
+                255,
+                255,
+                0,
+                255
+              ],
+              "toColor": [
+                255,
+                0,
+                0,
+                255
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "scaleSymbols": true,
+    "transparency": 0,
+    "labelingInfo": null
+  },
+  "defaultVisibility": true,
+  "extent": {
+    "xmin": -41.2203613286123,
+    "ymin": 35.839999999000035,
+    "xmax": 34.68891125305203,
+    "ymax": 81.02800619443046,
+    "spatialReference": {
+      "wkid": 4326,
+      "latestWkid": 4326,
+      "xyTolerance": 8.983152841195215e-09,
+      "zTolerance": 0.001,
+      "mTolerance": 0.001,
+      "falseX": -400,
+      "falseY": -400,
+      "xyUnits": 11258999068426.24,
+      "falseZ": -100000,
+      "zUnits": 10000,
+      "falseM": -100000,
+      "mUnits": 10000
+    }
+  },
+  "hasAttachments": false,
+  "htmlPopupType": "esriServerHTMLPopupTypeAsHTMLText",
+  "displayField": "name",
+  "typeIdField": null,
+  "subtypeFieldName": null,
+  "subtypeField": null,
+  "defaultSubtypeCode": null,
+  "fields": [
+    {
+      "name": "rep_m_area",
+      "type": "esriFieldTypeDouble",
+      "alias": "rep_m_area",
+      "domain": null
+    },
+    {
+      "name": "rep_area",
+      "type": "esriFieldTypeDouble",
+      "alias": "rep_area",
+      "domain": null
+    },
+    {
+      "name": "calc_area",
+      "type": "esriFieldTypeDouble",
+      "alias": "calc_area",
+      "domain": null
+    },
+    {
+      "name": "calc_m_are",
+      "type": "esriFieldTypeDouble",
+      "alias": "calc_m_are",
+      "domain": null
+    },
+    {
+      "name": "mrs_perm_s",
+      "type": "esriFieldTypeDouble",
+      "alias": "mrs_perm_s",
+      "domain": null
+    },
+    {
+      "name": "mrs_season",
+      "type": "esriFieldTypeDouble",
+      "alias": "mrs_season",
+      "domain": null
+    },
+    {
+      "name": "mrs_fullti",
+      "type": "esriFieldTypeDouble",
+      "alias": "mrs_fullti",
+      "domain": null
+    },
+    {
+      "name": "mrs_staff_",
+      "type": "esriFieldTypeDouble",
+      "alias": "mrs_staff_",
+      "domain": null
+    },
+    {
+      "name": "FID",
+      "type": "esriFieldTypeOID",
+      "alias": "FID",
+      "domain": null
+    },
+    {
+      "name": "Shape",
+      "type": "esriFieldTypeGeometry",
+      "alias": "Shape",
+      "domain": null
+    },
+    {
+      "name": "gid",
+      "type": "esriFieldTypeInteger",
+      "alias": "gid",
+      "domain": null
+    },
+    {
+      "name": "wdpaid",
+      "type": "esriFieldTypeInteger",
+      "alias": "wdpaid",
+      "domain": null
+    },
+    {
+      "name": "wdpa_pid",
+      "type": "esriFieldTypeInteger",
+      "alias": "wdpa_pid",
+      "domain": null
+    },
+    {
+      "name": "name",
+      "type": "esriFieldTypeString",
+      "alias": "name",
+      "length": 81,
+      "domain": null
+    },
+    {
+      "name": "orig_name",
+      "type": "esriFieldTypeString",
+      "alias": "orig_name",
+      "length": 81,
+      "domain": null
+    },
+    {
+      "name": "country",
+      "type": "esriFieldTypeString",
+      "alias": "country",
+      "length": 4,
+      "domain": null
+    },
+    {
+      "name": "name_desig",
+      "type": "esriFieldTypeString",
+      "alias": "name_desig",
+      "length": 122,
+      "domain": null
+    },
+    {
+      "name": "country_de",
+      "type": "esriFieldTypeString",
+      "alias": "country_de",
+      "length": 80,
+      "domain": null
+    },
+    {
+      "name": "desig",
+      "type": "esriFieldTypeString",
+      "alias": "desig",
+      "length": 80,
+      "domain": null
+    },
+    {
+      "name": "desig_eng",
+      "type": "esriFieldTypeString",
+      "alias": "desig_eng",
+      "length": 254,
+      "domain": null
+    },
+    {
+      "name": "desig_fra",
+      "type": "esriFieldTypeString",
+      "alias": "desig_fra",
+      "length": 254,
+      "domain": null
+    },
+    {
+      "name": "desig_esp",
+      "type": "esriFieldTypeString",
+      "alias": "desig_esp",
+      "length": 254,
+      "domain": null
+    },
+    {
+      "name": "desig_prt",
+      "type": "esriFieldTypeString",
+      "alias": "desig_prt",
+      "length": 254,
+      "domain": null
+    },
+    {
+      "name": "desig_type",
+      "type": "esriFieldTypeString",
+      "alias": "desig_type",
+      "length": 254,
+      "domain": null
+    },
+    {
+      "name": "iucn_cat",
+      "type": "esriFieldTypeString",
+      "alias": "iucn_cat",
+      "length": 20,
+      "domain": null
+    },
+    {
+      "name": "marine",
+      "type": "esriFieldTypeString",
+      "alias": "marine",
+      "length": 1,
+      "domain": null
+    },
+    {
+      "name": "status",
+      "type": "esriFieldTypeString",
+      "alias": "status",
+      "length": 80,
+      "domain": null
+    },
+    {
+      "name": "status_yr",
+      "type": "esriFieldTypeInteger",
+      "alias": "status_yr",
+      "domain": null
+    },
+    {
+      "name": "gnr_car_ma",
+      "type": "esriFieldTypeString",
+      "alias": "gnr_car_ma",
+      "length": 244,
+      "domain": null
+    },
+    {
+      "name": "gnr_car__1",
+      "type": "esriFieldTypeString",
+      "alias": "gnr_car__1",
+      "length": 165,
+      "domain": null
+    },
+    {
+      "name": "gov_organe",
+      "type": "esriFieldTypeInteger",
+      "alias": "gov_organe",
+      "domain": null
+    },
+    {
+      "name": "gov_nation",
+      "type": "esriFieldTypeInteger",
+      "alias": "gov_nation",
+      "domain": null
+    },
+    {
+      "name": "gov_local_",
+      "type": "esriFieldTypeInteger",
+      "alias": "gov_local_",
+      "domain": null
+    },
+    {
+      "name": "gov_intern",
+      "type": "esriFieldTypeInteger",
+      "alias": "gov_intern",
+      "domain": null
+    },
+    {
+      "name": "gov_nati_1",
+      "type": "esriFieldTypeString",
+      "alias": "gov_nati_1",
+      "length": 110,
+      "domain": null
+    },
+    {
+      "name": "gov_loca_1",
+      "type": "esriFieldTypeString",
+      "alias": "gov_loca_1",
+      "length": 129,
+      "domain": null
+    },
+    {
+      "name": "gov_inte_1",
+      "type": "esriFieldTypeString",
+      "alias": "gov_inte_1",
+      "length": 80,
+      "domain": null
+    },
+    {
+      "name": "mntr_progr",
+      "type": "esriFieldTypeInteger",
+      "alias": "mntr_progr",
+      "domain": null
+    },
+    {
+      "name": "mrs_avg_su",
+      "type": "esriFieldTypeInteger",
+      "alias": "mrs_avg_su",
+      "domain": null
+    },
+    {
+      "name": "mrs_boats_",
+      "type": "esriFieldTypeInteger",
+      "alias": "mrs_boats_",
+      "domain": null
+    }
+  ],
+  "geometryField": {
+    "name": "Shape",
+    "type": "esriFieldTypeGeometry",
+    "alias": "Shape"
+  },
+  "indexes": [
+    {
+      "name": "Shape",
+      "fields": "Shape",
+      "isAscending": true,
+      "isUnique": false,
+      "description": ""
+    }
+  ],
+  "subtypes": [],
+  "relationships": [],
+  "canModifyLayer": true,
+  "canScaleSymbols": false,
+  "hasLabels": false,
+  "capabilities": "Map,Query,Data",
+  "maxRecordCount": 1000,
+  "maxSelectionCount": 2000,
+  "supportsStatistics": false,
+  "supportsExceedsLimitStatistics": false,
+  "supportsAdvancedQueries": false,
+  "supportedQueryFormats": "JSON, geoJSON, PBF",
+  "isDataVersioned": false,
+  "ownershipBasedAccessControlForFeatures": {
+    "allowOthersToQuery": true
+  },
+  "useStandardizedQueries": true,
+  "supportedSpatialRelationships": [
+    "esriSpatialRelIntersects",
+    "esriSpatialRelContains",
+    "esriSpatialRelCrosses",
+    "esriSpatialRelEnvelopeIntersects",
+    "esriSpatialRelIndexIntersects",
+    "esriSpatialRelOverlaps",
+    "esriSpatialRelTouches",
+    "esriSpatialRelWithin",
+    "esriSpatialRelRelation"
+  ],
+  "advancedQueryCapabilities": {
+    "useStandardizedQueries": true,
+    "supportsStatistics": false,
+    "supportsPercentileStatistics": false,
+    "supportsHavingClause": false,
+    "supportsOrderBy": false,
+    "supportsDistinct": false,
+    "supportsCountDistinct": false,
+    "supportsAdvancedQueryRelated": true,
+    "supportsQueryRelatedPagination": true,
+    "supportsPagination": false,
+    "supportsLod": false,
+    "supportsQueryWithLodSR": false,
+    "supportsTrueCurve": true,
+    "supportsQueryWithDatumTransformation": true,
+    "supportsReturningQueryExtent": true,
+    "supportsQueryWithDistance": true,
+    "supportsSqlExpression": false,
+    "supportsTimeRelation": true,
+    "supportsSqlFormat": false,
+    "supportsQueryAnalytic": false,
+    "supportsCurrentUserQueries": true
+  },
+  "supportsDatumTransformation": true,
+  "dateFieldsTimeReference": null,
+  "preferredTimeReference": null,
+  "datesInUnknownTimezone": false,
+  "hasMetadata": false,
+  "isDataArchived": false,
+  "archivingInfo": {
+    "supportsQueryWithHistoricMoment": false,
+    "startArchivingMoment": -1
+  },
+  "supportsCoordinatesQuantization": true,
+  "supportsDynamicLegends": true,
+  "serviceItemId": "8bf4dfd92a2343a38a248b429c503b0f"
+}

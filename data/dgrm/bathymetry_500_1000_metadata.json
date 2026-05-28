@@ -1,0 +1,171 @@
+{
+  "currentVersion": 11.5,
+  "cimVersion": "3.5.0",
+  "serviceDescription": ".",
+  "mapName": "Layers",
+  "description": "",
+  "copyrightText": ".",
+  "supportsDynamicLayers": true,
+  "layers": [
+    {
+      "id": 0,
+      "name": "Arrasto batim 1000 500",
+      "parentLayerId": -1,
+      "defaultVisibility": true,
+      "subLayerIds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "minScale": 0,
+      "maxScale": 0,
+      "type": "Group Layer",
+      "supportsDynamicLegends": false
+    },
+    {
+      "id": 1,
+      "name": "batim_500_FeatureToPolygon",
+      "parentLayerId": 0,
+      "defaultVisibility": true,
+      "subLayerIds": null,
+      "minScale": 0,
+      "maxScale": 0,
+      "type": "Feature Layer",
+      "geometryType": "esriGeometryPolygon",
+      "supportsDynamicLegends": true
+    },
+    {
+      "id": 2,
+      "name": "batim_1000_FeatureToPolygon",
+      "parentLayerId": 0,
+      "defaultVisibility": true,
+      "subLayerIds": null,
+      "minScale": 0,
+      "maxScale": 0,
+      "type": "Feature Layer",
+      "geometryType": "esriGeometryPolygon",
+      "supportsDynamicLegends": true
+    },
+    {
+      "id": 3,
+      "name": "batim_1000",
+      "parentLayerId": 0,
+      "defaultVisibility": true,
+      "subLayerIds": null,
+      "minScale": 0,
+      "maxScale": 0,
+      "type": "Feature Layer",
+      "geometryType": "esriGeometryPolyline",
+      "supportsDynamicLegends": true
+    },
+    {
+      "id": 4,
+      "name": "batim_500",
+      "parentLayerId": 0,
+      "defaultVisibility": true,
+      "subLayerIds": null,
+      "minScale": 0,
+      "maxScale": 0,
+      "type": "Feature Layer",
+      "geometryType": "esriGeometryPolyline",
+      "supportsDynamicLegends": true
+    }
+  ],
+  "tables": [],
+  "spatialReference": {
+    "wkid": 3763,
+    "latestWkid": 3763,
+    "xyTolerance": 0.001,
+    "zTolerance": 0.001,
+    "mTolerance": 0.001,
+    "falseX": -5623200,
+    "falseY": -14394800,
+    "xyUnits": 450265407.00157917,
+    "falseZ": -100000,
+    "zUnits": 10000,
+    "falseM": -100000,
+    "mUnits": 10000
+  },
+  "singleFusedMapCache": false,
+  "initialExtent": {
+    "xmin": -863412.2459187086,
+    "ymin": -265403.44355617487,
+    "xmax": 412825.7972876209,
+    "ymax": 258157.8012775681,
+    "spatialReference": {
+      "wkid": 3763,
+      "latestWkid": 3763,
+      "xyTolerance": 0.001,
+      "zTolerance": 0.001,
+      "mTolerance": 0.001,
+      "falseX": -5623200,
+      "falseY": -14394800,
+      "xyUnits": 450265407.00157917,
+      "falseZ": -100000,
+      "zUnits": 10000,
+      "falseM": -100000,
+      "mUnits": 10000
+    }
+  },
+  "fullExtent": {
+    "xmin": -524287.20150245604,
+    "ymin": -531727.0204029834,
+    "xmax": 81911.22600000002,
+    "ymax": 266568.63631347404,
+    "mmin": null,
+    "mmax": null,
+    "spatialReference": {
+      "wkid": 3763,
+      "latestWkid": 3763,
+      "xyTolerance": 0.001,
+      "zTolerance": 0.001,
+      "mTolerance": 0.001,
+      "falseX": -5623200,
+      "falseY": -14394800,
+      "xyUnits": 450265407.00157917,
+      "falseZ": -100000,
+      "zUnits": 10000,
+      "falseM": -100000,
+      "mUnits": 10000
+    }
+  },
+  "datesInUnknownTimezone": false,
+  "minScale": 0,
+  "maxScale": 0,
+  "units": "esriMeters",
+  "supportedImageFormatTypes": "PNG32,PNG24,PNG,JPG,DIB,TIFF,EMF,PS,PDF,GIF,SVG,SVGZ,BMP",
+  "documentInfo": {
+    "Title": "",
+    "Author": "",
+    "Comments": ".",
+    "Subject": ".",
+    "Category": "",
+    "Version": "10.1",
+    "AntialiasingMode": "None",
+    "TextAntialiasingMode": "Force",
+    "Keywords": "."
+  },
+  "supportsQueryDomains": true,
+  "capabilities": "Map,Query,Data",
+  "supportedQueryFormats": "JSON, geoJSON, PBF",
+  "exportTilesAllowed": false,
+  "referenceScale": 0.0,
+  "supportsDatumTransformation": true,
+  "archivingInfo": {
+    "supportsHistoricMoment": false
+  },
+  "supportsClipping": true,
+  "supportsSpatialFilter": true,
+  "supportsTimeRelation": true,
+  "supportsQueryDataElements": true,
+  "mapUnits": {
+    "uwkid": 9001
+  },
+  "maxSelectionCount": 2000,
+  "maxRecordCount": 1000,
+  "maxImageHeight": 4096,
+  "maxImageWidth": 4096,
+  "supportedExtensions": "WMSServer",
+  "serviceItemId": "d3dcb239c13b405382aedceeb3aae226"
+}
