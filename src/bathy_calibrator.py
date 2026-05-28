@@ -31,6 +31,16 @@ from typing import Optional
 
 import numpy as np
 import requests
+from scipy.spatial import cKDTree
+
+from src.constants import (
+    BENTHIC_ISOBATHS,
+    CONTEXT_ISOBATHS,
+    STUMPF_M0_DEFAULT,
+    STUMPF_M1_DEFAULT,
+    STUMPF_M1_LITERATURE,
+    BUF_PIX,
+)
 
 log = logging.getLogger(__name__)
 
@@ -40,15 +50,6 @@ _IH_BASE = (
     "Dados_entidades_externas/Batimetrica_IH/MapServer/0"
 )
 _QUERY_URL = f"{_IH_BASE}/query"
-
-# Isobaths relevant for benthic reef analysis (metres)
-# > 30m: optically too deep for Sentinel-2 in Algarve waters (Kd≈0.045)
-BENTHIC_ISOBATHS = [10, 20, 30]
-CONTEXT_ISOBATHS = [50, 100]          # for zone classification only
-
-# Stumpf defaults — these get overridden when calibration succeeds
-STUMPF_M0_DEFAULT = -16.0
-STUMPF_M1_DEFAULT = 20.0
 
 
 # ── 1. Data fetching ───────────────────────────────────────────────────────────
@@ -64,7 +65,7 @@ def fetch_isobaths_for_bbox(
     Returns a list of feature dicts with keys:
         'depth'   (float)      — isobath depth in metres
         'coords'  (list)       — list of [lon, lat] coordinate pairs
-        'length_m' (float)     — polyline length in degrees (Shape_Leng)
+        'length_deg' (float) — polyline length in degrees (Shape_Leng)
 
     Raises RuntimeError if the service is unreachable.
     """
@@ -102,7 +103,7 @@ def fetch_isobaths_for_bbox(
             features.append({
                 "depth":    depth,
                 "coords":   path,          # list of [lon, lat]
-                "length_m": length,
+                "length_deg": length,
             })
 
     log.info("IH isobaths fetched: %d polylines for bbox (%.3f,%.3f)→(%.3f,%.3f)",
@@ -121,6 +122,23 @@ def _haversine_m(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
     return R * 2 * np.arcsin(np.sqrt(a))
 
 
+def _build_isobath_tree(
+    features: list[dict], target_depth: float
+) -> tuple["cKDTree | None", "np.ndarray | None"]:
+    """
+    Build a cKDTree over all [lon, lat] vertices of the given isobath depth.
+    Returns (None, None) if no matching features found.
+    """
+    coords = []
+    for feat in features:
+        if feat["depth"] == target_depth:
+            coords.extend(feat["coords"])   # each coord is [lon, lat]
+    if not coords:
+        return None, None
+    arr = np.array(coords, dtype=np.float64)  # shape (N, 2)
+    return cKDTree(arr), arr
+
+
 def min_distance_to_isobath_m(
     lon: float, lat: float,
     features: list[dict],
@@ -129,22 +147,16 @@ def min_distance_to_isobath_m(
     """
     Minimum distance (metres) from point (lon, lat) to the nearest vertex
     of any isobath segment with the given target_depth.
+    Uses a cKDTree for O(log n) lookup instead of an O(n) vertex scan.
     Returns np.inf if no matching isobath is found.
     """
-    min_d = np.inf
-    for feat in features:
-        if feat["depth"] != target_depth:
-            continue
-        for node in feat["coords"]:
-            d = _haversine_m(lon, lat, node[0], node[1])
-            if d < min_d:
-                min_d = d
-    return float(min_d)
-
-# Literature m1 for Stumpf n=1000 in clear oligotrophic waters (Algarve Kd≈0.045)
-# Range validated against Dierssen et al. 2003 and regional studies
-STUMPF_M1_LITERATURE = 20.0   # conservative start; offset calibration adjusts m0
-BUF_PIX = 3                   # ±3 pixel buffer around isobath vertices (±30m at S2 10m)
+    tree, coords = _build_isobath_tree(features, target_depth)
+    if tree is None:
+        return float(np.inf)
+    # Find nearest vertex in degree-space, then compute haversine for accuracy
+    _dist_deg, idx = tree.query([lon, lat])
+    nearest = coords[idx]
+    return _haversine_m(lon, lat, float(nearest[0]), float(nearest[1]))
 
 
 def _stumpf_ratio(b02v: float, b03v: float, n: float = 1000.0) -> float:
