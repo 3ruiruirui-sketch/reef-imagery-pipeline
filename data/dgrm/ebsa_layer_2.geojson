@@ -1,0 +1,16 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": 0,
+      "geometry": null,
+      "properties": {
+        "FID": 0,
+        "GLOBAL_ID": "NEA_6",
+        "NAME": "Madeira - Tore",
+        "Workshop": "North-East Atlantic"
+      }
+    }
+  ]
+}
