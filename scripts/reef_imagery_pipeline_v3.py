@@ -54,6 +54,7 @@ except ImportError:
 
 # IH/DGRM bathymetry features (new — for ML-enhanced predictions)
 try:
+    from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
     from ih_bathy_features import BathyFeatureEngine, get_bathy_features_for_summary
     HAS_IH_BATHY = True
