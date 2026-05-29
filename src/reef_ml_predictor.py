@@ -84,12 +84,17 @@ def extract_features_from_stac(row, depth):
  
 def predict_top_5_days(lat, lon, depth, years_back=4):
     # Drift monitoring: reset at batch start (shadow mode, best-effort)
+    _has_drift = False
     try:
         from src.drift_monitor import reset as drift_reset, log_summary as drift_log_summary
         from src.drift_export import export_to_file as drift_export_file
         drift_reset()
         _has_drift = True
     except ImportError:
+        _has_drift = False
+    except Exception:
+        # drift_reset() threw something other than ImportError (e.g. RuntimeError).
+        # Keep _has_drift = False — shadow mode must never block inference.
         _has_drift = False
 
     print(f"🔍 A pesquisar histórico STAC para [{lat:.4f}, {lon:.4f}] com Modelação Físico-Ótica a {depth:.1f} metros...")

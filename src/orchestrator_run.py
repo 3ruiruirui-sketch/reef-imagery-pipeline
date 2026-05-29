@@ -110,6 +110,18 @@ def gdal_extract_b02(boa_tif: Path, out_b02: Path):
     log.info("Extracted B02 → %s", out_b02)
     return out_b02
 
+
+def gdal_extract_b03(boa_tif: Path, out_b03: Path):
+    """Extract band 3 from a multi-band GeoTIFF using rasterio (no gdal binary needed)."""
+    with rasterio.open(boa_tif) as src:
+        profile = src.profile.copy()
+        profile.update(count=1)
+        b03 = src.read(3)   # rasterio 1-based: band 3 = B03 in Sentinel-2 L2A BOA stack
+    with rasterio.open(out_b03, 'w', **profile) as dst:
+        dst.write(b03, 1)
+    log.info("Extracted B03 → %s", out_b03)
+    return out_b03
+
 # ── Physics core ─────────────────────────────────────────────────────────────
 def snell_optical_path(sza_air_deg: float, depth_m: float) -> float:
     sza_water = math.degrees(math.asin(math.sin(math.radians(sza_air_deg)) / N_WATER))
@@ -320,11 +332,13 @@ def main(depth: float = 16.0):
     log.info("ACOLITE: %s | SNAP/gpt: %s", "YES" if use_acolite else "NO (fallback L2A)", "YES" if snap_gpt_available() else "NO")
 
     if use_acolite:
+        # ACOLITE produces a multi-band stack; extract both B02 and B03
         boa_a = run_acolite(IMAGE_A_B02.parent, OUTPUT_DIR / "acolite_A")
         boa_b = run_acolite(IMAGE_B_B02.parent, OUTPUT_DIR / "acolite_B")
         b02_a = gdal_extract_b02(boa_a, OUTPUT_DIR / "BOA_B02_A_raw.tif")
         b02_b = gdal_extract_b02(boa_b, OUTPUT_DIR / "BOA_B02_B_raw.tif")
-        b03_a = b03_b = None   # ACOLITE stack will contain B03 too
+        b03_a = gdal_extract_b03(boa_a, OUTPUT_DIR / "BOA_B03_A_raw.tif")
+        b03_b = gdal_extract_b03(boa_b, OUTPUT_DIR / "BOA_B03_B_raw.tif")
     else:
         log.info("Using L2A BOA TIFFs directly (ACOLITE not installed)")
         b02_a, b03_a = IMAGE_A_B02, IMAGE_A_B03

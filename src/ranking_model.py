@@ -5,7 +5,10 @@ import pickle
 import logging
 import numpy as np
 
-from src.drift_monitor import observe as _observe_drift
+try:
+    from src.drift_monitor import observe as _observe_drift
+except ImportError:
+    _observe_drift = None  # drift_monitor is optional; inference remains functional
 
 log = logging.getLogger(__name__)
 
@@ -210,7 +213,8 @@ def predict_score(features_dict):
             feature_df = pd.DataFrame([vector], columns=_FEATURE_SCHEMA)
             score = float(_RANKER_MODEL.predict(feature_df)[0])
             
-            _observe_drift(standard_features, score, _FEATURE_SCHEMA)
+            if _observe_drift is not None:
+                _observe_drift(standard_features, score, _FEATURE_SCHEMA)
             return {
                 "score": score,
                 "mode": "ML",
@@ -235,8 +239,9 @@ def predict_score(features_dict):
     
     if cleanliness < 5000:
         score *= 0.1
-    
-    _observe_drift(standard_features, float(score), _FEATURE_SCHEMA)
+
+    if _observe_drift is not None:
+        _observe_drift(standard_features, float(score), _FEATURE_SCHEMA)
     return {
         "score": float(score),
         "mode": "Fallback",

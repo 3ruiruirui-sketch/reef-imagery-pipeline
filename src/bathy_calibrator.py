@@ -139,18 +139,53 @@ def _build_isobath_tree(
     return cKDTree(arr), arr
 
 
+def _build_all_isobath_trees(
+    features: list[dict], depths: list[float]
+) -> dict[float, tuple]:
+    """
+    Build one cKDTree per depth, sharing a single pass over features.
+    Call this once in classify_benthic_zone instead of building trees individually.
+    Returns dict: depth → (tree, coords) pairs.
+    """
+    # Partition coords by depth in one pass
+    by_depth: dict[float, list] = {}
+    for feat in features:
+        d = feat["depth"]
+        if d in by_depth:
+            by_depth[d].extend(feat["coords"])
+        else:
+            by_depth[d] = list(feat["coords"])
+
+    trees = {}
+    for depth in depths:
+        coords = by_depth.get(depth, [])
+        if not coords:
+            trees[depth] = (None, None)
+        else:
+            arr = np.array(coords, dtype=np.float64)
+            trees[depth] = (cKDTree(arr), arr)
+    return trees
+
+
 def min_distance_to_isobath_m(
     lon: float, lat: float,
     features: list[dict],
-    target_depth: float
+    target_depth: float,
+    _tree: tuple | None = None,
 ) -> float:
     """
     Minimum distance (metres) from point (lon, lat) to the nearest vertex
     of any isobath segment with the given target_depth.
     Uses a cKDTree for O(log n) lookup instead of an O(n) vertex scan.
+    Pass a pre-built tree via _tree to avoid rebuilding (useful when calling
+    this function multiple times for different depths in the same AOI).
     Returns np.inf if no matching isobath is found.
     """
-    tree, coords = _build_isobath_tree(features, target_depth)
+    if _tree is not None:
+        tree, coords = _tree
+    else:
+        tree, coords = _build_isobath_tree(features, target_depth)
+
     if tree is None:
         return float(np.inf)
     # Find nearest vertex in degree-space, then compute haversine for accuracy
@@ -326,10 +361,12 @@ def classify_benthic_zone(
         optically_viable : True if within useful S2 depth window (<30m)
         note         : human-readable description
     """
-    d10 = min_distance_to_isobath_m(lon, lat, features, 10.0)
-    d20 = min_distance_to_isobath_m(lon, lat, features, 20.0)
-    d30 = min_distance_to_isobath_m(lon, lat, features, 30.0)
-    d50 = min_distance_to_isobath_m(lon, lat, features, 50.0)
+    # Build all 4 cKDTrees in one pass — O(n) total instead of 4×O(n)
+    all_trees = _build_all_isobath_trees(features, [10.0, 20.0, 30.0, 50.0])
+    d10 = min_distance_to_isobath_m(lon, lat, features, 10.0, _tree=all_trees.get(10.0))
+    d20 = min_distance_to_isobath_m(lon, lat, features, 20.0, _tree=all_trees.get(20.0))
+    d30 = min_distance_to_isobath_m(lon, lat, features, 30.0, _tree=all_trees.get(30.0))
+    d50 = min_distance_to_isobath_m(lon, lat, features, 50.0, _tree=all_trees.get(50.0))
 
     def fmt(d):
         return round(d, 1) if not np.isinf(d) else None
