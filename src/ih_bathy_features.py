@@ -381,12 +381,16 @@ class BathyFeatureEngine:
         # Slope proxy: std of depth values among nearby isobaths
         slope_proxy = self._slope_proxy(features, lon, lat)
 
-        # Contour density: total line length (m) / AOI area (km²)
+        # Contour density: total line length (m) / AOI area (m²)
+        # NOTE: shape_leng is in DEGREES (EPSG:4326 / ArcGIS source CRS).
+        # Multiplying by M_PER_DEG gives an APPROXIMATION that is only exact for
+        # purely latitudinal segments; oblique segments are underestimated.
+        # For precise length computation, reproject to a metric CRS (e.g. EPSG:3763).
         M_PER_DEG = 111_320.0
         total_length_m = sum(
             f.get("shape_leng", 0.0) * M_PER_DEG for f in features
         )
-        aoi_m2 = (buffer_m * 2) ** 2
+        aoi_m2 = (buffer_m * 2) ** 2          # AOI area in m² (square window)
         density_proxy = total_length_m / aoi_m2 if aoi_m2 > 0 else 0.0
 
         return {

@@ -36,14 +36,24 @@ DEPTH_TARGET = DEFAULT_DEPTH_TARGET  # Alias for backward compatibility
 # Literature values from regional studies
 # Stumpf formula: depth = m1 * ln(n*B02) / ln(n*B03) + m0
 STUMPF_M0_DEFAULT = -16.0   # Intercept
-STUMPF_M1_DEFAULT = 20.0    # Slope (literature value for clear oligotrophic)
+STUMPF_M1_DEFAULT = 20.0    # Slope — used as the default in Stumpf depth calculation
 STUMPF_N = 1000.0           # Log scaling factor
 
 # Literature m1 for Stumpf n=1000 in clear oligotrophic waters
-# Range validated against Dierssen et al. 2003 and regional studies
-# Distinct from STUMPF_M1_DEFAULT: used as a physically-grounded fixed slope
-# in single-isobath offset calibration, not as a fallback default.
+# Range validated against Dierssen et al. 2003 and regional studies.
+# STUMPF_M1_LITERATURE is a physically-grounded fixed slope used in
+# single-isobath offset calibration (where we solve analytically for m0
+# rather than regression). STUMPF_M1_DEFAULT is the interactive/default value.
 STUMPF_M1_LITERATURE = 20.0
+
+# Both constants are currently 20.0. This assertion fires if they diverge,
+# which should only happen after deliberate recalibration — update the
+# calibration logic accordingly if that occurs.
+assert STUMPF_M1_DEFAULT == STUMPF_M1_LITERATURE, (
+    "STUMPF_M1_DEFAULT and STUMPF_M1_LITERATURE should be equal. "
+    "If intentionally diverging (e.g. after local calibration), update "
+    "the calibration logic that depends on each value accordingly."
+)
 
 # =============================================================================
 # ATTENUATION COEFFICIENTS (Kd490)
