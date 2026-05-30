@@ -247,9 +247,9 @@ class TestAnalyseBand:
         assert abs(result["kd490_seasonal"] - 0.045) < 1e-6
 
     def test_april_kd_used(self):
-        """April (month=4) should use Kd≈0.200 per KD490_TABLE."""
+        """April (month=4) should use Kd≈0.065 per KD490_TABLE."""
         result = self._run(month=4)
-        assert abs(result["kd490_seasonal"] - 0.200) < 1e-6
+        assert abs(result["kd490_seasonal"] - 0.065) < 1e-6
 
     def test_cleanliness_default_present(self):
         """cleanliness must always be present (default 5000 sentinel)."""

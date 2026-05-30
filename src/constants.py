@@ -63,14 +63,19 @@ assert STUMPF_M1_DEFAULT == STUMPF_M1_LITERATURE, (
 # Based on historical in-situ measurements and satellite climatology
 # Format: {month: Kd490_value}
 KD490_TABLE = {
-    1: 0.055,   # January: winter mixing, higher turbidity
-    2: 0.055,   # February: winter mixing
-    4: 0.200,   # April: spring bloom onset
-    5: 0.200,   # May: peak spring bloom
-    9: 0.045,   # September: oligotrophic summer, clearest waters
-    10: 0.045,  # October: autumn transition, still clear
+    1: 0.055,   # January — winter, moderate clarity
+    2: 0.055,   # February — winter, moderate clarity
+    3: 0.060,   # March — spring transition, moderate
+    4: 0.065,   # April — spring, slightly turbid
+    5: 0.070,   # May — spring bloom, more turbid
+    6: 0.060,   # June — early summer, improving
+    7: 0.045,   # July — summer, best clarity
+    8: 0.042,   # August — summer, peak clarity
+    9: 0.045,   # September — summer, excellent clarity
+    10: 0.050,  # October — autumn, good clarity
+    11: 0.055,  # November — autumn, moderate
+    12: 0.055,  # December — winter, moderate
 }
-# Default for months not in table (June-Aug, Nov-Dec): 0.080 m^-1
 KD490_DEFAULT = 0.080
 
 # =============================================================================
@@ -81,12 +86,18 @@ KD490_DEFAULT = 0.080
 # Higher values = less penalty (better conditions)
 # Lower values = more penalty (more sun glint risk)
 GLINT_PENALTY = {
-    1: 0.60,   # January: low sun angle, moderate glint
-    2: 0.70,   # February: increasing sun angle
-    4: 0.85,   # April: spring
-    5: 0.90,   # May: late spring
-    9: 0.95,   # September: high sun but stable seas
-    10: 0.60,  # October: lower angle but variable weather
+    1: 0.60,   # January — low sun, high glint risk
+    2: 0.65,   # February
+    3: 0.70,   # March — equinox, moderate glint
+    4: 0.80,   # April
+    5: 0.85,   # May — sun getting higher
+    6: 0.90,   # June — solstice, sun highest
+    7: 0.95,   # July — peak summer, lowest glint
+    8: 0.95,   # August — peak summer
+    9: 0.90,   # September — still good
+    10: 0.75,  # October
+    11: 0.65,  # November
+    12: 0.60,  # December — solstice, high glint risk
 }
 # Default penalty for months not in table
 GLINT_PENALTY_DEFAULT = 0.80

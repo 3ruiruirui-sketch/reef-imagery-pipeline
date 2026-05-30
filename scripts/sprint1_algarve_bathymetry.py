@@ -388,7 +388,7 @@ print(f"\n[6] Sanity check at known dive sites:")
 
 SITES = {
     "Pedra do Alto":     {"lat": 37.05895, "lon": -8.20673, "expected": 16},
-    "Pedra Sta Eulália": {"lat": 37.04540, "lon": -8.17490, "expected": 12},
+    "Pedra Sta Eulália": {"lat": 37.068978, "lon": -8.210328, "expected": 12},
 }
 
 with rasterio.open(OUT_TIF) as src:

@@ -1,0 +1,40 @@
+{
+  "timestamp": "2026-05-29T00:50:38.387407",
+  "bathy_source": "outputs/santa_eulalia_12m/bathy_emodnet_20260529.tif",
+  "band_dir": "outputs/santa_eulalia_multiband",
+  "target_depth_m": 12,
+  "stumpf_calibrated": {
+    "m0": 2623.1912,
+    "m1": -2592.3711,
+    "rmse_emodnet": 3.1047
+  },
+  "lyzenga_calibrated": {
+    "intercept": -15.5657,
+    "coefficients": {
+      "B01": -100.2927,
+      "B02": -24.374,
+      "B03": -72.6134,
+      "B04": -36.5693,
+      "B05": 151.8397,
+      "B8A": -7.0829
+    },
+    "rmse_emodnet": 0.6826
+  },
+  "pca_calibrated": {
+    "explained_variance": [
+      0.9981,
+      0.0008
+    ],
+    "slope": -29.0997,
+    "intercept": -19.683,
+    "rmse_emodnet": 0.8027
+  },
+  "best_method": "lyzenga",
+  "best_rmse": 0.6826,
+  "reef_depth_range": [
+    -18.0,
+    -6.0
+  ],
+  "n_calibration_points": 10000,
+  "n_reef_candidates": 1503
+}

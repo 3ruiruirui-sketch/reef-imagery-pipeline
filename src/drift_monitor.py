@@ -22,10 +22,12 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 FEATURE_BASELINES = {
-    "kd_b02": {"mean": 0.068, "std": 0.017, "min": 0.03, "max": 0.15},
-    "water_trans": {"mean": 0.128, "std": 0.056, "min": 0.01, "max": 0.50},
-    "signal_strength": {"mean": 39.1, "std": 17.1, "min": 3.0, "max": 200.0},
-    "cleanliness": {"mean": 7400.0, "std": 4200.0, "min": 500.0, "max": 16000.0},
+    "benthic_contrast": {"mean": 0.2, "std": 0.3},
+    "snr": {"mean": 120.0, "std": 30.0},
+    "fft_clean": {"mean": 10000.0, "std": 5000.0},
+    "edge_entropy": {"mean": 6.5, "std": 1.5},
+    "dyn_range": {"mean": 0.008, "std": 0.003},
+    "signal": {"mean": 0.125, "std": 0.015},
 }
 
 SCORE_BASELINE = {"mean": 0.60, "std": 0.15, "min": 0.0, "max": 1.0}
@@ -99,11 +101,12 @@ def check_feature_drift(features_dict, schema_features=None):
             null_count += 1
             continue
         
-        # Range check
-        if value < baseline["min"] or value > baseline["max"]:
-            alerts.append((feat, WARNING, f"out of range: {value:.4f} vs [{baseline['min']}, {baseline['max']}]"))
-            max_level = WARNING
-            continue
+        # Range check (only if min/max defined in baseline)
+        if "min" in baseline and "max" in baseline:
+            if value < baseline["min"] or value > baseline["max"]:
+                alerts.append((feat, WARNING, f"out of range: {value:.4f} vs [{baseline['min']}, {baseline['max']}]"))
+                max_level = WARNING
+                continue
         
         # Z-score check
         z = _z_score(value, baseline["mean"], baseline["std"])

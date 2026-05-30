@@ -1,0 +1,87 @@
+{
+  "timestamp": "2026-05-29T00:57:54.517933",
+  "input_dir": "outputs/algarve_survey/olhos_de_agua/bands",
+  "output_dir": "outputs/algarve_survey/olhos_de_agua/analysis",
+  "lat": 37.09,
+  "lon": -8.16,
+  "bands_loaded": [
+    "B01",
+    "B02",
+    "B03",
+    "B04",
+    "B05",
+    "B06",
+    "B07",
+    "B08",
+    "B11",
+    "B12",
+    "B8A"
+  ],
+  "methods": {
+    "stumpf_2band": {
+      "mean": -3.431,
+      "std": 0.28,
+      "valid_pct": 100.0,
+      "min": -5.31,
+      "max": -2.498,
+      "n_valid": 32361
+    },
+    "lyzenga_6band": {
+      "mean": -4.014,
+      "std": 0.402,
+      "valid_pct": 98.51,
+      "min": -10.014,
+      "max": -0.276,
+      "n_valid": 31878
+    },
+    "pca_based": {
+      "mean": -3.424,
+      "std": 0.113,
+      "valid_pct": 98.51,
+      "min": -3.604,
+      "max": -2.925,
+      "n_valid": 31878,
+      "pca_explained_variance": [
+        0.7886,
+        0.1534
+      ]
+    }
+  },
+  "best_method": "stumpf",
+  "indices": {
+    "ndwi": {
+      "mean": -0.26,
+      "std": 0.224,
+      "valid_pct": 100.0,
+      "min": -0.613,
+      "max": 0.37,
+      "n_valid": 32361
+    },
+    "ndi": {
+      "mean": -0.085,
+      "std": 0.14,
+      "valid_pct": 99.5,
+      "min": -0.498,
+      "max": 0.453,
+      "n_valid": 32200
+    },
+    "depth_substrate_ratio": {
+      "mean": 0.768,
+      "std": 0.294,
+      "valid_pct": 99.5,
+      "min": 0.291,
+      "max": 2.566,
+      "n_valid": 32200
+    },
+    "clarity_index": {
+      "mean": 0.579,
+      "std": 0.399,
+      "valid_pct": 99.5,
+      "min": 0.188,
+      "max": 2.89,
+      "n_valid": 32200
+    }
+  },
+  "reef_candidates_geojson": "outputs/algarve_survey/olhos_de_agua/analysis/reef_candidates_multiband.geojson",
+  "reef_candidate_pixels": 23
+}

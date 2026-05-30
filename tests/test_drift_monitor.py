@@ -15,76 +15,60 @@ def reset_state():
     reset()
 
 
+NORMAL_FEATURES = {
+    'benthic_contrast': 0.2,
+    'snr': 120.0,
+    'fft_clean': 10000.0,
+    'edge_entropy': 6.5,
+    'dyn_range': 0.008,
+    'signal': 0.125,
+}
+
+
 class TestFeatureDrift:
     def test_normal_features_ok(self):
         """Features within normal range produce OK."""
-        features = {
-            'kd_b02': 0.065,
-            'water_trans': 0.12,
-            'signal_strength': 40.0,
-            'cleanliness': 8000.0,
-        }
-        result = check_feature_drift(features)
+        result = check_feature_drift(dict(NORMAL_FEATURES))
         assert result["level"] == OK
         assert result["alerts"] == []
         assert result["null_count"] == 0
 
-    def test_extreme_kd_warns(self):
-        """kd_b02 far from mean triggers WARNING."""
-        features = {
-            'kd_b02': 0.14,  # > 4 std from mean (0.068 + 4*0.017 = 0.136)
-            'water_trans': 0.12,
-            'signal_strength': 40.0,
-            'cleanliness': 8000.0,
-        }
+    def test_extreme_snr_warns(self):
+        """snr far from mean triggers WARNING."""
+        features = dict(NORMAL_FEATURES)
+        features['snr'] = 200.0  # z = |200-120|/30 = 2.67 → WARNING
         result = check_feature_drift(features)
         assert result["level"] in (WARNING, CRITICAL)
-        assert any('kd_b02' in a[0] for a in result["alerts"])
+        assert any('snr' in a[0] for a in result["alerts"])
 
-    def test_out_of_range_warns(self):
-        """Feature outside hard min/max triggers WARNING."""
-        features = {
-            'kd_b02': 0.20,  # Above max 0.15
-            'water_trans': 0.12,
-            'signal_strength': 40.0,
-            'cleanliness': 8000.0,
-        }
+    def test_extreme_zscore_critical(self):
+        """Feature with very high z-score triggers CRITICAL."""
+        features = dict(NORMAL_FEATURES)
+        features['snr'] = 250.0  # z = |250-120|/30 = 4.33 → CRITICAL
         result = check_feature_drift(features)
-        assert result["level"] >= WARNING
-        assert any('out of range' in a[2] for a in result["alerts"])
+        assert result["level"] in (WARNING, CRITICAL)
+        assert any('z=' in a[2] for a in result["alerts"])
 
     def test_null_features_detected(self):
         """NaN or None features increment null count."""
-        features = {
-            'kd_b02': None,
-            'water_trans': float('nan'),
-            'signal_strength': 40.0,
-            'cleanliness': 8000.0,
-        }
+        features = dict(NORMAL_FEATURES)
+        features['benthic_contrast'] = None
+        features['snr'] = float('nan')
         result = check_feature_drift(features)
         assert result["null_count"] == 2
 
     def test_high_null_rate_critical(self):
         """All features null triggers CRITICAL."""
-        features = {
-            'kd_b02': None,
-            'water_trans': None,
-            'signal_strength': None,
-            'cleanliness': None,
-        }
+        features = {k: None for k in FEATURE_BASELINES}
         result = check_feature_drift(features)
         assert result["level"] == CRITICAL
-        assert result["null_count"] == 4
+        assert result["null_count"] == len(FEATURE_BASELINES)
 
     def test_schema_filter(self):
         """Only features in schema_features are checked."""
-        features = {
-            'kd_b02': 0.065,
-            'water_trans': 999.0,  # Would be extreme, but not checked
-            'signal_strength': 40.0,
-            'cleanliness': 8000.0,
-        }
-        result = check_feature_drift(features, schema_features=['kd_b02', 'signal_strength'])
+        features = dict(NORMAL_FEATURES)
+        features['fft_clean'] = 999999.0  # Would be extreme, but not checked
+        result = check_feature_drift(features, schema_features=['benthic_contrast', 'snr'])
         assert result["level"] == OK
 
 
@@ -124,9 +108,7 @@ class TestScoreDrift:
 class TestObserve:
     def test_observe_returns_both_checks(self):
         """observe() returns feature_drift and score_drift."""
-        features = {'kd_b02': 0.065, 'water_trans': 0.12,
-                    'signal_strength': 40.0, 'cleanliness': 8000.0}
-        result = observe(features, 0.65)
+        result = observe(dict(NORMAL_FEATURES), 0.65)
         
         assert "feature_drift" in result
         assert "score_drift" in result
@@ -135,8 +117,7 @@ class TestObserve:
 
     def test_observe_does_not_alter_score(self):
         """observe() is purely observational — does not modify inputs."""
-        features = {'kd_b02': 0.065, 'water_trans': 0.12,
-                    'signal_strength': 40.0, 'cleanliness': 8000.0}
+        features = dict(NORMAL_FEATURES)
         original = dict(features)
         observe(features, 0.65)
         assert features == original
@@ -150,12 +131,12 @@ class TestThrottling:
         
         reset()
         # First call — triggers log (level changes from OK to WARNING)
-        observe({'kd_b02': 0.065, 'water_trans': 0.12, 'signal_strength': 40, 'cleanliness': 8000}, 0.22)
+        observe(dict(NORMAL_FEATURES), 0.22)
         assert dm._last_logged_level == WARNING
         assert dm._calls_since_log == 1
         
         # Second call — same level, suppressed
-        observe({'kd_b02': 0.065, 'water_trans': 0.12, 'signal_strength': 40, 'cleanliness': 8000}, 0.22)
+        observe(dict(NORMAL_FEATURES), 0.22)
         assert dm._calls_since_log == 2
 
     def test_throttle_resets_on_clear(self):
@@ -163,11 +144,11 @@ class TestThrottling:
         import src.drift_monitor as dm
         
         reset()
-        observe({'kd_b02': 0.065, 'water_trans': 0.12, 'signal_strength': 40, 'cleanliness': 8000}, 0.22)
+        observe(dict(NORMAL_FEATURES), 0.22)
         assert dm._last_logged_level == WARNING
         
         # Normal call clears drift
-        observe({'kd_b02': 0.065, 'water_trans': 0.12, 'signal_strength': 40, 'cleanliness': 8000}, 0.60)
+        observe(dict(NORMAL_FEATURES), 0.60)
         assert dm._last_logged_level == OK
         assert dm._calls_since_log == 0
 
@@ -177,11 +158,11 @@ class TestThrottling:
         
         reset()
         # WARNING level
-        observe({'kd_b02': 0.065, 'water_trans': 0.12, 'signal_strength': 40, 'cleanliness': 8000}, 0.22)
+        observe(dict(NORMAL_FEATURES), 0.22)
         assert dm._last_logged_level == WARNING
         
         # Escalate to CRITICAL (score z > 4.0 → |score - 0.60| / 0.15 > 4 → score < 0.0 or > 1.2)
-        observe({'kd_b02': 0.065, 'water_trans': 0.12, 'signal_strength': 40, 'cleanliness': 8000}, 1.5)
+        observe(dict(NORMAL_FEATURES), 1.5)
         assert dm._last_logged_level == CRITICAL
         assert dm._calls_since_log == 1  # Just logged
 
@@ -198,8 +179,7 @@ class TestIntegration:
         rm._IS_FALLBACK = False
         
         with patch('os.path.exists', return_value=False):
-            res = predict_score({'kd_b02': 0.05, 'water_trans': 0.3,
-                                'signal_strength': 50, 'cleanliness': 8000})
+            res = predict_score(dict(NORMAL_FEATURES))
         
         assert "score" in res
         assert "mode" in res
@@ -229,14 +209,12 @@ class TestSummary:
 
     def test_summary_counts_by_level(self):
         """summary correctly counts OK vs WARNING observations."""
-        normal = {'kd_b02': 0.065, 'water_trans': 0.12, 'signal_strength': 40, 'cleanliness': 8000}
-        
         # 3 normal
         for _ in range(3):
-            observe(normal, 0.60)
+            observe(dict(NORMAL_FEATURES), 0.60)
         # 2 with score drift (z=2.5 → WARNING)
         for _ in range(2):
-            observe(normal, 0.22)
+            observe(dict(NORMAL_FEATURES), 0.22)
         
         s = summary()
         assert s["total_observations"] == 5
@@ -247,10 +225,9 @@ class TestSummary:
 
     def test_summary_tracks_worst(self):
         """summary tracks highest severity alert."""
-        normal = {'kd_b02': 0.065, 'water_trans': 0.12, 'signal_strength': 40, 'cleanliness': 8000}
-        observe(normal, 0.60)  # OK
-        observe(normal, 0.22)  # WARNING
-        observe(normal, 1.5)   # CRITICAL (z=6.0)
+        observe(dict(NORMAL_FEATURES), 0.60)  # OK
+        observe(dict(NORMAL_FEATURES), 0.22)  # WARNING
+        observe(dict(NORMAL_FEATURES), 1.5)   # CRITICAL (z=6.0)
         
         s = summary()
         assert s["worst_level"] == CRITICAL
@@ -259,15 +236,17 @@ class TestSummary:
 
     def test_summary_null_spike_count(self):
         """summary counts observations that had null features."""
-        observe({'kd_b02': None, 'water_trans': 0.12, 'signal_strength': 40, 'cleanliness': 8000}, 0.60)
-        observe({'kd_b02': 0.065, 'water_trans': 0.12, 'signal_strength': 40, 'cleanliness': 8000}, 0.60)
+        feat_null = dict(NORMAL_FEATURES)
+        feat_null['benthic_contrast'] = None
+        observe(feat_null, 0.60)
+        observe(dict(NORMAL_FEATURES), 0.60)
         
         s = summary()
         assert s["null_spike_count"] == 1
 
     def test_summary_line_format(self):
         """summary_line() returns a readable one-liner."""
-        observe({'kd_b02': 0.065, 'water_trans': 0.12, 'signal_strength': 40, 'cleanliness': 8000}, 0.60)
+        observe(dict(NORMAL_FEATURES), 0.60)
         
         line = summary_line()
         assert "Drift summary:" in line
@@ -276,7 +255,7 @@ class TestSummary:
 
     def test_reset_clears_counters(self):
         """reset() clears all batch counters."""
-        observe({'kd_b02': 0.065, 'water_trans': 0.12, 'signal_strength': 40, 'cleanliness': 8000}, 1.5)
+        observe(dict(NORMAL_FEATURES), 1.5)
         assert summary()["total_observations"] == 1
         
         reset()

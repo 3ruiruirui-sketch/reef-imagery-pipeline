@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 SITES = {
     "Pedra do Alto (CORRECTED)": {"lat": 37.05815,  "lon": -8.20982,  "expected": 16},
     "Pedra do Alto (OLD)":       {"lat": 37.05895,  "lon": -8.20673,  "expected": 16},
-    "Pedra Sta Eulália":         {"lat": 37.04540,  "lon": -8.17490,  "expected": 12},
+    "Pedra Sta Eulália":         {"lat": 37.068978,  "lon": -8.210328,  "expected": 12},
 }
 
 TIF_PATH = Path(__file__).parent / "outputs" / "sprint1_bathy" / "algarve_central_bathy_10m_v1.tif"

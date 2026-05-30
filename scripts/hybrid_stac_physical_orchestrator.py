@@ -115,10 +115,10 @@ def process_vsi_pixel_window(item, lat, lon):
     if b02_ref.max() == 0 or np.all(np.isnan(b02_ref)):
         return None
         
-    # Check clouds locally (B02 > 0.15 is likely cloud or extreme sunglint)
-    # If the window is more than 50% clouds, skip
-    cloud_mask = b02_ref > 0.15
-    if cloud_mask.mean() > 0.5:
+    # Check clouds locally — water-safe detection
+    from src.enhancer import water_safe_cloud_mask
+    cloud_pct = water_safe_cloud_mask(b02_ref, b08_ref) / 100.0
+    if cloud_pct > 0.5:
         return None
         
     # Simulate empirical sunglint correction (subtract 5% of 95th percentile)

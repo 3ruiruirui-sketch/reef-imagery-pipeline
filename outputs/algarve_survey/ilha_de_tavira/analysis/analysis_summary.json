@@ -1,0 +1,87 @@
+{
+  "timestamp": "2026-05-29T00:57:33.082080",
+  "input_dir": "outputs/algarve_survey/ilha_de_tavira/bands",
+  "output_dir": "outputs/algarve_survey/ilha_de_tavira/analysis",
+  "lat": 37.095,
+  "lon": -7.72,
+  "bands_loaded": [
+    "B01",
+    "B02",
+    "B03",
+    "B04",
+    "B05",
+    "B06",
+    "B07",
+    "B08",
+    "B11",
+    "B12",
+    "B8A"
+  ],
+  "methods": {
+    "stumpf_2band": {
+      "mean": -3.353,
+      "std": 0.282,
+      "valid_pct": 100.0,
+      "min": -4.538,
+      "max": -2.16,
+      "n_valid": 32562
+    },
+    "lyzenga_6band": {
+      "mean": -3.993,
+      "std": 0.274,
+      "valid_pct": 100.0,
+      "min": -6.551,
+      "max": -1.564,
+      "n_valid": 32562
+    },
+    "pca_based": {
+      "mean": -3.353,
+      "std": 0.068,
+      "valid_pct": 100.0,
+      "min": -3.735,
+      "max": -3.26,
+      "n_valid": 32562,
+      "pca_explained_variance": [
+        0.8841,
+        0.0558
+      ]
+    }
+  },
+  "best_method": "pca",
+  "indices": {
+    "ndwi": {
+      "mean": -0.418,
+      "std": 0.112,
+      "valid_pct": 100.0,
+      "min": -0.61,
+      "max": 0.131,
+      "n_valid": 32562
+    },
+    "ndi": {
+      "mean": -0.115,
+      "std": 0.041,
+      "valid_pct": 100.0,
+      "min": -0.287,
+      "max": 0.207,
+      "n_valid": 32562
+    },
+    "depth_substrate_ratio": {
+      "mean": 0.679,
+      "std": 0.09,
+      "valid_pct": 100.0,
+      "min": 0.478,
+      "max": 1.423,
+      "n_valid": 32562
+    },
+    "clarity_index": {
+      "mean": 0.36,
+      "std": 0.125,
+      "valid_pct": 100.0,
+      "min": 0.181,
+      "max": 1.343,
+      "n_valid": 32562
+    }
+  },
+  "reef_candidates_geojson": null,
+  "reef_candidate_pixels": 0
+}

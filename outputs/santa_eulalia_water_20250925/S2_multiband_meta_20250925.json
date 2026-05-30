@@ -1,0 +1,159 @@
+{
+  "scene_id": "S2B_MSIL2A_20250925T112109_R037_T29SNB_20250925T151904",
+  "date": "2025-09-25",
+  "source": "planetary_computer_stac",
+  "collection": "sentinel-2-l2a",
+  "point": {
+    "lat": 37.081,
+    "lon": -8.1501
+  },
+  "buffer_m": 2000.0,
+  "aoi_bounds": {
+    "west": -8.168066223499821,
+    "south": 37.063033776500184,
+    "east": -8.13213377650018,
+    "north": 37.09896622349982
+  },
+  "target_resolution_m": 10,
+  "bands": {
+    "B01": {
+      "description": "Coastal Aerosol",
+      "wavelength": "443nm",
+      "native_resolution_m": 60,
+      "resampled_to_10m": true,
+      "file": "outputs/santa_eulalia_water_20250925/S2_B01_20250925.tif",
+      "file_size_bytes": 519102,
+      "shape": [
+        401,
+        323
+      ]
+    },
+    "B02": {
+      "description": "Blue",
+      "wavelength": "490nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "outputs/santa_eulalia_water_20250925/S2_B02_20250925.tif",
+      "file_size_bytes": 205503,
+      "shape": [
+        401,
+        323
+      ]
+    },
+    "B03": {
+      "description": "Green",
+      "wavelength": "560nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "outputs/santa_eulalia_water_20250925/S2_B03_20250925.tif",
+      "file_size_bytes": 210167,
+      "shape": [
+        401,
+        323
+      ]
+    },
+    "B04": {
+      "description": "Red",
+      "wavelength": "665nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "outputs/santa_eulalia_water_20250925/S2_B04_20250925.tif",
+      "file_size_bytes": 208598,
+      "shape": [
+        401,
+        323
+      ]
+    },
+    "B05": {
+      "description": "Red Edge 1",
+      "wavelength": "705nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/santa_eulalia_water_20250925/S2_B05_20250925.tif",
+      "file_size_bytes": 529230,
+      "shape": [
+        401,
+        323
+      ]
+    },
+    "B06": {
+      "description": "Red Edge 2",
+      "wavelength": "740nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/santa_eulalia_water_20250925/S2_B06_20250925.tif",
+      "file_size_bytes": 525787,
+      "shape": [
+        401,
+        323
+      ]
+    },
+    "B07": {
+      "description": "Red Edge 3",
+      "wavelength": "783nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/santa_eulalia_water_20250925/S2_B07_20250925.tif",
+      "file_size_bytes": 525319,
+      "shape": [
+        401,
+        323
+      ]
+    },
+    "B08": {
+      "description": "NIR",
+      "wavelength": "842nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "outputs/santa_eulalia_water_20250925/S2_B08_20250925.tif",
+      "file_size_bytes": 191631,
+      "shape": [
+        401,
+        323
+      ]
+    },
+    "B8A": {
+      "description": "Narrow NIR",
+      "wavelength": "865nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/santa_eulalia_water_20250925/S2_B8A_20250925.tif",
+      "file_size_bytes": 524409,
+      "shape": [
+        401,
+        323
+      ]
+    },
+    "B11": {
+      "description": "SWIR1",
+      "wavelength": "1610nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/santa_eulalia_water_20250925/S2_B11_20250925.tif",
+      "file_size_bytes": 528358,
+      "shape": [
+        401,
+        323
+      ]
+    },
+    "B12": {
+      "description": "SWIR2",
+      "wavelength": "2190nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/santa_eulalia_water_20250925/S2_B12_20250925.tif",
+      "file_size_bytes": 531172,
+      "shape": [
+        401,
+        323
+      ]
+    }
+  },
+  "properties": {
+    "cloud_cover": 1.245075,
+    "s2_datatake_id": "GS2B_20250925T112109_044679_N05.11",
+    "s2_mgrs_tile": "29SNB",
+    "s2_product_uri": "S2B_MSIL2A_20250925T112109_N0511_R037_T29SNB_20250925T151904.SAFE"
+  },
+  "downloaded_at": "2026-05-29T22:25:11.729702Z"
+}

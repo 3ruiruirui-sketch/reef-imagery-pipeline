@@ -19,8 +19,9 @@ def reset_state():
 class TestPayload:
     def test_payload_structure(self):
         """Payload contains all required dashboard fields."""
-        observe({'kd_b02': 0.065, 'water_trans': 0.12,
-                 'signal_strength': 40, 'cleanliness': 8000}, 0.60)
+        observe({'benthic_contrast': 0.2, 'snr': 120,
+                 'fft_clean': 10000, 'edge_entropy': 6.5,
+                 'dyn_range': 0.008, 'signal': 0.125}, 0.60)
 
         payload = export_payload(batch_id="test-batch-001")
 
@@ -35,8 +36,9 @@ class TestPayload:
 
     def test_payload_alert_counts(self):
         """Alert counts match observations."""
-        normal = {'kd_b02': 0.065, 'water_trans': 0.12,
-                  'signal_strength': 40, 'cleanliness': 8000}
+        normal = {'benthic_contrast': 0.2, 'snr': 120,
+                  'fft_clean': 10000, 'edge_entropy': 6.5,
+                  'dyn_range': 0.008, 'signal': 0.125}
         for _ in range(3):
             observe(normal, 0.60)
         for _ in range(2):
@@ -51,16 +53,18 @@ class TestPayload:
 
     def test_payload_highest_severity(self):
         """highest_severity reflects worst event."""
-        observe({'kd_b02': 0.065, 'water_trans': 0.12,
-                 'signal_strength': 40, 'cleanliness': 8000}, 1.5)  # CRITICAL
+        observe({'benthic_contrast': 0.2, 'snr': 120,
+                 'fft_clean': 10000, 'edge_entropy': 6.5,
+                 'dyn_range': 0.008, 'signal': 0.125}, 1.5)  # CRITICAL
 
         payload = export_payload()
         assert payload["highest_severity"] == "critical"
 
     def test_payload_json_serializable(self):
         """Payload can be serialized to JSON without errors."""
-        observe({'kd_b02': 0.065, 'water_trans': 0.12,
-                 'signal_strength': 40, 'cleanliness': 8000}, 0.60)
+        observe({'benthic_contrast': 0.2, 'snr': 120,
+                 'fft_clean': 10000, 'edge_entropy': 6.5,
+                 'dyn_range': 0.008, 'signal': 0.125}, 0.60)
 
         payload = export_payload(batch_id="ser-test")
         json_str = json.dumps(payload)
@@ -69,25 +73,28 @@ class TestPayload:
 
     def test_payload_model_version_from_metadata(self):
         """Model version is read from metadata file."""
-        observe({'kd_b02': 0.065, 'water_trans': 0.12,
-                 'signal_strength': 40, 'cleanliness': 8000}, 0.60)
+        observe({'benthic_contrast': 0.2, 'snr': 120,
+                 'fft_clean': 10000, 'edge_entropy': 6.5,
+                 'dyn_range': 0.008, 'signal': 0.125}, 0.60)
 
         payload = export_payload()
-        assert payload["model_version"] == "1.2"
-        assert payload["schema_version"] == "2.0"
+        assert payload["model_version"] == "2.0"
+        assert payload["schema_version"] == "3.0"
 
     def test_payload_summary_text(self):
         """Summary text is human-readable."""
-        observe({'kd_b02': 0.065, 'water_trans': 0.12,
-                 'signal_strength': 40, 'cleanliness': 8000}, 0.60)
+        observe({'benthic_contrast': 0.2, 'snr': 120,
+                 'fft_clean': 10000, 'edge_entropy': 6.5,
+                 'dyn_range': 0.008, 'signal': 0.125}, 0.60)
 
         payload = export_payload()
         assert "in batch" in payload["summary"]
 
     def test_payload_batch_id_override(self):
         """Custom batch_id is used when provided."""
-        observe({'kd_b02': 0.065, 'water_trans': 0.12,
-                 'signal_strength': 40, 'cleanliness': 8000}, 0.60)
+        observe({'benthic_contrast': 0.2, 'snr': 120,
+                 'fft_clean': 10000, 'edge_entropy': 6.5,
+                 'dyn_range': 0.008, 'signal': 0.125}, 0.60)
 
         payload = export_payload(batch_id="my-custom-batch")
         assert payload["batch_id"] == "my-custom-batch"
@@ -96,8 +103,9 @@ class TestPayload:
 class TestFileExport:
     def test_export_creates_file(self):
         """export_to_file writes a valid JSON file."""
-        observe({'kd_b02': 0.065, 'water_trans': 0.12,
-                 'signal_strength': 40, 'cleanliness': 8000}, 0.60)
+        observe({'benthic_contrast': 0.2, 'snr': 120,
+                 'fft_clean': 10000, 'edge_entropy': 6.5,
+                 'dyn_range': 0.008, 'signal': 0.125}, 0.60)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = export_to_file(batch_id="file-test", output_dir=tmpdir)
@@ -112,8 +120,9 @@ class TestFileExport:
 
     def test_export_failure_non_blocking(self):
         """Export failure returns None without raising."""
-        observe({'kd_b02': 0.065, 'water_trans': 0.12,
-                 'signal_strength': 40, 'cleanliness': 8000}, 0.60)
+        observe({'benthic_contrast': 0.2, 'snr': 120,
+                 'fft_clean': 10000, 'edge_entropy': 6.5,
+                 'dyn_range': 0.008, 'signal': 0.125}, 0.60)
 
         # Write to an invalid path
         result = export_to_file(batch_id="fail-test", output_dir="/nonexistent/path/x/y/z")
@@ -123,8 +132,9 @@ class TestFileExport:
 class TestWebhookExport:
     def test_webhook_success(self):
         """Successful webhook POST returns True."""
-        observe({'kd_b02': 0.065, 'water_trans': 0.12,
-                 'signal_strength': 40, 'cleanliness': 8000}, 0.60)
+        observe({'benthic_contrast': 0.2, 'snr': 120,
+                 'fft_clean': 10000, 'edge_entropy': 6.5,
+                 'dyn_range': 0.008, 'signal': 0.125}, 0.60)
 
         mock_resp = MagicMock()
         mock_resp.status = 200
@@ -137,8 +147,9 @@ class TestWebhookExport:
 
     def test_webhook_failure_non_blocking(self):
         """Webhook failure returns False without raising."""
-        observe({'kd_b02': 0.065, 'water_trans': 0.12,
-                 'signal_strength': 40, 'cleanliness': 8000}, 0.60)
+        observe({'benthic_contrast': 0.2, 'snr': 120,
+                 'fft_clean': 10000, 'edge_entropy': 6.5,
+                 'dyn_range': 0.008, 'signal': 0.125}, 0.60)
 
         with patch('urllib.request.urlopen', side_effect=Exception("Connection refused")):
             result = export_to_webhook("http://localhost:9999/hook", batch_id="wh-fail")

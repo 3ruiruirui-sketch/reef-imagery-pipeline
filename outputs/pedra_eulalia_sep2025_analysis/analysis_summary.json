@@ -1,0 +1,87 @@
+{
+  "timestamp": "2026-05-29T01:13:15.385208",
+  "input_dir": "outputs/pedra_eulalia_sep2025_multiband",
+  "output_dir": "outputs/pedra_eulalia_sep2025_analysis",
+  "lat": 37.0454,
+  "lon": -8.1749,
+  "bands_loaded": [
+    "B01",
+    "B02",
+    "B03",
+    "B04",
+    "B05",
+    "B06",
+    "B07",
+    "B08",
+    "B11",
+    "B12",
+    "B8A"
+  ],
+  "methods": {
+    "stumpf_2band": {
+      "mean": -4.297,
+      "std": 0.051,
+      "valid_pct": 100.0,
+      "min": -4.51,
+      "max": -3.944,
+      "n_valid": 72842
+    },
+    "lyzenga_6band": {
+      "mean": -4.001,
+      "std": 0.03,
+      "valid_pct": 98.43,
+      "min": -4.711,
+      "max": -3.777,
+      "n_valid": 71700
+    },
+    "pca_based": {
+      "mean": -4.297,
+      "std": 0.015,
+      "valid_pct": 98.84,
+      "min": -4.331,
+      "max": -4.027,
+      "n_valid": 72000,
+      "pca_explained_variance": [
+        0.8791,
+        0.0646
+      ]
+    }
+  },
+  "best_method": "stumpf",
+  "indices": {
+    "ndwi": {
+      "mean": 0.036,
+      "std": 0.008,
+      "valid_pct": 100.0,
+      "min": 0.004,
+      "max": 0.068,
+      "n_valid": 72842
+    },
+    "ndi": {
+      "mean": 0.032,
+      "std": 0.008,
+      "valid_pct": 100.0,
+      "min": 0.0,
+      "max": 0.134,
+      "n_valid": 72842
+    },
+    "depth_substrate_ratio": {
+      "mean": 1.145,
+      "std": 0.016,
+      "valid_pct": 100.0,
+      "min": 1.087,
+      "max": 1.426,
+      "n_valid": 72842
+    },
+    "clarity_index": {
+      "mean": 1.159,
+      "std": 0.016,
+      "valid_pct": 100.0,
+      "min": 1.092,
+      "max": 1.436,
+      "n_valid": 72842
+    }
+  },
+  "reef_candidates_geojson": null,
+  "reef_candidate_pixels": 0
+}

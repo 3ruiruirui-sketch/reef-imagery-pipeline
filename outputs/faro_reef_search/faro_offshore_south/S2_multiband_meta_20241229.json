@@ -1,0 +1,159 @@
+{
+  "scene_id": "S2B_MSIL2A_20241229T112409_R037_T29SNA_20241229T133929",
+  "date": "2024-12-29",
+  "source": "planetary_computer_stac",
+  "collection": "sentinel-2-l2a",
+  "point": {
+    "lat": 36.94,
+    "lon": -7.88
+  },
+  "buffer_m": 1500.0,
+  "aoi_bounds": {
+    "west": -7.893474667624865,
+    "south": 36.926525332375135,
+    "east": -7.866525332375135,
+    "north": 36.95347466762486
+  },
+  "target_resolution_m": 10,
+  "bands": {
+    "B01": {
+      "description": "Coastal Aerosol",
+      "wavelength": "443nm",
+      "native_resolution_m": 60,
+      "resampled_to_10m": true,
+      "file": "outputs/faro_reef_search/faro_offshore_south/S2_B01_20241229.tif",
+      "file_size_bytes": 258657,
+      "shape": [
+        302,
+        243
+      ]
+    },
+    "B02": {
+      "description": "Blue",
+      "wavelength": "490nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "outputs/faro_reef_search/faro_offshore_south/S2_B02_20241229.tif",
+      "file_size_bytes": 96233,
+      "shape": [
+        302,
+        243
+      ]
+    },
+    "B03": {
+      "description": "Green",
+      "wavelength": "560nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "outputs/faro_reef_search/faro_offshore_south/S2_B03_20241229.tif",
+      "file_size_bytes": 89696,
+      "shape": [
+        302,
+        243
+      ]
+    },
+    "B04": {
+      "description": "Red",
+      "wavelength": "665nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "outputs/faro_reef_search/faro_offshore_south/S2_B04_20241229.tif",
+      "file_size_bytes": 75459,
+      "shape": [
+        302,
+        243
+      ]
+    },
+    "B05": {
+      "description": "Red Edge 1",
+      "wavelength": "705nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/faro_reef_search/faro_offshore_south/S2_B05_20241229.tif",
+      "file_size_bytes": 266114,
+      "shape": [
+        302,
+        243
+      ]
+    },
+    "B06": {
+      "description": "Red Edge 2",
+      "wavelength": "740nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/faro_reef_search/faro_offshore_south/S2_B06_20241229.tif",
+      "file_size_bytes": 269398,
+      "shape": [
+        302,
+        243
+      ]
+    },
+    "B07": {
+      "description": "Red Edge 3",
+      "wavelength": "783nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/faro_reef_search/faro_offshore_south/S2_B07_20241229.tif",
+      "file_size_bytes": 266759,
+      "shape": [
+        302,
+        243
+      ]
+    },
+    "B08": {
+      "description": "NIR",
+      "wavelength": "842nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "outputs/faro_reef_search/faro_offshore_south/S2_B08_20241229.tif",
+      "file_size_bytes": 72628,
+      "shape": [
+        302,
+        243
+      ]
+    },
+    "B8A": {
+      "description": "Narrow NIR",
+      "wavelength": "865nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/faro_reef_search/faro_offshore_south/S2_B8A_20241229.tif",
+      "file_size_bytes": 277449,
+      "shape": [
+        302,
+        243
+      ]
+    },
+    "B11": {
+      "description": "SWIR1",
+      "wavelength": "1610nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/faro_reef_search/faro_offshore_south/S2_B11_20241229.tif",
+      "file_size_bytes": 269214,
+      "shape": [
+        302,
+        243
+      ]
+    },
+    "B12": {
+      "description": "SWIR2",
+      "wavelength": "2190nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/faro_reef_search/faro_offshore_south/S2_B12_20241229.tif",
+      "file_size_bytes": 271406,
+      "shape": [
+        302,
+        243
+      ]
+    }
+  },
+  "properties": {
+    "cloud_cover": 14.864062,
+    "s2_datatake_id": "GS2B_20241229T112409_040818_N05.11",
+    "s2_mgrs_tile": "29SNA",
+    "s2_product_uri": "S2B_MSIL2A_20241229T112409_N0511_R037_T29SNA_20241229T133929.SAFE"
+  },
+  "downloaded_at": "2026-05-29T01:04:51.433140Z"
+}

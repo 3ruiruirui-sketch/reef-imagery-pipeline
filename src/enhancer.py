@@ -84,3 +84,18 @@ def run_enhancement_pipeline(lat, lon, image_date, target_snr):
         "percent_useful": percent_useful,
         "warnings": warnings_list
     }
+
+
+def water_safe_cloud_mask(b02, b08=None, b02_thresh=0.18, b08_thresh=0.12):
+    """
+    Water-safe local cloud detection.
+    Returns local_cloud_pct (0-100).
+    Shallow reef/sand have B02 ~0.06-0.12 but low B08 — NOT cloud.
+    Clouds have BOTH B02 > b02_thresh AND B08 high.
+    """
+    cloud_b02 = float((b02 > b02_thresh).mean()) * 100
+    if b08 is not None:
+        cloud_b08_safe = float(((b08 > b08_thresh) & (b02 > 0.12)).mean()) * 100
+    else:
+        cloud_b08_safe = 0.0
+    return max(cloud_b02, cloud_b08_safe)

@@ -1,0 +1,87 @@
+{
+  "timestamp": "2026-05-29T00:58:06.501905",
+  "input_dir": "outputs/algarve_survey/armacao_de_pera/bands",
+  "output_dir": "outputs/algarve_survey/armacao_de_pera/analysis",
+  "lat": 37.07,
+  "lon": -8.36,
+  "bands_loaded": [
+    "B01",
+    "B02",
+    "B03",
+    "B04",
+    "B05",
+    "B06",
+    "B07",
+    "B08",
+    "B11",
+    "B12",
+    "B8A"
+  ],
+  "methods": {
+    "stumpf_2band": {
+      "mean": -4.466,
+      "std": 0.072,
+      "valid_pct": 100.0,
+      "min": -4.79,
+      "max": -4.158,
+      "n_valid": 32200
+    },
+    "lyzenga_6band": {
+      "mean": -4.003,
+      "std": 0.044,
+      "valid_pct": 99.0,
+      "min": -4.256,
+      "max": -3.624,
+      "n_valid": 31878
+    },
+    "pca_based": {
+      "mean": -4.466,
+      "std": 0.027,
+      "valid_pct": 99.0,
+      "min": -4.584,
+      "max": -4.356,
+      "n_valid": 31878,
+      "pca_explained_variance": [
+        0.6979,
+        0.1621
+      ]
+    }
+  },
+  "best_method": "stumpf",
+  "indices": {
+    "ndwi": {
+      "mean": 0.056,
+      "std": 0.007,
+      "valid_pct": 100.0,
+      "min": 0.028,
+      "max": 0.085,
+      "n_valid": 32200
+    },
+    "ndi": {
+      "mean": 0.053,
+      "std": 0.006,
+      "valid_pct": 100.0,
+      "min": 0.028,
+      "max": 0.085,
+      "n_valid": 32200
+    },
+    "depth_substrate_ratio": {
+      "mean": 1.243,
+      "std": 0.019,
+      "valid_pct": 100.0,
+      "min": 1.165,
+      "max": 1.321,
+      "n_valid": 32200
+    },
+    "clarity_index": {
+      "mean": 1.251,
+      "std": 0.019,
+      "valid_pct": 100.0,
+      "min": 1.174,
+      "max": 1.337,
+      "n_valid": 32200
+    }
+  },
+  "reef_candidates_geojson": "outputs/algarve_survey/armacao_de_pera/analysis/reef_candidates_multiband.geojson",
+  "reef_candidate_pixels": 4667
+}

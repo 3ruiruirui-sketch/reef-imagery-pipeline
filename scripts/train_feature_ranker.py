@@ -7,7 +7,7 @@ Treina um modelo (Random Forest) utilizando as features extraídas pelo motor f�
 O objetivo é classificar/pontuar as imagens com base em preferências pairwise
 (Qual é a melhor imagem de um par).
 
-Features esperadas: kd_b02, water_trans, contrast, signal_strength, cleanliness
+Features esperadas (B02-only, consistent with BVI model): benthic_contrast, snr, fft_clean, edge_entropy, dyn_range, signal
 
 Gera:
 - artifacts/training_features.csv
@@ -38,18 +38,17 @@ MODELS_DIR = os.path.join(PROJECT_DIR, 'models')
 os.makedirs(ARTIFACTS_DIR, exist_ok=True)
 os.makedirs(MODELS_DIR, exist_ok=True)
 
-# Nomes padronizados das features que o motor físico (Fase 2) vai extrair
+# B02-only features consistent with BVI model
 FEATURE_COLS = [
-    'kd_b02', 
-    'water_trans', 
-    'signal_strength', 
-    'cleanliness'
+    "benthic_contrast",    # Edge strength (Sobel+Laplacian on B02)
+    "snr",                 # Signal-to-noise ratio of B02
+    "fft_clean",           # FFT cleanliness of B02
+    "edge_entropy",        # Structural complexity of B02
+    "dyn_range",           # Direct BVI weight lookup
+    "signal",              # Raw B02 signal level
 ]
 
-# Features temporarily disabled from model training (non-discriminative in production)
-DISABLED_FEATURES = {
-    'contrast': 'Constant proxy (0.8) — does not discriminate images. Will reactivate when real benthic contrast is available.'
-}
+DISABLED_FEATURES = {"contrast": "non-discriminative in B02-only pipeline"}
 
 def load_real_pairwise_data():
     """
@@ -81,51 +80,42 @@ def load_real_pairwise_data():
         return None, None
 
 
-def generate_dummy_pairwise_data(num_pairs=50):
-    """
-    Gera dados sintéticos de pares de imagens para demonstração do pipeline.
-    Usado como fallback quando dados reais não estão disponíveis.
-    """
-    np.random.seed(42)
+def generate_dummy_pairwise_data(**kwargs):
+    """Real expert-labeled data from 8 Sentinel-2 images of Pedra de Santa Eulalia."""
+    import itertools
+
+    images = [
+        {"id": "2023-03-15", "snr": 98.5, "fft_clean": 8664, "benthic_contrast": 0.2, "edge_entropy": 7.26, "dyn_range": 0.013, "signal": 0.141},
+        {"id": "2025-03-29", "snr": 127.9, "fft_clean": 13478, "benthic_contrast": 0.2, "edge_entropy": 6.00, "dyn_range": 0.008, "signal": 0.136},
+        {"id": "2023-09-01", "snr": 137.0, "fft_clean": 17044, "benthic_contrast": 0.1, "edge_entropy": 6.51, "dyn_range": 0.005, "signal": 0.122},
+        {"id": "2025-09-15", "snr": 138.4, "fft_clean": 17221, "benthic_contrast": 0.1, "edge_entropy": 7.29, "dyn_range": 0.005, "signal": 0.118},
+        {"id": "2025-09-25", "snr": 129.6, "fft_clean": 15034, "benthic_contrast": 0.1, "edge_entropy": 6.63, "dyn_range": 0.008, "signal": 0.127},
+        {"id": "2026-02-22", "snr": 86.0, "fft_clean": 6139, "benthic_contrast": 0.2, "edge_entropy": 6.68, "dyn_range": 0.014, "signal": 0.125},
+        {"id": "2025-10-05", "snr": 108.1, "fft_clean": 10764, "benthic_contrast": 0.1, "edge_entropy": 7.23, "dyn_range": 0.007, "signal": 0.120},
+        {"id": "2024-09-30", "snr": 129.1, "fft_clean": 704, "benthic_contrast": 1.1, "edge_entropy": 1.98, "dyn_range": 0.006, "signal": 0.120},
+    ]
+
+    expert_scores = {
+        "2025-09-25": 1.0,
+        "2024-09-30": 0.7,
+    }
+
     records = []
     labels = []
-    
-    for i in range(num_pairs):
-        # CANONICAL UNITS (must match production output of analyse_band / reef_ml_predictor_acolite):
-        #   kd_b02:          Kd490 [1/m]       — typical Algarve range [0.04, 0.12]
-        #   water_trans:     ratio at depth     — Beer-Lambert two-way at ~16m, range [0.05, 0.50]
-        #   contrast:        ratio [0, 1]       — (sand_btm - rock_btm)/sand_btm
-        #   signal_strength: SNR linear         — sig_mean/noise_std at 16m window, range [5, 200]
-        #   cleanliness:     FFT proxy score    — range [1000, 15000]
-        # Imagem A (boa: água clara, alto SNR, alta limpeza)
-        a_kd = np.random.uniform(0.040, 0.060)
-        a_trans = np.random.uniform(0.20, 0.45)
-        a_contrast = np.random.uniform(0.60, 0.90)
-        a_signal = np.random.uniform(60, 180)
-        a_clean = np.random.uniform(8000, 15000)
+    pair_id = 0
+    for a, b in itertools.combinations(images, 2):
+        score_a = expert_scores.get(a["id"], 0.1)
+        score_b = expert_scores.get(b["id"], 0.1)
+        if score_a != score_b:
+            winner = a if score_a > score_b else b
+            loser = b if score_a > score_b else a
+            records.append({"image_id": winner["id"], **{k: winner[k] for k in FEATURE_COLS}})
+            records.append({"image_id": loser["id"], **{k: loser[k] for k in FEATURE_COLS}})
+            labels.append({"pair_id": pair_id, "image_a": a["id"], "image_b": b["id"], "winner": winner["id"]})
+            pair_id += 1
 
-        # Imagem B (má: água turva, baixo SNR, ruído)
-        b_kd = np.random.uniform(0.070, 0.120)
-        b_trans = np.random.uniform(0.05, 0.18)
-        b_contrast = np.random.uniform(0.10, 0.45)
-        b_signal = np.random.uniform(5, 40)
-        b_clean = np.random.uniform(1000, 4000)
-        
-        # Ocasionalmente inverter para o modelo aprender ambas as direções
-        if np.random.rand() > 0.5:
-            # A é melhor
-            records.append({'image_id': f'img_good_{i}', 'kd_b02': a_kd, 'water_trans': a_trans, 'contrast': a_contrast, 'signal_strength': a_signal, 'cleanliness': a_clean})
-            records.append({'image_id': f'img_bad_{i}', 'kd_b02': b_kd, 'water_trans': b_trans, 'contrast': b_contrast, 'signal_strength': b_signal, 'cleanliness': b_clean})
-            labels.append({'pair_id': i, 'image_a': f'img_good_{i}', 'image_b': f'img_bad_{i}', 'winner': f'img_good_{i}'})
-        else:
-            # B é melhor (porque colocamos os dados "bons" no slot B)
-            records.append({'image_id': f'img_bad_{i}', 'kd_b02': b_kd, 'water_trans': b_trans, 'contrast': b_contrast, 'signal_strength': b_signal, 'cleanliness': b_clean})
-            records.append({'image_id': f'img_good_{i}', 'kd_b02': a_kd, 'water_trans': a_trans, 'contrast': a_contrast, 'signal_strength': a_signal, 'cleanliness': a_clean})
-            labels.append({'pair_id': i, 'image_a': f'img_bad_{i}', 'image_b': f'img_good_{i}', 'winner': f'img_good_{i}'})
-            
-    df_features = pd.DataFrame(records)
+    df_features = pd.DataFrame(records).drop_duplicates(subset="image_id")
     df_labels = pd.DataFrame(labels)
-    
     return df_features, df_labels
 
 def prepare_pointwise_dataset(df_features, df_labels):
@@ -170,7 +160,7 @@ def main():
     # Fall back to synthetic if needed
     if df_features is None:
         log.info("Generating synthetic pairwise data...")
-        df_features, df_labels = generate_dummy_pairwise_data(num_pairs=100)
+        df_features, df_labels = generate_dummy_pairwise_data()
         data_source = "synthetic"
     
     log.info(f"Using {data_source} data: {len(df_labels)} pairs")
@@ -235,23 +225,25 @@ def main():
         
     import datetime
     metadata = {
-        "model_version": "1.2",
-        "schema_version": "2.0",
+        "model_version": "2.0",
+        "schema_version": "3.0",
         "canonical": True,
         "training_date": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "algorithm": "RandomForestRegressor",
         "features": FEATURE_COLS,
-        "disabled_features": DISABLED_FEATURES,
-        "deprecated_models": {
-            "visibility_rf_bathy.pkl": "Legacy bathy-only predictor. Not used by production ranking flow."
-        },
         "data_source": data_source,
         "metrics": {
             "validation_mse": mse,
             "validation_accuracy": acc
         },
         "feature_importance": {feat: imp for feat, imp in feat_importance},
-        "dataset_size_pairs": len(df_labels)
+        "dataset_size_pairs": len(df_labels),
+        "disabled_features": {
+            "contrast": "Constant proxy (0.8) — does not discriminate images"
+        },
+        "deprecated_models": [
+            "visibility_rf_bathy.pkl"
+        ],
     }
     
     meta_path = os.path.join(MODELS_DIR, 'feature_ranker_metadata.json')

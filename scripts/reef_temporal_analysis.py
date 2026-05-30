@@ -17,6 +17,7 @@ Usage:
     python scripts/reef_temporal_analysis.py
 """
 
+import argparse
 import sys
 import os
 from pathlib import Path as _Path, Path
@@ -58,8 +59,19 @@ from reef_bathy_module import (
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-BASE_DIR   = Path(__file__).resolve().parent.parent
-OUTPUT_DIR = BASE_DIR / "reef_Output_Master" / "reef_output_v3"
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+def _parse_args():
+    parser = argparse.ArgumentParser(description="Reef temporal consistency analysis")
+    parser.add_argument(
+        "--output", type=str, default=None,
+        help="Output directory. Defaults to reef_Output_Master/reef_output_v3. "
+             "For Santa Eulalia use: outputs/santa_eulalia_multiband_analysis/"
+    )
+    return parser.parse_args()
+
+_args = _parse_args()
+OUTPUT_DIR = Path(_args.output) if _args.output else BASE_DIR / "reef_Output_Master" / "reef_output_v3"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 TODAY      = datetime.utcnow().strftime("%Y%m%d")
@@ -76,23 +88,67 @@ HC_THRESHOLD = -1.0
 # Step 1 — Find all dates with ratio + S2_B02 + S2_B03
 # ---------------------------------------------------------------------------
 
+N_SCALE = 1000.0  # Stumpf log-ratio scaling factor
+
+
+def ensure_ratio(date: str) -> bool:
+    """
+    Generate ratio_B02_B03_YYYYMMDD.tif from S2_B02 and S2_B03 if missing.
+    ratio = ln(n * B02) / ln(n * B03)  (Stumpf log-ratio, n=1000)
+    Returns True if file exists (pre-existing or newly created).
+    """
+    ratio_path = OUTPUT_DIR / f"ratio_B02_B03_{date}.tif"
+    if ratio_path.exists():
+        return True
+    b02_path = OUTPUT_DIR / f"S2_B02_{date}.tif"
+    b03_path = OUTPUT_DIR / f"S2_B03_{date}.tif"
+    if not (b02_path.exists() and b03_path.exists()):
+        return False
+    try:
+        import rasterio
+        with rasterio.open(str(b02_path)) as src_b02:
+            b02 = src_b02.read(1).astype(np.float32)
+            profile = src_b02.profile.copy()
+        with rasterio.open(str(b03_path)) as src_b03:
+            b03 = src_b03.read(1).astype(np.float32)
+        valid = (b02 > 0) & (b03 > 0)
+        b02_s = np.where(valid, b02, np.nan)
+        b03_s = np.where(valid, b03, np.nan)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            log_b = np.log(N_SCALE * b02_s)
+            log_g = np.log(N_SCALE * b03_s)
+            safe = (log_g > 0) & np.isfinite(log_b) & np.isfinite(log_g)
+            ratio = np.where(safe, log_b / log_g, np.nan)
+        profile.update(dtype=rasterio.float32, count=1, compress="lzw", nodata=np.nan)
+        with rasterio.open(str(ratio_path), 'w', **profile) as dst:
+            dst.write(ratio.astype(np.float32), 1)
+        print(f"  [GEN] Created ratio: {ratio_path.name}")
+        return True
+    except Exception as e:
+        print(f"  [FAIL] Could not create ratio for {date}: {e}")
+        return False
+
+
 def find_available_dates() -> list[str]:
     """Return sorted list of YYYYMMDD strings that have all required inputs."""
     import re
-    ratio_files = sorted(OUTPUT_DIR.glob("ratio_B02_B03_*.tif"))
+    # Ensure all dates with B02/B03 have ratio files
+    b02_files = sorted(OUTPUT_DIR.glob("S2_B02_*.tif"))
     dates = []
-    for rf in ratio_files:
-        m = re.search(r"ratio_B02_B03_(\d{8})\.tif$", rf.name)
+    for bf in b02_files:
+        m = re.search(r"S2_B02_(\d{8})\.tif$", bf.name)
         if not m:
             continue
         d = m.group(1)
-        b02 = OUTPUT_DIR / f"S2_B02_{d}.tif"
         b03 = OUTPUT_DIR / f"S2_B03_{d}.tif"
-        if b02.exists() and b03.exists():
-            dates.append(d)
-        else:
-            print(f"  [SKIP] {d}: missing S2_B02 or S2_B03")
-    return dates
+        if not b03.exists():
+            print(f"  [SKIP] {d}: missing S2_B03")
+            continue
+        if not ensure_ratio(d):
+            print(f"  [SKIP] {d}: could not create ratio")
+            continue
+        dates.append(d)
+    return sorted(dates)
 
 
 # ---------------------------------------------------------------------------

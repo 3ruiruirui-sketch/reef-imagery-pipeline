@@ -12,8 +12,8 @@ from pathlib import Path
 import numpy as np
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-REEF_LON = -8.17490
-REEF_LAT = 37.04540
+REEF_LON = -8.210328
+REEF_LAT = 37.068978
 CACHE_DIR = Path("data/cache")
 CACHE_FILE = CACHE_DIR / "ih_isobaths_-8.295_36.990_-8.022_37.108_10,20,30,50,100.json"
 TARGET_ISOBATHS = [10, 20, 30, 50, 100]
@@ -47,7 +47,7 @@ def min_dist_to_line(lon, lat, coords):
 
 # ── 1. Load cached isobath data ──────────────────────────────────────────────
 print("=" * 72)
-print("BATHYMETRIC CONTEXT: Pedra Sta Eulália  (37.04540, -8.17490)")
+print("BATHYMETRIC CONTEXT: Pedra Sta Eulália  (37.068978, -8.210328)")
 print("=" * 72)
 
 if not CACHE_FILE.exists():
