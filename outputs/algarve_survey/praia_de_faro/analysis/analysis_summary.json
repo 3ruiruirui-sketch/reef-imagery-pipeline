@@ -1,0 +1,87 @@
+{
+  "timestamp": "2026-05-29T00:57:45.067913",
+  "input_dir": "outputs/algarve_survey/praia_de_faro/bands",
+  "output_dir": "outputs/algarve_survey/praia_de_faro/analysis",
+  "lat": 36.98,
+  "lon": -7.94,
+  "bands_loaded": [
+    "B01",
+    "B02",
+    "B03",
+    "B04",
+    "B05",
+    "B06",
+    "B07",
+    "B08",
+    "B11",
+    "B12",
+    "B8A"
+  ],
+  "methods": {
+    "stumpf_2band": {
+      "mean": -3.455,
+      "std": 0.327,
+      "valid_pct": 100.0,
+      "min": -4.493,
+      "max": -2.485,
+      "n_valid": 32562
+    },
+    "lyzenga_6band": {
+      "mean": -4.027,
+      "std": 0.234,
+      "valid_pct": 100.0,
+      "min": -6.397,
+      "max": -2.067,
+      "n_valid": 32562
+    },
+    "pca_based": {
+      "mean": -3.455,
+      "std": 0.213,
+      "valid_pct": 100.0,
+      "min": -3.689,
+      "max": -2.746,
+      "n_valid": 32562,
+      "pca_explained_variance": [
+        0.8804,
+        0.0901
+      ]
+    }
+  },
+  "best_method": "pca",
+  "indices": {
+    "ndwi": {
+      "mean": -0.054,
+      "std": 0.214,
+      "valid_pct": 99.99,
+      "min": -0.5,
+      "max": 0.406,
+      "n_valid": 32559
+    },
+    "ndi": {
+      "mean": -0.027,
+      "std": 0.139,
+      "valid_pct": 100.0,
+      "min": -0.463,
+      "max": 0.337,
+      "n_valid": 32562
+    },
+    "depth_substrate_ratio": {
+      "mean": 0.868,
+      "std": 0.319,
+      "valid_pct": 100.0,
+      "min": 0.312,
+      "max": 1.729,
+      "n_valid": 32562
+    },
+    "clarity_index": {
+      "mean": 0.862,
+      "std": 0.409,
+      "valid_pct": 100.0,
+      "min": 0.281,
+      "max": 1.864,
+      "n_valid": 32562
+    }
+  },
+  "reef_candidates_geojson": null,
+  "reef_candidate_pixels": 0
+}

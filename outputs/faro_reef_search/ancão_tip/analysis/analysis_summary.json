@@ -1,0 +1,87 @@
+{
+  "timestamp": "2026-05-29T01:05:06.211253",
+  "input_dir": "outputs/faro_reef_search/anc\u00e3o_tip",
+  "output_dir": "outputs/faro_reef_search/anc\u00e3o_tip/analysis",
+  "lat": 36.95,
+  "lon": -7.95,
+  "bands_loaded": [
+    "B01",
+    "B02",
+    "B03",
+    "B04",
+    "B05",
+    "B06",
+    "B07",
+    "B08",
+    "B11",
+    "B12",
+    "B8A"
+  ],
+  "methods": {
+    "stumpf_2band": {
+      "mean": -4.451,
+      "std": 0.069,
+      "valid_pct": 100.0,
+      "min": -4.804,
+      "max": -4.035,
+      "n_valid": 73386
+    },
+    "lyzenga_6band": {
+      "mean": -4.004,
+      "std": 0.043,
+      "valid_pct": 99.34,
+      "min": -4.379,
+      "max": -3.488,
+      "n_valid": 72900
+    },
+    "pca_based": {
+      "mean": -4.451,
+      "std": 0.003,
+      "valid_pct": 99.34,
+      "min": -4.462,
+      "max": -4.43,
+      "n_valid": 72900,
+      "pca_explained_variance": [
+        0.6677,
+        0.2267
+      ]
+    }
+  },
+  "best_method": "stumpf",
+  "indices": {
+    "ndwi": {
+      "mean": 0.069,
+      "std": 0.012,
+      "valid_pct": 100.0,
+      "min": 0.023,
+      "max": 0.117,
+      "n_valid": 73386
+    },
+    "ndi": {
+      "mean": 0.071,
+      "std": 0.011,
+      "valid_pct": 100.0,
+      "min": 0.025,
+      "max": 0.159,
+      "n_valid": 73386
+    },
+    "depth_substrate_ratio": {
+      "mean": 1.285,
+      "std": 0.028,
+      "valid_pct": 100.0,
+      "min": 1.173,
+      "max": 1.492,
+      "n_valid": 73386
+    },
+    "clarity_index": {
+      "mean": 1.306,
+      "std": 0.03,
+      "valid_pct": 100.0,
+      "min": 1.198,
+      "max": 1.542,
+      "n_valid": 73386
+    }
+  },
+  "reef_candidates_geojson": "outputs/faro_reef_search/anc\u00e3o_tip/analysis/reef_candidates_multiband.geojson",
+  "reef_candidate_pixels": 10560
+}

@@ -1,0 +1,159 @@
+{
+  "scene_id": "S2B_MSIL2A_20241229T112409_R037_T29SNB_20241229T133929",
+  "date": "2024-12-29",
+  "source": "planetary_computer_stac",
+  "collection": "sentinel-2-l2a",
+  "point": {
+    "lat": 37.09,
+    "lon": -8.16
+  },
+  "buffer_m": 1000,
+  "aoi_bounds": {
+    "west": -8.16898311174991,
+    "south": 37.08101688825009,
+    "east": -8.15101688825009,
+    "north": 37.09898311174992
+  },
+  "target_resolution_m": 10,
+  "bands": {
+    "B01": {
+      "description": "Coastal Aerosol",
+      "wavelength": "443nm",
+      "native_resolution_m": 60,
+      "resampled_to_10m": true,
+      "file": "outputs/algarve_survey/olhos_de_agua/bands/S2_B01_20241229.tif",
+      "file_size_bytes": 138387,
+      "shape": [
+        201,
+        161
+      ]
+    },
+    "B02": {
+      "description": "Blue",
+      "wavelength": "490nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "outputs/algarve_survey/olhos_de_agua/bands/S2_B02_20241229.tif",
+      "file_size_bytes": 60646,
+      "shape": [
+        201,
+        161
+      ]
+    },
+    "B03": {
+      "description": "Green",
+      "wavelength": "560nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "outputs/algarve_survey/olhos_de_agua/bands/S2_B03_20241229.tif",
+      "file_size_bytes": 62019,
+      "shape": [
+        201,
+        161
+      ]
+    },
+    "B04": {
+      "description": "Red",
+      "wavelength": "665nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "outputs/algarve_survey/olhos_de_agua/bands/S2_B04_20241229.tif",
+      "file_size_bytes": 63521,
+      "shape": [
+        201,
+        161
+      ]
+    },
+    "B05": {
+      "description": "Red Edge 1",
+      "wavelength": "705nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/algarve_survey/olhos_de_agua/bands/S2_B05_20241229.tif",
+      "file_size_bytes": 145636,
+      "shape": [
+        201,
+        161
+      ]
+    },
+    "B06": {
+      "description": "Red Edge 2",
+      "wavelength": "740nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/algarve_survey/olhos_de_agua/bands/S2_B06_20241229.tif",
+      "file_size_bytes": 144646,
+      "shape": [
+        201,
+        161
+      ]
+    },
+    "B07": {
+      "description": "Red Edge 3",
+      "wavelength": "783nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/algarve_survey/olhos_de_agua/bands/S2_B07_20241229.tif",
+      "file_size_bytes": 144568,
+      "shape": [
+        201,
+        161
+      ]
+    },
+    "B08": {
+      "description": "NIR",
+      "wavelength": "842nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "outputs/algarve_survey/olhos_de_agua/bands/S2_B08_20241229.tif",
+      "file_size_bytes": 62969,
+      "shape": [
+        201,
+        161
+      ]
+    },
+    "B8A": {
+      "description": "Narrow NIR",
+      "wavelength": "865nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/algarve_survey/olhos_de_agua/bands/S2_B8A_20241229.tif",
+      "file_size_bytes": 144845,
+      "shape": [
+        201,
+        161
+      ]
+    },
+    "B11": {
+      "description": "SWIR1",
+      "wavelength": "1610nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/algarve_survey/olhos_de_agua/bands/S2_B11_20241229.tif",
+      "file_size_bytes": 145328,
+      "shape": [
+        201,
+        161
+      ]
+    },
+    "B12": {
+      "description": "SWIR2",
+      "wavelength": "2190nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/algarve_survey/olhos_de_agua/bands/S2_B12_20241229.tif",
+      "file_size_bytes": 146261,
+      "shape": [
+        201,
+        161
+      ]
+    }
+  },
+  "properties": {
+    "cloud_cover": 0.007747,
+    "s2_datatake_id": "GS2B_20241229T112409_040818_N05.11",
+    "s2_mgrs_tile": "29SNB",
+    "s2_product_uri": "S2B_MSIL2A_20241229T112409_N0511_R037_T29SNB_20241229T133929.SAFE"
+  },
+  "downloaded_at": "2026-05-29T00:57:54.179800Z"
+}

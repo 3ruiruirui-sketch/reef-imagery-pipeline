@@ -222,9 +222,12 @@ for idx, row in candidates.iterrows():
     if b02.max() == 0 or np.all(np.isnan(b02)):
         continue
 
-    # Cloud mask (bright pixels)
-    cloud_mask = b02 > 0.15
-    if cloud_mask.mean() > 0.5:
+    # Cloud mask — LOCAL cloud check with water-safe detection
+    from src.enhancer import water_safe_cloud_mask
+    b08 = np.clip(b08_arr / 10000.0, 0, 1.5) if b08_arr is not None else None
+    local_cloud_pct = water_safe_cloud_mask(b02, b08)
+    # Only reject if LOCAL cloud at GPS is high (not tile-level STAC cloud)
+    if local_cloud_pct > 50:
         continue
 
     # --- Sunglint correction ---

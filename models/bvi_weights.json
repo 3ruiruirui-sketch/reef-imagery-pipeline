@@ -1,0 +1,24 @@
+{
+  "version": "2.1",
+  "description": "BVI feature weights — expert domain knowledge, B02-only",
+  "features": ["benthic_contrast", "snr", "fft_clean", "edge_entropy", "dyn_range", "signal"],
+  "feature_names": {
+    "benthic_contrast": "B02 Benthic Contrast",
+    "snr": "B02 Signal-to-Noise",
+    "fft_clean": "B02 Surface Calmness",
+    "edge_entropy": "B02 Edge Entropy",
+    "dyn_range": "B02 Dynamic Range",
+    "signal": "B02 Signal Level"
+  },
+  "weights": {
+    "fft_clean": 0.35,
+    "edge_entropy": 0.25,
+    "dyn_range": 0.20,
+    "snr": 0.10,
+    "benthic_contrast": 0.05,
+    "signal": 0.05
+  },
+  "training_method": "Expert domain knowledge (B02-only, positive weights)",
+  "training_data": "8 Sentinel-2 images, Pedra de Santa Eulalia",
+  "expert_ranking": ["2025-09-25", "2024-09-30", "others"]
+}

@@ -110,8 +110,14 @@ def _load_resources():
 
 def predict_score(features_dict):
     """
-    Predicts the benthic visibility score given extracted features.
-    
+    Predicts the benthic visibility score using B02-only features.
+
+    Uses a 6-feature schema derived from Sentinel-2 Band 02 (B02) plus
+    bathymetry context.  Replaces the legacy multi-band S2 feature set
+    (kd_b02, water_trans, signal_strength, cleanliness) with a unified
+    B02-only representation: benthic_contrast, snr, fft_clean,
+    edge_entropy, dyn_range, signal.
+
     Returns:
         dict: {
             "score": float,
@@ -120,67 +126,36 @@ def predict_score(features_dict):
         }
     """
     _load_resources()
-    
-    # Standardize dictionary mapping (some callers use slightly different names)
-    kd = features_dict.get('kd_b02', features_dict.get('kd490_seasonal', 0.08))
-    transmittance = features_dict.get('water_transmittance_twoway', features_dict.get('water_trans', 0.5))
-    contrast = features_dict.get('contrast_benthic_mean', features_dict.get('contrast', 0.0))
-    snr = features_dict.get('SNR_mean_16m', features_dict.get('signal_strength', 15.0))
-    cleanliness = features_dict.get('cleanliness', 5000)
-    cloud_cov = features_dict.get('cloud_cover', 0.0)
-    
-    # Bathymetry Features with safe fallback defaults
-    def _safe_float(val, default=-1.0):
-        try:
-            v = float(val)
-            if np.isnan(v) or np.isinf(v):
-                return default
-            return v
-        except (TypeError, ValueError):
-            return default
 
-    dist_isobath = _safe_float(features_dict.get('nearest_isobath_distance_m'), -1.0)
-    depth_isobath = _safe_float(features_dict.get('nearest_isobath_depth_m'), -1.0)
-    dist_10m = _safe_float(features_dict.get('dist_to_isobath_10m'), -1.0)
-    dist_20m = _safe_float(features_dict.get('dist_to_isobath_20m'), -1.0)
-    dist_30m = _safe_float(features_dict.get('dist_to_isobath_30m'), -1.0)
-    dist_50m = _safe_float(features_dict.get('dist_to_isobath_50m'), -1.0)
-    dist_100m = _safe_float(features_dict.get('dist_to_isobath_100m'), -1.0)
-    zone_class_str = features_dict.get('bathymetry_zone_class', 'unknown')
-    slope_proxy = _safe_float(features_dict.get('bathy_slope_proxy', features_dict.get('bathymetry_slope_proxy')), -1.0)
-    contour_dens = _safe_float(features_dict.get('contour_density_proxy'), -1.0)
-    n_isobaths = _safe_float(features_dict.get('n_isobaths_in_aoi'), 0.0)
-    
-    # Ordinal encode the bathymetry zone
-    ZONE_MAP = {
-        "unknown": 0,
-        "very_shallow": 1,
-        "shallow_reef": 2,
-        "nearshore_mid": 3,
-        "mid_depth": 4,
-        "offshore": 5
+    cloud_cov = features_dict.get('cloud_cover', 0.0)
+
+    SCHEMA_ORDER = [
+        "benthic_contrast",
+        "snr",
+        "fft_clean",
+        "edge_entropy",
+        "dyn_range",
+        "signal",
+    ]
+
+    # Build B02-only features for the unified model
+    features = {
+        "benthic_contrast": features_dict.get("benthic_contrast",
+                       features_dict.get("contrast_benthic_mean",
+                       features_dict.get("contrast", 0.1))),
+        "snr": features_dict.get("snr",
+               features_dict.get("SNR_mean_16m",
+               features_dict.get("signal_strength", 0))),
+        "fft_clean": features_dict.get("fft_clean",
+                     features_dict.get("cleanliness", 5000)),
+        "edge_entropy": features_dict.get("edge_entropy",
+                     features_dict.get("edge", 5.0)),
+        "dyn_range": features_dict.get("dyn_range", 0.008),
+        "signal": features_dict.get("signal",
+              features_dict.get("raw_mean", 0.12)),
     }
-    zone_encoded = ZONE_MAP.get(str(zone_class_str), 0)
-    
-    
-    standard_features = {
-        'kd_b02': kd,
-        'water_trans': transmittance,
-        'contrast': contrast,
-        'signal_strength': snr,
-        'cleanliness': cleanliness,
-        'nearest_isobath_distance_m': dist_isobath,
-        'nearest_isobath_depth_m': depth_isobath,
-        'dist_to_isobath_10m': dist_10m,
-        'dist_to_isobath_20m': dist_20m,
-        'dist_to_isobath_30m': dist_30m,
-        'dist_to_isobath_50m': dist_50m,
-        'dist_to_isobath_100m': dist_100m,
-        'bathymetry_zone_class': zone_encoded,
-        'bathy_slope_proxy': slope_proxy,
-        'contour_density_proxy': contour_dens,
-        'n_isobaths_in_aoi': n_isobaths
-    }
+
+    standard_features = {k: features[k] for k in SCHEMA_ORDER}
     
     # Hard filter
     if cloud_cov > 80.0:
@@ -223,21 +198,32 @@ def predict_score(features_dict):
         except Exception as e:
             log.error(f"ML Inference failed ({e}). Reverting to fallback.")
             
-    # Fallback Heuristic
-    clarity_score = max(0, 0.045 / max(kd, 0.001))
-    edge_score = contrast
-    stability_score = min(1.0, np.log10(max(cleanliness, 1)) / 4.0)
-    # Normalise: log10(10000)=4 as practical ceiling for cleanliness
-    semantic_score_proxy = snr / 100.0
-    
+    # Fallback Heuristic (B02-only feature weights)
+    benthic_contrast = features["benthic_contrast"]
+    snr = features["snr"]
+    fft_clean = features["fft_clean"]
+    edge_entropy = features["edge_entropy"]
+    dyn_range = features["dyn_range"]
+    signal = features["signal"]
+
+    # Normalise each feature to 0-1 range
+    fft_norm = min(max(fft_clean, 1), 100000) / 100000.0
+    edge_norm = min(max(edge_entropy, 0), 10.0) / 10.0
+    dyn_norm = min(max(dyn_range, 0), 0.02) / 0.02
+    snr_norm = min(max(snr, 0), 200.0) / 200.0
+    contrast_norm = min(max(benthic_contrast, 0), 1.5) / 1.5
+    signal_norm = min(max(signal, 0), 0.3) / 0.3
+
     score = (
-        0.35 * clarity_score + 
-        0.25 * edge_score + 
-        0.20 * semantic_score_proxy + 
-        0.20 * stability_score
+        0.35 * fft_norm +           # FFT cleanliness
+        0.25 * edge_norm +           # Edge entropy
+        0.20 * dyn_norm +            # Dynamic range
+        0.10 * snr_norm +            # SNR
+        0.05 * contrast_norm +       # Benthic contrast
+        0.05 * signal_norm           # Signal level
     )
-    
-    if cleanliness < 5000:
+
+    if fft_clean < 5000:
         score *= 0.1
 
     if _observe_drift is not None:

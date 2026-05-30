@@ -39,7 +39,7 @@ BBOX_NORTH = 37.10  # onshore (includes coast)
 SITES = {
     "Pedra do Alto":      {"lat": 37.05895, "lon": -8.20673, "depth": 16},
     "Armação de Atuns":   {"lat": 37.04678, "lon": -7.66038, "depth": 10},
-    "Pedra Sta Eulália":  {"lat": 37.04540, "lon": -8.17490, "depth": 12},
+    "Pedra Sta Eulália":  {"lat": 37.068978, "lon": -8.210328, "depth": 12},
 }
 
 print("="*80)

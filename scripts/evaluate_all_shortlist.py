@@ -83,8 +83,10 @@ for idx, row in shortlist.iterrows():
     if b02_ref.max() == 0 or np.all(np.isnan(b02_ref)):
         continue
         
-    cloud_mask = b02_ref > 0.15
-    if cloud_mask.mean() > 0.5:
+    # Water-safe local cloud detection
+    from src.enhancer import water_safe_cloud_mask
+    cloud_pct = water_safe_cloud_mask(b02_ref, b08_ref) / 100.0
+    if cloud_pct > 0.5:
         continue
         
     # Sunglint correction

@@ -1,0 +1,87 @@
+{
+  "timestamp": "2026-05-29T00:58:02.385233",
+  "input_dir": "outputs/algarve_survey/salgados/bands",
+  "output_dir": "outputs/algarve_survey/salgados/analysis",
+  "lat": 37.095,
+  "lon": -8.3,
+  "bands_loaded": [
+    "B01",
+    "B02",
+    "B03",
+    "B04",
+    "B05",
+    "B06",
+    "B07",
+    "B08",
+    "B11",
+    "B12",
+    "B8A"
+  ],
+  "methods": {
+    "stumpf_2band": {
+      "mean": -3.257,
+      "std": 0.273,
+      "valid_pct": 100.0,
+      "min": -4.649,
+      "max": -2.419,
+      "n_valid": 32200
+    },
+    "lyzenga_6band": {
+      "mean": -3.996,
+      "std": 0.409,
+      "valid_pct": 99.0,
+      "min": -7.554,
+      "max": -0.165,
+      "n_valid": 31878
+    },
+    "pca_based": {
+      "mean": -3.257,
+      "std": 0.014,
+      "valid_pct": 99.0,
+      "min": -3.333,
+      "max": -3.228,
+      "n_valid": 31878,
+      "pca_explained_variance": [
+        0.8836,
+        0.0493
+      ]
+    }
+  },
+  "best_method": "stumpf",
+  "indices": {
+    "ndwi": {
+      "mean": -0.391,
+      "std": 0.104,
+      "valid_pct": 100.0,
+      "min": -0.621,
+      "max": 0.024,
+      "n_valid": 32200
+    },
+    "ndi": {
+      "mean": -0.135,
+      "std": 0.049,
+      "valid_pct": 100.0,
+      "min": -0.439,
+      "max": 0.204,
+      "n_valid": 32200
+    },
+    "depth_substrate_ratio": {
+      "mean": 0.632,
+      "std": 0.083,
+      "valid_pct": 100.0,
+      "min": 0.368,
+      "max": 1.448,
+      "n_valid": 32200
+    },
+    "clarity_index": {
+      "mean": 0.371,
+      "std": 0.103,
+      "valid_pct": 100.0,
+      "min": 0.184,
+      "max": 1.456,
+      "n_valid": 32200
+    }
+  },
+  "reef_candidates_geojson": "outputs/algarve_survey/salgados/analysis/reef_candidates_multiband.geojson",
+  "reef_candidate_pixels": 11
+}

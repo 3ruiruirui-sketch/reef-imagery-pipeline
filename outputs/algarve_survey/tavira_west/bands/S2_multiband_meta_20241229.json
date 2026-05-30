@@ -1,0 +1,159 @@
+{
+  "scene_id": "S2B_MSIL2A_20241229T112409_R037_T29SPB_20241229T133929",
+  "date": "2024-12-29",
+  "source": "planetary_computer_stac",
+  "collection": "sentinel-2-l2a",
+  "point": {
+    "lat": 37.105,
+    "lon": -7.68
+  },
+  "buffer_m": 1000,
+  "aoi_bounds": {
+    "west": -7.68898311174991,
+    "south": 37.096016888250084,
+    "east": -7.671016888250089,
+    "north": 37.11398311174991
+  },
+  "target_resolution_m": 10,
+  "bands": {
+    "B01": {
+      "description": "Coastal Aerosol",
+      "wavelength": "443nm",
+      "native_resolution_m": 60,
+      "resampled_to_10m": true,
+      "file": "outputs/algarve_survey/tavira_west/bands/S2_B01_20241229.tif",
+      "file_size_bytes": 139050,
+      "shape": [
+        202,
+        162
+      ]
+    },
+    "B02": {
+      "description": "Blue",
+      "wavelength": "490nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "outputs/algarve_survey/tavira_west/bands/S2_B02_20241229.tif",
+      "file_size_bytes": 57776,
+      "shape": [
+        202,
+        162
+      ]
+    },
+    "B03": {
+      "description": "Green",
+      "wavelength": "560nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "outputs/algarve_survey/tavira_west/bands/S2_B03_20241229.tif",
+      "file_size_bytes": 60398,
+      "shape": [
+        202,
+        162
+      ]
+    },
+    "B04": {
+      "description": "Red",
+      "wavelength": "665nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "outputs/algarve_survey/tavira_west/bands/S2_B04_20241229.tif",
+      "file_size_bytes": 60796,
+      "shape": [
+        202,
+        162
+      ]
+    },
+    "B05": {
+      "description": "Red Edge 1",
+      "wavelength": "705nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/algarve_survey/tavira_west/bands/S2_B05_20241229.tif",
+      "file_size_bytes": 147635,
+      "shape": [
+        202,
+        162
+      ]
+    },
+    "B06": {
+      "description": "Red Edge 2",
+      "wavelength": "740nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/algarve_survey/tavira_west/bands/S2_B06_20241229.tif",
+      "file_size_bytes": 147624,
+      "shape": [
+        202,
+        162
+      ]
+    },
+    "B07": {
+      "description": "Red Edge 3",
+      "wavelength": "783nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/algarve_survey/tavira_west/bands/S2_B07_20241229.tif",
+      "file_size_bytes": 147593,
+      "shape": [
+        202,
+        162
+      ]
+    },
+    "B08": {
+      "description": "NIR",
+      "wavelength": "842nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "outputs/algarve_survey/tavira_west/bands/S2_B08_20241229.tif",
+      "file_size_bytes": 63617,
+      "shape": [
+        202,
+        162
+      ]
+    },
+    "B8A": {
+      "description": "Narrow NIR",
+      "wavelength": "865nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/algarve_survey/tavira_west/bands/S2_B8A_20241229.tif",
+      "file_size_bytes": 147343,
+      "shape": [
+        202,
+        162
+      ]
+    },
+    "B11": {
+      "description": "SWIR1",
+      "wavelength": "1610nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/algarve_survey/tavira_west/bands/S2_B11_20241229.tif",
+      "file_size_bytes": 147311,
+      "shape": [
+        202,
+        162
+      ]
+    },
+    "B12": {
+      "description": "SWIR2",
+      "wavelength": "2190nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/algarve_survey/tavira_west/bands/S2_B12_20241229.tif",
+      "file_size_bytes": 148184,
+      "shape": [
+        202,
+        162
+      ]
+    }
+  },
+  "properties": {
+    "cloud_cover": 0.366447,
+    "s2_datatake_id": "GS2B_20241229T112409_040818_N05.11",
+    "s2_mgrs_tile": "29SPB",
+    "s2_product_uri": "S2B_MSIL2A_20241229T112409_N0511_R037_T29SPB_20241229T133929.SAFE"
+  },
+  "downloaded_at": "2026-05-29T00:57:32.933562Z"
+}

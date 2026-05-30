@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s 'http://localhost:8000/api/isobaths?minlon=-8.4&minlat=37.0&maxlon=-7.5&maxlat=37.1&depths=10,20')",
+      "Bash(curl -s 'http://localhost:8000/api/depth-soundings?bounds=-8.4,37.0,-7.5,37.1&n=10')",
+      "Bash(curl -s 'http://localhost:8000/api/chart-zones?lat=37.058&lon=-8.209&buffer=3000')",
+      "Bash(git ls-remote *)",
+      "Bash(curl -s https://raw.githubusercontent.com/3ruiruirui-sketch/reef-imagery-pipeline/main/src/reef_ml_predictor_acolite.py)",
+      "Bash(pip install *)"
+    ]
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "timestamp": "2026-05-29T01:05:04.945966",
+  "input_dir": "outputs/faro_reef_search/praia_faro_east",
+  "output_dir": "outputs/faro_reef_search/praia_faro_east/analysis",
+  "lat": 36.97,
+  "lon": -7.9,
+  "bands_loaded": [
+    "B01",
+    "B02",
+    "B03",
+    "B04",
+    "B05",
+    "B06",
+    "B07",
+    "B08",
+    "B11",
+    "B12",
+    "B8A"
+  ],
+  "methods": {
+    "stumpf_2band": {
+      "mean": -3.658,
+      "std": 0.301,
+      "valid_pct": 100.0,
+      "min": -4.61,
+      "max": -2.565,
+      "n_valid": 73386
+    },
+    "lyzenga_6band": {
+      "mean": -4.041,
+      "std": 0.163,
+      "valid_pct": 99.32,
+      "min": -6.111,
+      "max": -1.263,
+      "n_valid": 72888
+    },
+    "pca_based": {
+      "mean": -3.655,
+      "std": 0.213,
+      "valid_pct": 99.33,
+      "min": -3.859,
+      "max": -2.884,
+      "n_valid": 72894,
+      "pca_explained_variance": [
+        0.9288,
+        0.0628
+      ]
+    }
+  },
+  "best_method": "stumpf",
+  "indices": {
+    "ndwi": {
+      "mean": -0.015,
+      "std": 0.195,
+      "valid_pct": 99.98,
+      "min": -0.485,
+      "max": 0.373,
+      "n_valid": 73368
+    },
+    "ndi": {
+      "mean": 0.009,
+      "std": 0.13,
+      "valid_pct": 100.0,
+      "min": -0.281,
+      "max": 0.341,
+      "n_valid": 73386
+    },
+    "depth_substrate_ratio": {
+      "mean": 0.978,
+      "std": 0.312,
+      "valid_pct": 100.0,
+      "min": 0.484,
+      "max": 2.081,
+      "n_valid": 73386
+    },
+    "clarity_index": {
+      "mean": 0.97,
+      "std": 0.388,
+      "valid_pct": 100.0,
+      "min": 0.316,
+      "max": 2.703,
+      "n_valid": 73386
+    }
+  },
+  "reef_candidates_geojson": "outputs/faro_reef_search/praia_faro_east/analysis/reef_candidates_multiband.geojson",
+  "reef_candidate_pixels": 10232
+}

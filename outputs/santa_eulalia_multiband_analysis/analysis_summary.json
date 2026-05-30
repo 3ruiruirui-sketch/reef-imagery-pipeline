@@ -1,0 +1,86 @@
+{
+  "timestamp": "2026-05-29T00:48:14.569490",
+  "input_dir": "outputs/santa_eulalia_multiband",
+  "output_dir": "outputs/santa_eulalia_multiband_analysis",
+  "lat": 37.0454,
+  "lon": -8.1749,
+  "bands_loaded": [
+    "B01",
+    "B02",
+    "B03",
+    "B04",
+    "B05",
+    "B06",
+    "B07",
+    "B08",
+    "B11",
+    "B12",
+    "B8A"
+  ],
+  "methods": {
+    "stumpf_2band": {
+      "mean": -4.085,
+      "std": 0.011,
+      "valid_pct": 100.0,
+      "min": -4.132,
+      "max": -4.04,
+      "n_valid": 32361
+    },
+    "lyzenga_6band": {
+      "mean": -3.999,
+      "std": 0.011,
+      "valid_pct": 98.51,
+      "min": -4.037,
+      "max": -3.828,
+      "n_valid": 31878
+    },
+    "pca_based": {
+      "mean": -4.085,
+      "std": 0.005,
+      "valid_pct": 98.51,
+      "min": -4.097,
+      "max": -4.078,
+      "n_valid": 31878,
+      "pca_explained_variance": [
+        0.9981,
+        0.0008
+      ]
+    }
+  },
+  "best_method": "stumpf",
+  "indices": {
+    "ndwi": {
+      "mean": 0.012,
+      "std": 0.004,
+      "valid_pct": 100.0,
+      "min": 0.002,
+      "max": 0.027,
+      "n_valid": 32361
+    },
+    "ndi": {
+      "mean": -0.001,
+      "std": 0.003,
+      "valid_pct": 99.5,
+      "min": -0.008,
+      "max": 0.011,
+      "n_valid": 32200
+    },
+    "depth_substrate_ratio": {
+      "mean": 1.028,
+      "std": 0.007,
+      "valid_pct": 99.5,
+      "min": 1.009,
+      "max": 1.056,
+      "n_valid": 32200
+    },
+    "clarity_index": {
+      "mean": 1.074,
+      "std": 0.005,
+      "valid_pct": 99.5,
+      "min": 1.051,
+      "max": 1.095,
+      "n_valid": 32200
+    }
+  },
+  "reef_candidates_geojson": null
+}

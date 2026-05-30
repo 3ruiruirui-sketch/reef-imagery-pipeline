@@ -1,0 +1,159 @@
+{
+  "scene_id": "S2B_MSIL2A_20250925T112109_R037_T29SNB_20250925T151904",
+  "date": "2025-09-25",
+  "source": "planetary_computer_stac",
+  "collection": "sentinel-2-l2a",
+  "point": {
+    "lat": 37.0858,
+    "lon": -8.1501
+  },
+  "buffer_m": 1500.0,
+  "aoi_bounds": {
+    "west": -8.163574667624866,
+    "south": 37.07232533237514,
+    "east": -8.136625332375134,
+    "north": 37.09927466762486
+  },
+  "target_resolution_m": 10,
+  "bands": {
+    "B01": {
+      "description": "Coastal Aerosol",
+      "wavelength": "443nm",
+      "native_resolution_m": 60,
+      "resampled_to_10m": true,
+      "file": "outputs/santa_eulalia_20250925/S2_B01_20250925.tif",
+      "file_size_bytes": 302512,
+      "shape": [
+        301,
+        242
+      ]
+    },
+    "B02": {
+      "description": "Blue",
+      "wavelength": "490nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "outputs/santa_eulalia_20250925/S2_B02_20250925.tif",
+      "file_size_bytes": 126937,
+      "shape": [
+        301,
+        242
+      ]
+    },
+    "B03": {
+      "description": "Green",
+      "wavelength": "560nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "outputs/santa_eulalia_20250925/S2_B03_20250925.tif",
+      "file_size_bytes": 130810,
+      "shape": [
+        301,
+        242
+      ]
+    },
+    "B04": {
+      "description": "Red",
+      "wavelength": "665nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "outputs/santa_eulalia_20250925/S2_B04_20250925.tif",
+      "file_size_bytes": 133942,
+      "shape": [
+        301,
+        242
+      ]
+    },
+    "B05": {
+      "description": "Red Edge 1",
+      "wavelength": "705nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/santa_eulalia_20250925/S2_B05_20250925.tif",
+      "file_size_bytes": 314935,
+      "shape": [
+        301,
+        242
+      ]
+    },
+    "B06": {
+      "description": "Red Edge 2",
+      "wavelength": "740nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/santa_eulalia_20250925/S2_B06_20250925.tif",
+      "file_size_bytes": 312181,
+      "shape": [
+        301,
+        242
+      ]
+    },
+    "B07": {
+      "description": "Red Edge 3",
+      "wavelength": "783nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/santa_eulalia_20250925/S2_B07_20250925.tif",
+      "file_size_bytes": 311956,
+      "shape": [
+        301,
+        242
+      ]
+    },
+    "B08": {
+      "description": "NIR",
+      "wavelength": "842nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "outputs/santa_eulalia_20250925/S2_B08_20250925.tif",
+      "file_size_bytes": 121391,
+      "shape": [
+        301,
+        242
+      ]
+    },
+    "B8A": {
+      "description": "Narrow NIR",
+      "wavelength": "865nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/santa_eulalia_20250925/S2_B8A_20250925.tif",
+      "file_size_bytes": 310873,
+      "shape": [
+        301,
+        242
+      ]
+    },
+    "B11": {
+      "description": "SWIR1",
+      "wavelength": "1610nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/santa_eulalia_20250925/S2_B11_20250925.tif",
+      "file_size_bytes": 315558,
+      "shape": [
+        301,
+        242
+      ]
+    },
+    "B12": {
+      "description": "SWIR2",
+      "wavelength": "2190nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "outputs/santa_eulalia_20250925/S2_B12_20250925.tif",
+      "file_size_bytes": 317165,
+      "shape": [
+        301,
+        242
+      ]
+    }
+  },
+  "properties": {
+    "cloud_cover": 1.245075,
+    "s2_datatake_id": "GS2B_20250925T112109_044679_N05.11",
+    "s2_mgrs_tile": "29SNB",
+    "s2_product_uri": "S2B_MSIL2A_20250925T112109_N0511_R037_T29SNB_20250925T151904.SAFE"
+  },
+  "downloaded_at": "2026-05-29T22:23:37.573566Z"
+}

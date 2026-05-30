@@ -9,7 +9,7 @@ Uses Microsoft Planetary Computer STAC (zero-auth) to:
   - Save each band as GeoTIFF + metadata JSON
 
 Usage:
-  python download_multiband_s2.py --lat 37.04540 --lon -8.17490 --date 2024-10-15
+  python download_multiband_s2.py --lat 37.068978 --lon -8.210328 --date 2024-10-15
   python download_multiband_s2.py --output-dir my_output --buffer-m 2000
 
 Importable:
@@ -48,8 +48,8 @@ REEF_BANDS = {
     "B12": {"wl": "2190nm", "desc": "SWIR2",             "res_m": 20},
 }
 
-DEFAULT_LAT = 37.04540
-DEFAULT_LON = -8.17490
+DEFAULT_LAT = 37.068978
+DEFAULT_LON = -8.210328
 DEFAULT_DATE = "2024-10-15"
 DEFAULT_BUFFER_M = 1000
 DEFAULT_OUTPUT_DIR = "reef_multiband_output"

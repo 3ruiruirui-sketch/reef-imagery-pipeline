@@ -1,0 +1,170 @@
+{
+  "metrics": [
+    {
+      "date": "2023-03-15",
+      "snr": 98.5,
+      "kd": 0.0446,
+      "fft_clean": 8664,
+      "benthic_contrast": 0.2,
+      "edge_entropy": 7.26,
+      "signal": 0.141,
+      "ratio_mean": 0.936,
+      "ratio_std": 0.012,
+      "dyn_range": 0.013,
+      "subsurf_std": 0.0031,
+      "local_cloud": 0.0
+    },
+    {
+      "date": "2025-03-29",
+      "snr": 127.9,
+      "kd": 0.0448,
+      "fft_clean": 13478,
+      "benthic_contrast": 0.2,
+      "edge_entropy": 6.0,
+      "signal": 0.136,
+      "ratio_mean": 0.967,
+      "ratio_std": 0.012,
+      "dyn_range": 0.008,
+      "subsurf_std": 0.0016,
+      "local_cloud": 0.0
+    },
+    {
+      "date": "2023-09-01",
+      "snr": 137.0,
+      "kd": 0.0451,
+      "fft_clean": 17044,
+      "benthic_contrast": 0.1,
+      "edge_entropy": 6.51,
+      "signal": 0.122,
+      "ratio_mean": 1.013,
+      "ratio_std": 0.013,
+      "dyn_range": 0.005,
+      "subsurf_std": 0.0011,
+      "local_cloud": 0.0
+    },
+    {
+      "date": "2025-09-15",
+      "snr": 138.4,
+      "kd": 0.0453,
+      "fft_clean": 17221,
+      "benthic_contrast": 0.1,
+      "edge_entropy": 7.29,
+      "signal": 0.118,
+      "ratio_mean": 1.041,
+      "ratio_std": 0.012,
+      "dyn_range": 0.005,
+      "subsurf_std": 0.001,
+      "local_cloud": 0.0
+    },
+    {
+      "date": "2025-09-25",
+      "snr": 129.6,
+      "kd": 0.0454,
+      "fft_clean": 15034,
+      "benthic_contrast": 0.1,
+      "edge_entropy": 6.63,
+      "signal": 0.127,
+      "ratio_mean": 1.062,
+      "ratio_std": 0.013,
+      "dyn_range": 0.008,
+      "subsurf_std": 0.0016,
+      "local_cloud": 0.0
+    },
+    {
+      "date": "2026-02-22",
+      "snr": 86.0,
+      "kd": 0.0446,
+      "fft_clean": 6139,
+      "benthic_contrast": 0.2,
+      "edge_entropy": 6.68,
+      "signal": 0.125,
+      "ratio_mean": 0.949,
+      "ratio_std": 0.023,
+      "dyn_range": 0.014,
+      "subsurf_std": 0.0035,
+      "local_cloud": 0.0
+    },
+    {
+      "date": "2025-10-05",
+      "snr": 108.1,
+      "kd": 0.0453,
+      "fft_clean": 10764,
+      "benthic_contrast": 0.1,
+      "edge_entropy": 7.23,
+      "signal": 0.12,
+      "ratio_mean": 1.047,
+      "ratio_std": 0.015,
+      "dyn_range": 0.007,
+      "subsurf_std": 0.0015,
+      "local_cloud": 0.0
+    },
+    {
+      "date": "2024-09-30",
+      "snr": 129.1,
+      "kd": 0.0454,
+      "fft_clean": 704,
+      "benthic_contrast": 1.1,
+      "edge_entropy": 1.98,
+      "signal": 0.12,
+      "ratio_mean": 1.06,
+      "ratio_std": 0.059,
+      "dyn_range": 0.006,
+      "subsurf_std": 0.0059,
+      "local_cloud": 0.1
+    }
+  ],
+  "pairs": [
+    [
+      "2025-09-25",
+      "2024-09-30"
+    ],
+    [
+      "2025-09-25",
+      "2023-03-15"
+    ],
+    [
+      "2025-09-25",
+      "2025-03-29"
+    ],
+    [
+      "2025-09-25",
+      "2023-09-01"
+    ],
+    [
+      "2025-09-25",
+      "2025-09-15"
+    ],
+    [
+      "2025-09-25",
+      "2026-02-22"
+    ],
+    [
+      "2025-09-25",
+      "2025-10-05"
+    ],
+    [
+      "2024-09-30",
+      "2023-03-15"
+    ],
+    [
+      "2024-09-30",
+      "2025-03-29"
+    ],
+    [
+      "2024-09-30",
+      "2023-09-01"
+    ],
+    [
+      "2024-09-30",
+      "2025-09-15"
+    ],
+    [
+      "2024-09-30",
+      "2026-02-22"
+    ],
+    [
+      "2024-09-30",
+      "2025-10-05"
+    ]
+  ]
+}
