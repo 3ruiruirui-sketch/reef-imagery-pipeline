@@ -210,7 +210,7 @@ def compute_metrics(b02, b03, b08, b02_corr, b02_enhanced):
     return {
         "snr": snr_mean, "kd": kd_est, "fft_clean": fft_clean,
         "edge_entropy": edge_entropy, "benthic_contrast": benthic_contrast,
-        "local_cloud": local_cloud, "raw_mean": raw_mean,
+        "local_cloud": local_cloud, "signal": raw_mean,
         "ratio_mean": ratio_mean, "ratio_std": ratio_std,
         "dyn_range": dyn_range, "subsurf_std": subsurf_std,
     }

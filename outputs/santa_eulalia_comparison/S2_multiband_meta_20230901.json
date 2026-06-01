@@ -1,0 +1,159 @@
+{
+  "scene_id": "S2A_MSIL2A_20230901T112121_R037_T29SNB_20241024T010739",
+  "date": "2023-09-01",
+  "source": "planetary_computer_stac",
+  "collection": "sentinel-2-l2a",
+  "point": {
+    "lat": 37.069081,
+    "lon": -8.210242
+  },
+  "buffer_m": 1000.0,
+  "aoi_bounds": {
+    "west": -8.219225111749909,
+    "south": 37.060097888250084,
+    "east": -8.20125888825009,
+    "north": 37.07806411174991
+  },
+  "target_resolution_m": 10,
+  "bands": {
+    "B01": {
+      "description": "Coastal Aerosol",
+      "wavelength": "443nm",
+      "native_resolution_m": 60,
+      "resampled_to_10m": true,
+      "file": "/Users/ssoares/Downloads/PI-PROJE/reef_imagery_pipeline/outputs/santa_eulalia_comparison/S2_B01_20230901.tif",
+      "file_size_bytes": 112873,
+      "shape": [
+        201,
+        161
+      ]
+    },
+    "B02": {
+      "description": "Blue",
+      "wavelength": "490nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "/Users/ssoares/Downloads/PI-PROJE/reef_imagery_pipeline/outputs/santa_eulalia_comparison/S2_B02_20230901.tif",
+      "file_size_bytes": 36370,
+      "shape": [
+        201,
+        161
+      ]
+    },
+    "B03": {
+      "description": "Green",
+      "wavelength": "560nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "/Users/ssoares/Downloads/PI-PROJE/reef_imagery_pipeline/outputs/santa_eulalia_comparison/S2_B03_20230901.tif",
+      "file_size_bytes": 33154,
+      "shape": [
+        201,
+        161
+      ]
+    },
+    "B04": {
+      "description": "Red",
+      "wavelength": "665nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "/Users/ssoares/Downloads/PI-PROJE/reef_imagery_pipeline/outputs/santa_eulalia_comparison/S2_B04_20230901.tif",
+      "file_size_bytes": 25269,
+      "shape": [
+        201,
+        161
+      ]
+    },
+    "B05": {
+      "description": "Red Edge 1",
+      "wavelength": "705nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "/Users/ssoares/Downloads/PI-PROJE/reef_imagery_pipeline/outputs/santa_eulalia_comparison/S2_B05_20230901.tif",
+      "file_size_bytes": 110145,
+      "shape": [
+        201,
+        161
+      ]
+    },
+    "B06": {
+      "description": "Red Edge 2",
+      "wavelength": "740nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "/Users/ssoares/Downloads/PI-PROJE/reef_imagery_pipeline/outputs/santa_eulalia_comparison/S2_B06_20230901.tif",
+      "file_size_bytes": 95717,
+      "shape": [
+        201,
+        161
+      ]
+    },
+    "B07": {
+      "description": "Red Edge 3",
+      "wavelength": "783nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "/Users/ssoares/Downloads/PI-PROJE/reef_imagery_pipeline/outputs/santa_eulalia_comparison/S2_B07_20230901.tif",
+      "file_size_bytes": 104208,
+      "shape": [
+        201,
+        161
+      ]
+    },
+    "B08": {
+      "description": "NIR",
+      "wavelength": "842nm",
+      "native_resolution_m": 10,
+      "resampled_to_10m": false,
+      "file": "/Users/ssoares/Downloads/PI-PROJE/reef_imagery_pipeline/outputs/santa_eulalia_comparison/S2_B08_20230901.tif",
+      "file_size_bytes": 20930,
+      "shape": [
+        201,
+        161
+      ]
+    },
+    "B8A": {
+      "description": "Narrow NIR",
+      "wavelength": "865nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "/Users/ssoares/Downloads/PI-PROJE/reef_imagery_pipeline/outputs/santa_eulalia_comparison/S2_B8A_20230901.tif",
+      "file_size_bytes": 95186,
+      "shape": [
+        201,
+        161
+      ]
+    },
+    "B11": {
+      "description": "SWIR1",
+      "wavelength": "1610nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "/Users/ssoares/Downloads/PI-PROJE/reef_imagery_pipeline/outputs/santa_eulalia_comparison/S2_B11_20230901.tif",
+      "file_size_bytes": 104496,
+      "shape": [
+        201,
+        161
+      ]
+    },
+    "B12": {
+      "description": "SWIR2",
+      "wavelength": "2190nm",
+      "native_resolution_m": 20,
+      "resampled_to_10m": true,
+      "file": "/Users/ssoares/Downloads/PI-PROJE/reef_imagery_pipeline/outputs/santa_eulalia_comparison/S2_B12_20230901.tif",
+      "file_size_bytes": 120732,
+      "shape": [
+        201,
+        161
+      ]
+    }
+  },
+  "properties": {
+    "cloud_cover": 0.007999,
+    "s2_datatake_id": "GS2A_20230901T112121_042791_N05.10",
+    "s2_mgrs_tile": "29SNB",
+    "s2_product_uri": "S2A_MSIL2A_20230901T112121_N0510_R037_T29SNB_20241024T010739.SAFE"
+  },
+  "downloaded_at": "2026-05-30T19:24:17.613388Z"
+}

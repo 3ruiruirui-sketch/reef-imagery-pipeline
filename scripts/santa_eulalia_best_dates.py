@@ -26,9 +26,10 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from src.reef_ml_predictor_acolite import make_snr_map, estimate_kd_bandratio
+from src.ranking_model import predict_score
 
-SITE_LAT = 37.068978
-SITE_LON = -8.210328
+SITE_LAT = 37.069081
+SITE_LON = -8.210242
 DEPTH = 12
 BUFFER_M = 500
 YEARS = 8
@@ -251,6 +252,19 @@ def main():
         metrics = compute_bvi_metrics(b02_corr, b03_corr)
 
         raw_mean = float(np.mean(b02[b02 > 0])) if np.any(b02 > 0) else 0
+        dyn_range = float(np.max(b02_corr) - np.min(b02_corr)) if np.any(b02_corr) else 0.008
+
+        # Call the canonical ML ranking model / expert B02 model
+        features_for_ranking = {
+            "benthic_contrast": metrics["benthic_contrast"],
+            "snr": metrics["snr"],
+            "fft_clean": metrics["fft_cleanliness"],
+            "edge_entropy": metrics["edge_entropy"],
+            "dyn_range": dyn_range,
+            "signal": raw_mean,
+            "cloud_cover": local_cloud_pct,
+        }
+        prediction = predict_score(features_for_ranking)
 
         results.append({
             "date": date_str,
@@ -262,6 +276,9 @@ def main():
             "edge_entropy": metrics["edge_entropy"],
             "kd_mean": metrics["kd_mean"],
             "raw_mean": raw_mean,
+            "dyn_range": dyn_range,
+            "ml_score": prediction["score"],
+            "ml_mode": prediction["mode"],
         })
 
     print(f"\r    Processed {len(results)} scenes successfully.                    ")
@@ -294,41 +311,20 @@ def main():
         if df_ok.empty:
             df_ok = df.copy()
 
-    # Normalize metrics
-    df_ok["n_clean"] = norm(np.log10(df_ok["fft_cleanliness"].clip(lower=1)))
-    df_ok["n_kd"] = norm(1.0 / df_ok["kd_mean"])
-    df_ok["n_contrast"] = norm(df_ok["benthic_contrast"])
-    df_ok["n_entropy"] = norm(df_ok["edge_entropy"])
-    df_ok["n_snr"] = norm(df_ok["snr"])
-
-    # Local cloud score: 0% cloud at GPS = 1.0, 15% = 0.0
-    df_ok["n_local_cloud"] = norm(100 - df_ok["local_cloud_pct"])
-
-    # Signal penalty (sunglint or fog)
-    signal_ok = ((df_ok["raw_mean"] >= 0.04) & (df_ok["raw_mean"] <= 0.15)).astype(float)
-    signal_ok = signal_ok.replace(0, 0.2)
-
-    # BVI formula
-    df_ok["BVI"] = (
-        0.25 * df_ok["n_clean"] +
-        0.20 * df_ok["n_kd"] +
-        0.20 * df_ok["n_contrast"] +
-        0.15 * df_ok["n_entropy"] +
-        0.10 * df_ok["n_snr"] +
-        0.10 * df_ok["n_local_cloud"]
-    ) * signal_ok
+    # Use canonical absolute ML BVI score directly
+    df_ok["BVI"] = df_ok["ml_score"]
 
     df_ok = df_ok.sort_values("BVI", ascending=False).reset_index(drop=True)
 
     # ── STEP 4: Results ────────────────────────────────────────────────────────
     print(f"\n{'='*80}")
-    print(f"  BVI RANKING — Pedra de Santa Eulalia")
+    print(f"  CANONICAL ML BVI RANKING — Pedra de Santa Eulalia")
     print(f"  {lat:.6f} N, {abs(lon):.6f} W | Depth: {depth}m")
     print(f"{'='*80}")
 
-    print(f"\n  {'#':>2}  {'Date':<12} {'BVI':>5} {'Local':>6} {'STAC':>6} {'SNR':>6} "
+    print(f"\n  {'#':>2}  {'Date':<12} {'BVI':>5} {'Mode':<8} {'Local':>6} {'STAC':>6} {'SNR':>6} "
           f"{'Contrast':>9} {'Clean':>9} {'Entropy':>8} {'Kd':>7} {'Signal':>7}")
-    print("  " + "-" * 95)
+    print("  " + "-" * 104)
 
     for i, r in df_ok.iterrows():
         if r["BVI"] >= 0.7:
@@ -341,7 +337,7 @@ def main():
             star = ""
 
         print(
-            f"  {i+1:>2}. {r['date']:<12} {r['BVI']:.3f} {r['local_cloud_pct']:>5.1f}% "
+            f"  {i+1:>2}. {r['date']:<12} {r['BVI']:.3f} {r['ml_mode']:<8} {r['local_cloud_pct']:>5.1f}% "
             f"{r['cloud_stac']:>5.1f}% {r['snr']:>5.1f} "
             f"{r['benthic_contrast']:>8.1f} {r['fft_cleanliness']:>8.0f} "
             f"{r['edge_entropy']:>7.3f} {r['kd_mean']:>6.4f} {r['raw_mean']:>6.3f}{star}"
@@ -360,6 +356,7 @@ def main():
         best = df_ok.iloc[0]
         print(f"\n  BEST DATE: {best['date']}")
         print(f"     BVI:             {best['BVI']:.3f}")
+        print(f"     Ranker Mode:     {best['ml_mode']}")
         print(f"     Local cloud:     {best['local_cloud_pct']:.1f}% (STAC: {best['cloud_stac']:.1f}%)")
         print(f"     SNR:             {best['snr']:.1f}")
         print(f"     Kd:              {best['kd_mean']:.4f}")
@@ -372,7 +369,7 @@ def main():
     print(f"\n  TOP 5 RECOMMENDED:")
     for i in range(min(5, len(df_ok))):
         r = df_ok.iloc[i]
-        print(f"     {i+1}. {r['date']} — BVI={r['BVI']:.3f} | "
+        print(f"     {i+1}. {r['date']} — BVI={r['BVI']:.3f} | Mode={r['ml_mode']} | "
               f"LocalCloud={r['local_cloud_pct']:.1f}% | Kd={r['kd_mean']:.4f}")
 
     # Save CSV
