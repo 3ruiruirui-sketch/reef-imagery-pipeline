@@ -38,14 +38,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--start", default=DEFAULT_START, help="Start date YYYY-MM-DD")
     parser.add_argument("--end", default=DEFAULT_END, help="End date YYYY-MM-DD")
     parser.add_argument("--max-cloud", type=float, default=DEFAULT_MAX_CLOUD, help="Maximum STAC cloud cover")
-    parser.add_argument("--catalog", choices=["pc", "earthsearch"], default="pc", help="STAC endpoint to query")
+    parser.add_argument(
+        "--catalog",
+        choices=["auto", "pc", "earthsearch"],
+        default="auto",
+        help="STAC endpoint to query; auto prefers Earth Search and falls back to Planetary Computer"
+    )
     parser.add_argument("--output", default="sentinel2_stac_example.json", help="Optional metadata output JSON")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    catalog_url = PC_STAC_URL if args.catalog == "pc" else EARTH_SEARCH_STAC_URL
+    if args.catalog == "auto":
+        catalog_url = None
+    elif args.catalog == "pc":
+        catalog_url = PC_STAC_URL
+    else:
+        catalog_url = EARTH_SEARCH_STAC_URL
 
     date_range = (args.start, args.end)
     scenes = search_sentinel2_scenes(

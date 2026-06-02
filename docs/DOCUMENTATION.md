@@ -125,9 +125,12 @@ Use STAC or a published index to resolve the tile path; direct URL composition i
 
 ### 4.2.1 Verified STAC Endpoints
 
-- Microsoft Planetary Computer STAC: `https://planetarycomputer.microsoft.com/api/stac/v1`
 - Element84 / Earth Search STAC: `https://earth-search.aws.element84.com/v1`
+- Microsoft Planetary Computer STAC: `https://planetarycomputer.microsoft.com/api/stac/v1`
 - Sentinel Hub / Copernicus Data Space: `https://sh.dataspace.copernicus.eu/`
+
+> Note: the repository defaults to Earth Search first because it is currently the most reliable STAC endpoint for Sentinel-2 discovery.
+> Planetary Computer remains available as a fallback.
 
 ### 4.3 EMODnet Bathymetry Download
 

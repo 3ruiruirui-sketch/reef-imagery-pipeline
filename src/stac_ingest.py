@@ -16,9 +16,10 @@ from pystac_client import Client
 PC_STAC_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
 EARTH_SEARCH_STAC_URL = "https://earth-search.aws.element84.com/v1"
 DEFAULT_S2_COLLECTION = "sentinel-2-l2a"
+STAC_URL_PRIORITY = [EARTH_SEARCH_STAC_URL, PC_STAC_URL]
 
 
-def open_stac_catalog(url: str = PC_STAC_URL) -> Client:
+def open_stac_catalog(url: str = EARTH_SEARCH_STAC_URL) -> Client:
     """Open a STAC catalog and apply signing if required."""
     modifier = pc.sign_inplace if "planetarycomputer.microsoft.com" in url else None
     return Client.open(url, modifier=modifier)
@@ -44,23 +45,37 @@ def search_sentinel2_scenes(
     lon: float,
     date_range: Union[str, Tuple[str, str], Tuple[datetime, datetime]],
     max_cloud_cover: float = 25.0,
-    catalog_url: str = PC_STAC_URL,
+    catalog_url: str | None = None,
     collection: str = DEFAULT_S2_COLLECTION,
     limit: int = 10,
 ) -> List[Item]:
-    """Search Sentinel-2 L2A scenes for a point, date range, and cloud filter."""
-    catalog = open_stac_catalog(catalog_url)
+    """Search Sentinel-2 L2A scenes for a point, date range, and cloud filter.
+
+    If catalog_url is None, this function tries the preferred STAC endpoints in
+    order and returns the first successful result.
+    """
+    urls = [catalog_url] if catalog_url else STAC_URL_PRIORITY
     datetime_range = normalize_datetime_range(date_range)
+    last_error: Exception | None = None
 
-    search = catalog.search(
-        collections=[collection],
-        intersects={"type": "Point", "coordinates": [lon, lat]},
-        datetime=datetime_range,
-        query={"eo:cloud_cover": {"lt": max_cloud_cover}},
+    for url in urls:
+        try:
+            catalog = open_stac_catalog(url)
+            search = catalog.search(
+                collections=[collection],
+                intersects={"type": "Point", "coordinates": [lon, lat]},
+                datetime=datetime_range,
+                query={"eo:cloud_cover": {"lt": max_cloud_cover}},
+            )
+            items = list(search.items())
+            return items[:limit]
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            continue
+
+    raise RuntimeError(
+        f"STAC scene search failed for all endpoints {urls}: {last_error}"
     )
-
-    items = list(search.get_items())
-    return items[:limit]
 
 
 def choose_least_cloudy(items: Iterable[Item]) -> Optional[Item]:

@@ -24,6 +24,9 @@ class DummySearch:
     def get_items(self):
         return self._items
 
+    def items(self):
+        return self._items
+
 
 class DummyClient:
     def __init__(self, items):
@@ -77,7 +80,7 @@ def test_search_sentinel2_scenes(monkeypatch):
     dummy_client = DummyClient(items)
 
     def fake_open(url, modifier=None):
-        assert url == stac_ingest.PC_STAC_URL
+        assert url == stac_ingest.EARTH_SEARCH_STAC_URL
         return dummy_client
 
     monkeypatch.setattr(stac_ingest.Client, "open", fake_open)
@@ -85,3 +88,22 @@ def test_search_sentinel2_scenes(monkeypatch):
         37.07, -8.21, ("2025-09-01", "2025-09-15"), max_cloud_cover=30.0
     )
     assert scenes == items
+
+
+def test_search_sentinel2_scenes_fallback(monkeypatch):
+    items = [DummyItem("item-y", 11.0, {})]
+    dummy_client = DummyClient(items)
+    calls = []
+
+    def fake_open(url, modifier=None):
+        calls.append(url)
+        if url == stac_ingest.EARTH_SEARCH_STAC_URL:
+            raise RuntimeError("Earth Search unavailable")
+        return dummy_client
+
+    monkeypatch.setattr(stac_ingest.Client, "open", fake_open)
+    scenes = stac_ingest.search_sentinel2_scenes(
+        37.07, -8.21, ("2025-09-01", "2025-09-15"), max_cloud_cover=30.0
+    )
+    assert scenes == items
+    assert calls == [stac_ingest.EARTH_SEARCH_STAC_URL, stac_ingest.PC_STAC_URL]
