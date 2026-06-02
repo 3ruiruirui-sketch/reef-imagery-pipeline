@@ -36,7 +36,11 @@ reef_imagery_pipeline/
 
 ---
 
-## 🔄 Data Pipeline
+## � Project Documentation
+
+- See `docs/DOCUMENTATION.md` for open Copernicus/Sentinel data sourcing, legal access, and Algarve visibility integration guidance.
+
+## �🔄 Data Pipeline
 
 ```mermaid
 flowchart TB
