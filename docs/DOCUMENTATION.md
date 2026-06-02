@@ -108,6 +108,12 @@ if items:
 
 Use STAC or a published index to resolve the tile path; direct URL composition is possible once you know the tile name and acquisition date.
 
+### 4.2.1 Verified STAC Endpoints
+
+- Microsoft Planetary Computer STAC: `https://planetarycomputer.microsoft.com/api/stac/v1`
+- Element84 / Earth Search STAC: `https://earth-search.aws.element84.com/v1`
+- Sentinel Hub / Copernicus Data Space: `https://sh.dataspace.copernicus.eu/`
+
 ### 4.3 EMODnet Bathymetry Download
 
 - EMODnet portal: https://emodnet.ec.europa.eu/en/bathymetry
