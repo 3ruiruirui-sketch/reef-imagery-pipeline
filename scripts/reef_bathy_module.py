@@ -477,8 +477,9 @@ def compute_s2_depth_inversion(
     Uses the Stumpf et al. (2003) log-ratio transform:
         depth = m1 * ln(n * Rw_blue) / ln(n * Rw_green) + m0
 
-    Default m0/m1 are calibrated for the Algarve oligotrophic coastal water
-    (clear water, Kd ≈ 0.045 m⁻¹) to produce depths roughly in [0, –25 m].
+    Default m0/m1 are calibrated for the Algarve oligotrophic coastal water.
+    If EMODnet bathymetry is available in the output_dir, it will attempt
+    robust dynamic calibration.
 
     Returns : Path to depth GeoTIFF (negative = below sea level), or None.
     """
@@ -491,6 +492,40 @@ def compute_s2_depth_inversion(
         return None
 
     log.info("→ Sentinel-2 Stumpf depth inversion (B02=%s, B03=%s)", b02_path, b03_path)
+    
+    # Try dynamic calibration against EMODnet if present
+    emodnet_path = os.path.join(output_dir, f"bathy_emodnet_{date_str}.tif")
+    if os.path.exists(emodnet_path):
+        log.info("   Found EMODnet bathy! Attempting dynamic calibration...")
+        emodnet_10m = None
+        try:
+            import sys
+            sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            from src.stumpf_emodnet_calibration import (
+                reproject_emodnet_to_s2,
+                calibrate_stumpf_vs_emodnet,
+                validate_reprojected_emodnet,
+            )
+
+            # Temporary reprojected file
+            emodnet_10m = os.path.join(output_dir, f"bathy_emodnet_10m_{date_str}.tif")
+            reproject_emodnet_to_s2(emodnet_path, b02_path, emodnet_10m)
+            validate_reprojected_emodnet(emodnet_10m, min_valid_pixels=100)
+
+            res = calibrate_stumpf_vs_emodnet(b02_path, b03_path, emodnet_10m, out_path)
+            log.info("   ✓ S2 dynamic calibration success! m0=%.3f, m1=%.3f, RMSE=%.3fm", 
+                     res['m0'], res['m1'], res['rmse'])
+            return out_path
+        except Exception as e:
+            log.warning("   Dynamic calibration failed (%s). Falling back to default Stumpf...", e)
+        finally:
+            if emodnet_10m and os.path.exists(emodnet_10m):
+                try:
+                    os.remove(emodnet_10m)
+                except OSError:
+                    pass
+    
+    # Fallback to default Stumpf inversion
     try:
         with rasterio.open(b02_path) as src_b02:
             b02 = src_b02.read(1).astype(np.float32)

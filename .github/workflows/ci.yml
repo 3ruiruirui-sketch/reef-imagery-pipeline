@@ -30,7 +30,11 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pytest pytest-cov flake8 black mypy
-    
+
+    - name: Run EMODnet calibration regression test
+      run: |
+        pytest tests/test_stumpf_emodnet_calibration.py -q
+
     - name: Lint with flake8
       run: |
         # Stop the build if there are Python syntax errors or undefined names
@@ -43,12 +47,12 @@ jobs:
       run: |
         black --check . 2>&1 || echo "Code formatting issues found (non-blocking)"
       continue-on-error: true
-    
+
     - name: Type check with mypy
       run: |
-        mypy orchestrator.py orchestrator_run.py 2>&1 || echo "Type check issues found (non-blocking)"
+        mypy orchestrator.py orchestrator_run.py scripts/reef_bathy_module.py src/stumpf_emodnet_calibration.py tests/test_stumpf_emodnet_calibration.py 2>&1 || echo "Type check issues found (non-blocking)"
       continue-on-error: true
-    
+
     - name: Verify imports
       run: |
         python -c "
@@ -72,6 +76,9 @@ jobs:
         python -m py_compile orchestrator.py
         python -m py_compile orchestrator_run.py
         python -m py_compile run_benthic_physics_comparison.py
+        python -m py_compile scripts/reef_bathy_module.py
+        python -m py_compile src/stumpf_emodnet_calibration.py
+        python -m py_compile tests/test_stumpf_emodnet_calibration.py
         echo "✓ All Python files compile successfully"
     
     - name: Generate coverage report
