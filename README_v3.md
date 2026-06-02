@@ -29,7 +29,11 @@ The v3 pipeline features a unified multi-source orthophoto integration comprisin
 ## 🚀 Setup & Installation
 
 ```bash
-pip install -r requirements_v3.txt
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+# Optional development extras:
+# pip install -e .[dev]
 ```
 
 ---

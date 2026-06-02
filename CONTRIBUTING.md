@@ -14,7 +14,9 @@
    cd reef_imagery_pipeline
    python -m venv .venv
    source .venv/bin/activate
-   pip install -r requirements_v3.txt
+   pip install -r requirements.txt
+   # Optional development extras:
+   # pip install -e .[dev]
    ```
 
 2. **Make changes on a feature branch**

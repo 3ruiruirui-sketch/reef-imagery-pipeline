@@ -195,8 +195,12 @@ flowchart TB
 
 ```bash
 git clone https://github.com/3ruiruirui-sketch/reef-imagery-pipeline.git
-cd reef-imagery-pipeline
-pip install -r requirements_v3.txt
+cd reef_imagery_pipeline
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+# For development tools and tests:
+# pip install -e .[dev]
 ```
 
 ### 2. Basic Usage
