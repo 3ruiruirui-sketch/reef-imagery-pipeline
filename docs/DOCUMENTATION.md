@@ -100,6 +100,21 @@ if items:
     print("Signed B02 href:", signed_href)
 ```
 
+The repository also includes a reusable helper module for Sentinel-2 STAC discovery:
+
+- `src/stac_ingest.py` — scene search, least-cloudy ranking, and signed asset URL extraction
+- `scripts/sentinel2_stac_ingest.py` — CLI example for the Algarve using either Planetary Computer or Earth Search STAC
+
+Example usage:
+
+```bash
+python scripts/sentinel2_stac_ingest.py \
+  --lat 37.068978 --lon -8.210328 \
+  --start 2025-09-01 --end 2025-09-30 \
+  --max-cloud 20 --catalog pc \
+  --output sentinel2_scene.json
+```
+
 ### 4.2 AWS / GCP Public Dataset Access
 
 - Sentinel-2 L2A on AWS: `https://sentinel-s2-l2a.s3.amazonaws.com/`
