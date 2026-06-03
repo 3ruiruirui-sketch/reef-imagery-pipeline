@@ -31,10 +31,10 @@
 <h1>Drift Report — reef_imagery_pipeline</h1>
 
 <div class="stats">
-  <div class="stat-card"><div class="value">2</div><div class="label">Batches</div></div>
-  <div class="stat-card"><div class="value">8</div><div class="label">Observations</div></div>
+  <div class="stat-card"><div class="value">4</div><div class="label">Batches</div></div>
+  <div class="stat-card"><div class="value">14</div><div class="label">Observations</div></div>
   <div class="stat-card"><div class="value" style="color:#ffc107">0</div><div class="label">Warnings</div></div>
-  <div class="stat-card"><div class="value" style="color:#dc3545">8</div><div class="label">Critical</div></div>
+  <div class="stat-card"><div class="value" style="color:#dc3545">10</div><div class="label">Critical</div></div>
 </div>
 
 <div class="charts">
@@ -82,23 +82,53 @@
             <td><span style="background:#dc3545;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;">CRITICAL</span></td>
             <td style="font-size:11px;">4 critical drift events in batch</td>
         </tr>
+<tr>
+            <td>2026-06-03T18:06:47</td>
+            <td>reef-orchestrator-2026-06-03T180647Z-depth16</td>
+            <td>2.0</td>
+            <td>3.0</td>
+            <td>4</td>
+            <td>2</td>
+            <td>0</td>
+            <td>2</td>
+            <td>2</td>
+            <td>0</td>
+            <td>2</td>
+            <td><span style="background:#dc3545;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;">CRITICAL</span></td>
+            <td style="font-size:11px;">2 critical drift events in batch</td>
+        </tr>
+<tr>
+            <td>2026-06-03T18:10:40</td>
+            <td>reef-orchestrator-2026-06-03T181040Z-depth16</td>
+            <td>2.0</td>
+            <td>3.0</td>
+            <td>2</td>
+            <td>2</td>
+            <td>0</td>
+            <td>0</td>
+            <td>0</td>
+            <td>0</td>
+            <td>0</td>
+            <td><span style="background:#28a745;color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;">OK</span></td>
+            <td style="font-size:11px;">no drift detected in batch</td>
+        </tr>
 
 </tbody>
 </table>
 </div>
 
-<p class="generated">Generated: 2026-05-25T00:58:32Z</p>
+<p class="generated">Generated: 2026-06-03T18:10:40Z</p>
 
 <script>
-const labels = ["reef-orchestrator-20", "reef-orchestrator-20"];
+const labels = ["reef-orchestrator-20", "reef-orchestrator-20", "reef-orchestrator-20", "reef-orchestrator-20"];
 
 new Chart(document.getElementById('alertChart'), {
   type: 'bar',
   data: {
     labels: labels,
     datasets: [
-      { label: 'Warnings', data: [0, 0], backgroundColor: '#ffc107' },
-      { label: 'Critical', data: [4, 4], backgroundColor: '#dc3545' },
+      { label: 'Warnings', data: [0, 0, 0, 0], backgroundColor: '#ffc107' },
+      { label: 'Critical', data: [4, 4, 2, 0], backgroundColor: '#dc3545' },
     ]
   },
   options: {
@@ -113,9 +143,9 @@ new Chart(document.getElementById('driftChart'), {
   data: {
     labels: labels,
     datasets: [
-      { label: 'Feature Drift', data: [2, 2], borderColor: '#6f42c1', fill: false, tension: 0.3 },
-      { label: 'Score Drift', data: [4, 4], borderColor: '#fd7e14', fill: false, tension: 0.3 },
-      { label: 'Null Spikes', data: [0, 0], borderColor: '#20c997', fill: false, tension: 0.3 },
+      { label: 'Feature Drift', data: [2, 2, 2, 0], borderColor: '#6f42c1', fill: false, tension: 0.3 },
+      { label: 'Score Drift', data: [4, 4, 0, 0], borderColor: '#fd7e14', fill: false, tension: 0.3 },
+      { label: 'Null Spikes', data: [0, 0, 2, 0], borderColor: '#20c997', fill: false, tension: 0.3 },
     ]
   },
   options: {

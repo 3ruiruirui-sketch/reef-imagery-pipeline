@@ -57,3 +57,9 @@ scratch/
 
 # Planet application draft (restricted)
 docs/application/
+
+# Temporary files and reports
+tmp/
+batch_report.json
+s1_roughness_report_2025.json
+
