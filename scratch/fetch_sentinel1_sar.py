@@ -241,7 +241,8 @@ def extract_sigma0_at_point(item: dict, lon: float, lat: float) -> dict | None:
     try:
         import rasterio
         import numpy as np
-        from pyproj import Transformer
+        from rasterio.warp import reproject, Resampling
+        from rasterio.transform import from_origin
 
         assets = item.get("assets", {})
 
@@ -258,17 +259,26 @@ def extract_sigma0_at_point(item: dict, lon: float, lat: float) -> dict | None:
 
         env = rasterio.Env(AWS_NO_SIGN_REQUEST="YES", GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR")
 
+        # 10m in degrees is approx 0.0001
+        res = 0.0001
+        dst_crs = "EPSG:4326"
+        dst_transform = from_origin(lon - 1.5 * res, lat + 1.5 * res, res, res)
+
         results = {}
         for pol, href in [("vv", vv_href), ("vh", vh_href)]:
             with env:
                 with rasterio.open(href) as src:
-                    tf = Transformer.from_crs("EPSG:4326", src.crs, always_xy=True)
-                    x, y = tf.transform(lon, lat)
-                    # Sample a 3×3 pixel window for robustness
-                    row, col = src.index(x, y)
-                    window = rasterio.windows.Window(col - 1, row - 1, 3, 3)
-                    data = src.read(1, window=window).astype(np.float32)
-                    data_pos = data[data > 0]
+                    dst_data = np.zeros((3, 3), dtype=np.float32)
+                    reproject(
+                        source=rasterio.band(src, 1),
+                        destination=dst_data,
+                        src_transform=None,      # Using GCPs instead of affine transform
+                        src_crs=None,            # Using GCPs instead of CRS
+                        dst_transform=dst_transform,
+                        dst_crs=dst_crs,
+                        resampling=Resampling.bilinear
+                    )
+                    data_pos = dst_data[dst_data > 0]
                     if len(data_pos) == 0:
                         results[pol] = None
                     else:
