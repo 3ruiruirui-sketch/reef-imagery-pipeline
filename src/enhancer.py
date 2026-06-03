@@ -8,9 +8,18 @@ from rasterio.windows import from_bounds
 from pyproj import Transformer
 from datetime import datetime
 import warnings
-from src.reef_ml_predictor_acolite import make_snr_map
+import os
 
-warnings.filterwarnings("ignore")
+if not os.getenv("PC_SDK_SUBSCRIPTION_KEY"):
+    warnings.warn(
+        "PC_SDK_SUBSCRIPTION_KEY não definida — "
+        "Planetary Computer vai falhar silenciosamente. "
+        "Define a variável de ambiente antes de usar fetch_vsi_patch().",
+        RuntimeWarning,
+        stacklevel=2,
+    )
+
+from src.reef_ml_predictor_acolite import make_snr_map
 
 def fetch_vsi_patch(lat, lon, date_str, buffer_m=500.0):
     catalog = Client.open('https://planetarycomputer.microsoft.com/api/stac/v1', modifier=pc.sign_inplace)

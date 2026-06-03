@@ -20,8 +20,11 @@ def write_band(path, arr, profile, nodata=None):
     """Write array to GeoTIFF. If nodata is None and arr contains NaN, uses np.nan as nodata."""
     profile = profile.copy()
     has_nan = np.isnan(arr).any()
-    if nodata is None and has_nan:
-        nodata = np.nan
+    if nodata is None:
+        nodata = np.nan if has_nan else None
+    # For integer-typed arrays, use 255 as nodata sentinel if not set
+    if nodata is None and np.issubdtype(arr.dtype, np.integer):
+        nodata = 255
     profile.update(dtype=rasterio.float32, count=1, compress='lzw', nodata=nodata)
     with rasterio.open(str(path), 'w', **profile) as dst:
         dst.write(arr.astype(np.float32), 1)

@@ -178,10 +178,8 @@ def save_boa_copy(src_b02: Path, src_b03: Path, out_dir: Path, label: str) -> di
     with rasterio.open(src_b02) as src:
         profile = src.profile.copy()
         data = src.read(1).astype(float) / 10000.0
-        valid = data > 0
-        sig   = float(np.mean(data[valid])) if valid.any() else 0.0
-        noise = float(np.std(data[valid]))  if valid.any() else 1.0
-        snr_px   = np.where(valid, data / (noise + 1e-9), 0).astype(np.float32)
+        from src.reef_ml_predictor_acolite import make_snr_map
+        snr_px = make_snr_map(data, window=7)
         conf_px  = np.select([snr_px < 5, snr_px < 30], [0, 1], default=2).astype(np.uint8)
 
     profile.update(dtype=rasterio.float32, count=1)
@@ -225,16 +223,15 @@ def save_csv(results: dict, path: Path):
 def main(depth: float = 16.0, config_path: str | None = None):
     # Apply YAML config overrides (if provided)
     cfg = load_config(config_path)
-    global IMAGE_A_B02, IMAGE_A_B03, IMAGE_B_B02, IMAGE_B_B03, OUTPUT_DIR, TARGET_LAT, TARGET_LON
-    if cfg.get("image_a_b02"):  IMAGE_A_B02  = Path(cfg["image_a_b02"])
-    if cfg.get("image_a_b03"):  IMAGE_A_B03  = Path(cfg["image_a_b03"])
-    if cfg.get("image_b_b02"):  IMAGE_B_B02  = Path(cfg["image_b_b02"])
-    if cfg.get("image_b_b03"):  IMAGE_B_B03  = Path(cfg["image_b_b03"])
-    if cfg.get("output_dir"):   OUTPUT_DIR   = Path(cfg["output_dir"])
-    if cfg.get("target_lat"):   TARGET_LAT   = float(cfg["target_lat"])
-    if cfg.get("target_lon"):   TARGET_LON   = float(cfg["target_lon"])
+    b02_a_path  = Path(cfg["image_a_b02"])  if cfg.get("image_a_b02") else IMAGE_A_B02
+    b03_a_path  = Path(cfg["image_a_b03"])  if cfg.get("image_a_b03") else IMAGE_A_B03
+    b02_b_path  = Path(cfg["image_b_b02"])  if cfg.get("image_b_b02") else IMAGE_B_B02
+    b03_b_path  = Path(cfg["image_b_b03"])  if cfg.get("image_b_b03") else IMAGE_B_B03
+    out_dir     = Path(cfg["output_dir"])   if cfg.get("output_dir")   else OUTPUT_DIR
+    target_lat  = float(cfg["target_lat"])  if cfg.get("target_lat")   else TARGET_LAT
+    target_lon  = float(cfg["target_lon"])  if cfg.get("target_lon")   else TARGET_LON
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
     log.info("=== Reef Orchestrator — depth=%.1fm ===", depth)
 
     if HAS_DRIFT_MONITOR:
@@ -250,16 +247,14 @@ def main(depth: float = 16.0, config_path: str | None = None):
              "YES" if snap_gpt_available() else "NO")
 
     if use_acolite:
-        boa_a = run_acolite(IMAGE_A_B02.parent, OUTPUT_DIR / "acolite_A")
-        boa_b = run_acolite(IMAGE_B_B02.parent, OUTPUT_DIR / "acolite_B")
-        b02_a = extract_band(boa_a, 2, OUTPUT_DIR / "BOA_B02_A_raw.tif")
-        b02_b = extract_band(boa_b, 2, OUTPUT_DIR / "BOA_B02_B_raw.tif")
-        b03_a = extract_band(boa_a, 3, OUTPUT_DIR / "BOA_B03_A_raw.tif")
-        b03_b = extract_band(boa_b, 3, OUTPUT_DIR / "BOA_B03_B_raw.tif")
+        boa_a = run_acolite(b02_a_path.parent, out_dir / "acolite_A")
+        boa_b = run_acolite(b02_b_path.parent, out_dir / "acolite_B")
+        b02_a_path = extract_band(boa_a, 2, out_dir / "BOA_B02_A_raw.tif")
+        b02_b_path = extract_band(boa_b, 2, out_dir / "BOA_B02_B_raw.tif")
+        b03_a_path = extract_band(boa_a, 3, out_dir / "BOA_B03_A_raw.tif")
+        b03_b_path = extract_band(boa_b, 3, out_dir / "BOA_B03_B_raw.tif")
     else:
         log.info("Using L2A BOA TIFFs directly (ACOLITE not installed)")
-        b02_a, b03_a = IMAGE_A_B02, IMAGE_A_B03
-        b02_b, b03_b = IMAGE_B_B02, IMAGE_B_B03
 
     # Step 2: Physics — delegate entirely to run_predictor()
     log.info("Running run_predictor() for both images...")
@@ -277,15 +272,15 @@ def main(depth: float = 16.0, config_path: str | None = None):
     }
 
     pred_a = run_predictor(
-        boa_b02_path=str(b02_a), metadata=meta_a, output_dir=str(OUTPUT_DIR / "pred_A"),
-        date=METADATA["A"]["date"], b03_path=str(b03_a),
-        lat=TARGET_LAT, lon=TARGET_LON, depth_target=depth,
+        boa_b02_path=str(b02_a_path), metadata=meta_a, output_dir=str(out_dir / "pred_A"),
+        date=METADATA["A"]["date"], b03_path=str(b03_a_path),
+        lat=target_lat, lon=target_lon, depth_target=depth,
         with_bathy_features=HAS_IH_BATHY,
     )
     pred_b = run_predictor(
-        boa_b02_path=str(b02_b), metadata=meta_b, output_dir=str(OUTPUT_DIR / "pred_B"),
-        date=METADATA["B"]["date"], b03_path=str(b03_b),
-        lat=TARGET_LAT, lon=TARGET_LON, depth_target=depth,
+        boa_b02_path=str(b02_b_path), metadata=meta_b, output_dir=str(out_dir / "pred_B"),
+        date=METADATA["B"]["date"], b03_path=str(b03_b_path),
+        lat=target_lat, lon=target_lon, depth_target=depth,
         with_bathy_features=HAS_IH_BATHY,
     )
 
@@ -301,7 +296,7 @@ def main(depth: float = 16.0, config_path: str | None = None):
             start_dt = t_date - timedelta(days=3)
             end_dt   = t_date + timedelta(days=3)
             s1_items = search_stac_s1_scenes(
-                lon=TARGET_LON, lat=TARGET_LAT,
+                lon=target_lon, lat=target_lat,
                 year=t_date.year,
                 month_start=start_dt.month,
                 month_end=end_dt.month,
@@ -312,7 +307,7 @@ def main(depth: float = 16.0, config_path: str | None = None):
             if valid:
                 valid.sort(key=lambda x: abs((datetime.strptime(x["date"], "%Y-%m-%d") - t_date).total_seconds()))
                 best = valid[0]
-                sigma0 = extract_sigma0_at_point(best, TARGET_LON, TARGET_LAT)
+                sigma0 = extract_sigma0_at_point(best, target_lon, target_lat)
                 if sigma0 and sigma0.get("vv") and sigma0.get("vh"):
                     r_data = roughness_from_sigma0(sigma0["vv"], sigma0["vh"])
                     if r_data.get("roughness") is not None:
@@ -345,11 +340,11 @@ def main(depth: float = 16.0, config_path: str | None = None):
     if res_b.get("kd_high_uncertainty"): warnings.append("Kd high uncertainty in Image B")
 
     # Step 4: Save BOA copies + maps
-    maps_a = save_boa_copy(b02_a, b03_a, OUTPUT_DIR, "A_20250925")
-    maps_b = save_boa_copy(b02_b, b03_b, OUTPUT_DIR, "B_20231001")
+    maps_a = save_boa_copy(b02_a_path, b03_a_path, out_dir, "A_20250925")
+    maps_b = save_boa_copy(b02_b_path, b03_b_path, out_dir, "B_20231001")
 
     # Step 5: JSON + CSV output
-    csv_path = OUTPUT_DIR / "summary_comparison.csv"
+    csv_path = out_dir / "summary_comparison.csv"
     save_csv(results, csv_path)
 
     report = {
@@ -386,7 +381,7 @@ def main(depth: float = 16.0, config_path: str | None = None):
         },
     }
 
-    report_path = OUTPUT_DIR / "orchestrator_report.json"
+    report_path = out_dir / "orchestrator_report.json"
     with open(report_path, "w") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
 

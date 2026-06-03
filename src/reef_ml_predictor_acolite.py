@@ -145,7 +145,7 @@ def stumpf_sdb(b02: np.ndarray, b03: np.ndarray,
         )
     depth = m1 * ratio + m0
     # Clip negative values to 0, but set beyond optical limit to NaN
-    depth = np.where(depth < 0, 0, depth)
+    depth = np.where(depth < 0, np.nan, depth)
     depth = np.where(depth > SDB_OPTICAL_LIMIT_M, np.nan, depth)
     return depth.astype(np.float32)
 

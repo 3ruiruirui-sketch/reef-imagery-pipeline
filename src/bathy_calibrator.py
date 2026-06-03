@@ -31,6 +31,8 @@ from typing import Optional
 
 import numpy as np
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from scipy.spatial import cKDTree
 
 from src.constants import (
@@ -43,6 +45,12 @@ from src.constants import (
 )
 
 log = logging.getLogger(__name__)
+
+# ── Session with retry adapter for IH/DGRM service ────────────────────────────
+_IH_SESSION = requests.Session()
+_IH_SESSION.mount("https://", HTTPAdapter(
+    max_retries=Retry(total=3, backoff_factor=1.5, status_forcelist=[500, 502, 503, 504])
+))
 
 # ── Service constants ──────────────────────────────────────────────────────────
 _IH_BASE = (
@@ -83,7 +91,7 @@ def fetch_isobaths_for_bbox(
     }
 
     try:
-        resp = requests.get(_QUERY_URL, params=params, timeout=timeout)
+        resp = _IH_SESSION.get(_QUERY_URL, params=params, timeout=timeout)
         resp.raise_for_status()
         data = resp.json()
     except requests.RequestException as e:
