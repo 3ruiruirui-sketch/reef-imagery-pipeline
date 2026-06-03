@@ -1,6 +1,6 @@
 import numpy as np
 import cv2
-from skimage.restoration import denoise_nl_means, estimate_sigma
+from skimage.restoration import denoise_nl_means
 import planetary_computer as pc
 from pystac_client import Client
 import rasterio
@@ -55,9 +55,18 @@ def run_enhancement_pipeline(lat, lon, image_date, target_snr):
     p95 = np.percentile(b02_ref[b02_ref > 0], 95)
     b02_glint_free = np.clip(b02_ref - 0.8 * p95 * 0.05, 0, 1.0)
     
-    # 3. Spatial Denoising (Non-Local Means)
-    sigma_est = np.mean(estimate_sigma(b02_glint_free))
-    b02_denoised = denoise_nl_means(b02_glint_free, h=0.8 * sigma_est, fast_mode=True, patch_size=5, patch_distance=6)
+    # 3. Spatial Denoising (SNR-adaptive Non-Local Means)
+    # Instead of skimage's estimate_sigma (slow, ignores spatial SNR variation),
+    # derive h directly from local SNR: high-SNR pixels get lighter denoising
+    # (preserve real signal), low-SNR pixels get heavier denoising (suppress noise).
+    snr_patch = make_snr_map(b02_glint_free, window=7)
+    snr_clipped = np.clip(snr_patch, 1, 100)
+    # h scales inversely with SNR: h=0.05 at SNR=100 (clean) → h=0.8 at SNR=1 (noisy)
+    h_map = np.clip(0.8 / snr_clipped, 0.05, 0.8).astype(np.float32)
+    # Apply NLM per-pixel with spatially-varying h via mean h for the whole patch
+    # (skimage NLM doesn't support per-pixel h, so use the mean as a compromise)
+    h_mean = float(np.nanmean(h_map))
+    b02_denoised = denoise_nl_means(b02_glint_free, h=h_mean, fast_mode=True, patch_size=5, patch_distance=6)
     
     # 4. Local Contrast Equalization (CLAHE) - REFINED
     # Convert to 16-bit uint for OpenCV CLAHE
