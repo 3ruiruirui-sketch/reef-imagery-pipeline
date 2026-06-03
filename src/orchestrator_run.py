@@ -151,6 +151,8 @@ def _normalise_result(pred: dict, meta: dict) -> dict:
     out.setdefault("kd490_seasonal",             meta.get("month") and
                                                   KD490_TABLE.get(meta["month"], KD490_DEFAULT)
                                                   or pred.get("kd_seasonal_prior", KD490_DEFAULT))
+    out.setdefault("kd490_estimated",            pred.get("kd_b02_estimated",
+                                                  pred.get("kd490_seasonal", KD490_DEFAULT)))
     out.setdefault("date",                       meta["date"])
     out.setdefault("cloud_cover",                meta["cloud"])
     # b02_cv: coefficient of variation — proxy from SNR (CV = 1/SNR)
