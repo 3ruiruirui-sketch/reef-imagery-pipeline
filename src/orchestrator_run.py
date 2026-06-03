@@ -21,7 +21,7 @@ import rasterio
 
 from src.constants import (
     N_WATER, CLOUD_THRESHOLD, SNR_THRESHOLD, KD490_TABLE, KD490_DEFAULT,
-    GLINT_PENALTY,
+    GLINT_PENALTY, GLINT_PENALTY_DEFAULT
 )
 from src.reef_ml_predictor_acolite import run_predictor
 
@@ -378,8 +378,8 @@ def main(depth: float = 16.0, config_path: str | None = None):
         ],
         "warnings": warnings,
         "training_inputs_reef_ml_predictor": {
-            "month_9_glint_penalty": GLINT_PENALTY.get(9, 0.95),
-            "month_10_glint_penalty": GLINT_PENALTY.get(10, 0.80),
+            "month_9_glint_penalty": GLINT_PENALTY.get(9, GLINT_PENALTY_DEFAULT),
+            "month_10_glint_penalty": GLINT_PENALTY.get(10, GLINT_PENALTY_DEFAULT),
             "kd490_sep_oct": 0.045,
             "depth_target_m": depth,
             "n_water": N_WATER,
