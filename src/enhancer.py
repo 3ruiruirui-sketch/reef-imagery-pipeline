@@ -36,7 +36,7 @@ def fetch_vsi_patch(lat, lon, date_str, buffer_m=500.0):
             b02_arr = src.read(1, window=window).astype(np.float32)
             
     # L2A DN -> Reflectance
-    return np.clip(b02_arr / 10000.0, 0, 1.5)
+    return np.clip(b02_arr / 10000.0, 0, 1.0)
 
 def run_enhancement_pipeline(lat, lon, image_date, target_snr):
     # 1. Fetch raw data

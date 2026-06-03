@@ -192,7 +192,7 @@ def run_predictor(boa_b02_path, metadata, output_dir,
     glint_pen = GLINT_PENALTY.get(month, 0.80)
 
     b02_arr, profile = read_band(boa_b02_path)
-    b02_arr = np.nan_to_num(b02_arr, nan=0.0)
+    b02_arr = np.nan_to_num(b02_arr, nan=0.0, posinf=0.0, neginf=0.0)
     # Normalise to BOA reflectance [0..1] — handles both DN (>2) and already-BOA inputs
     if b02_arr.max() > 2.0:
         b02_arr = b02_arr / 10000.0
@@ -214,7 +214,7 @@ def run_predictor(boa_b02_path, metadata, output_dir,
         try:
             kd_b02, kd_b03, kd_b04 = gordon_kd_inversion(b02_arr, b03_arr, b04_arr, kd_seas)
             # If QAA saturated to boundary, fall back to band-ratio
-            if kd_b02 >= 0.499:
+            if kd_b02 >= 0.500:
                 raise ValueError("QAA Kd saturated — using band-ratio fallback")
             kd_high_uncert = abs(kd_b02 - kd_seas) / kd_seas > 0.30
             kd_method = "gordon_qaa"
