@@ -3,6 +3,9 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Data: Copernicus](https://img.shields.io/badge/data-Copernicus%20Sentinel--2-green.svg)](https://dataspace.copernicus.eu/)
+[![IH Portugal](https://img.shields.io/badge/bathy-Instituto%20Hidrogr%C3%A1fico-blue.svg)](https://www.hidrografico.pt/)
+[![DGT Portugal](https://img.shields.io/badge/ortho-DGT%20OrtoSat2023-orange.svg)](https://www.dgterritorio.gov.pt/)
+[![ICESat-2](https://img.shields.io/badge/validation-ICESat--2%20NASA-lightgrey.svg)](https://icesat-2.gsfc.nasa.gov/)
 
 ---
 
@@ -41,6 +44,8 @@ This repository contains **version 3.1** of the Reef Imagery Pipeline:
 | `scripts/` | Acquisition and analysis entry points (Sentinel-2, OrtoSat2023, ICESat-2) |
 | `dashboard/` | Flask-based web visualization and QA dashboard |
 | `tests/` | Unit tests and regression checks |
+| `data/` | Input CSVs, reference images, local cloud comparisons |
+| `docs/` | Scientific figures and documentation assets |
 | `archive/` / `old/` | Legacy v1/v2 modules and notebooks (kept for reproducibility) |
 
 Additional documentation:
@@ -64,7 +69,15 @@ reef_imagery_pipeline/
 ├── scripts/                    # Entry points and analysis
 │   ├── reef_imagery_pipeline_v3.py   # Sentinel-2/DGT acquisition
 │   ├── cdse_downloader_minimal.py    # CDSE download
+│   ├── generate_reef_map.py          # Reef map generation
+│   ├── phase_b_calibrate_icesat2.py  # ICESat-2 calibration
+│   ├── validate_corrected_coords.py  # Coordinate validation
+│   ├── watchdog.py                   # Pipeline watchdog
 │   └── demo_bathy_live.py            # Live demo
+├── data/                       # Reference data and CSVs
+│   ├── local_cloud/                  # Local/cloud comparison logs
+│   └── best_clear_water_images.csv   # Best imagery index
+├── docs/                       # Figures and documentation
 ├── dashboard/                  # Flask web visualization
 ├── tests/                      # Unit tests
 └── archive/                    # Legacy v1/v2 modules
@@ -134,13 +147,71 @@ Expected accuracy: **RMSE vs IH isobaths < 2 m**.
 
 This project relies entirely on free and open Earth observation and hydrographic data. We gratefully acknowledge the following data providers:
 
-- **Copernicus Sentinel-2** — satellite imagery accessed via the [Copernicus Data Space Ecosystem (CDSE)](https://dataspace.copernicus.eu/) under the European Union's Copernicus programme. Contains modified Copernicus Sentinel data.
-- **OrtoSat2023** — high-resolution coastal orthophotos provided by [Direção-Geral do Território (DGT)](https://www.dgterritorio.gov.pt/), Portugal.
-- **Bathymetric and isobath data** — from [Instituto Hidrográfico (IH)](https://www.hidrografico.pt/), Portugal, accessed via official ArcGIS REST services and used for model calibration and validation.
-- **ICESat-2 ATL products** — from [NASA NSIDC](https://nsidc.org/data/icesat-2), used for independent depth validation.
-- **QGIS** — open-source GIS platform used for visualization and manual QA/QC of pipeline outputs.
+<table>
+  <tr>
+    <td align="center" width="160">
+      <a href="https://dataspace.copernicus.eu/" target="_blank">
+        <img src="https://www.copernicus.eu/sites/default/files/2019-08/Copernicus_logo.png" height="48" alt="Copernicus" />
+      </a>
+    </td>
+    <td>
+      <strong>Copernicus Sentinel-2</strong><br/>
+      Satellite imagery accessed via the <a href="https://dataspace.copernicus.eu/">Copernicus Data Space Ecosystem (CDSE)</a>, under the European Union’s Copernicus programme.<br/>
+      <em>Contains modified Copernicus Sentinel data.</em><br/>
+      🔗 <a href="https://dataspace.copernicus.eu/">dataspace.copernicus.eu</a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="160">
+      <a href="https://www.dgterritorio.gov.pt/" target="_blank">
+        <img src="https://www.dgterritorio.gov.pt/sites/default/files/dgt_logo.png" height="48" alt="DGT" />
+      </a>
+    </td>
+    <td>
+      <strong>OrtoSat2023 — Direção-Geral do Território (DGT)</strong><br/>
+      High-resolution coastal orthophotos for mainland Portugal.<br/>
+      🔗 <a href="https://www.dgterritorio.gov.pt/">dgterritorio.gov.pt</a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="160">
+      <a href="https://www.hidrografico.pt/" target="_blank">
+        <img src="https://www.hidrografico.pt/resources/images/logo_ih.png" height="48" alt="Instituto Hidrográfico" />
+      </a>
+    </td>
+    <td>
+      <strong>Instituto Hidrográfico (IH)</strong><br/>
+      Bathymetric charts and isobath data for Portuguese coastal waters, accessed via official ArcGIS REST services. Used for model calibration and validation.<br/>
+      🔗 <a href="https://www.hidrografico.pt/">hidrografico.pt</a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="160">
+      <a href="https://icesat-2.gsfc.nasa.gov/" target="_blank">
+        <img src="https://icesat-2.gsfc.nasa.gov/sites/default/files/logo_0.png" height="48" alt="ICESat-2" />
+      </a>
+    </td>
+    <td>
+      <strong>ICESat-2 — NASA / NSIDC</strong><br/>
+      ATL photon-counting lidar products used for independent shallow-water depth validation.<br/>
+      🔗 <a href="https://icesat-2.gsfc.nasa.gov/">icesat-2.gsfc.nasa.gov</a> &nbsp;|&nbsp; <a href="https://nsidc.org/data/icesat-2">nsidc.org/data/icesat-2</a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="160">
+      <a href="https://qgis.org/" target="_blank">
+        <img src="https://qgis.org/styleguide/images/styleGuide/qgis-logo.svg" height="48" alt="QGIS" />
+      </a>
+    </td>
+    <td>
+      <strong>QGIS</strong><br/>
+      Open-source GIS platform used for visualization and manual QA/QC of pipeline outputs.<br/>
+      🔗 <a href="https://qgis.org/">qgis.org</a>
+    </td>
+  </tr>
+</table>
 
-If you use results or derived products from this repository in scientific work, please cite the original data providers alongside this codebase.
+> If you use results or derived products from this repository in scientific work, please cite the original data providers alongside this codebase.
 
 ---
 
