@@ -86,7 +86,10 @@ python scripts/reef_bathy_module.py \
 - **Parameters:** m1=32.0, m0=−28.0, n=1500 (calibrated for Algarve clear water, Kd≈0.045 m⁻¹)
 - **Resolution:** 10 m (same as Sentinel-2 optical bands)
 - **Coverage:** Wherever S2 bands are already downloaded; optical depth limit ~20–25 m
-- **Notes:** Best horizontal resolution. Requires calm, clear-water scenes (cloud < 5%). Run `--step sentinel` first. Depth values are relative; calibrate with ICESat-2 or echosounder data.
+- **Notes:** Best horizontal resolution. Requires calm, clear-water scenes (cloud < 5%).
+  - Use primeiro: Sentinel-2 para detecção geral e SDB costeiro.
+  - Use Sentinel-1 para analisar superfície e condições ambientais.
+  - Run `--step sentinel` first. Depth values are relative; calibrate with ICESat-2 or echosounder data.
 
 ---
 
