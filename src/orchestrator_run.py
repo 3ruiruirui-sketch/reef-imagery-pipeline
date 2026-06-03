@@ -141,7 +141,8 @@ def sunglint_correction(arr: np.ndarray, b03: np.ndarray) -> np.ndarray:
         return arr
     b02_v = arr[mask].astype(float)
     b03_v = b03[mask].astype(float)
-    slope = np.cov(b02_v, b03_v)[0, 1] / np.var(b03_v)
+    b03_var = np.var(b03_v)
+    slope = np.cov(b02_v, b03_v)[0, 1] / b03_var if b03_var > 1e-12 else 1.0
     slope = np.clip(slope, 0, 2)   # sanity clamp
     corrected = arr.astype(float) - slope * (b03.astype(float) - b03.min())
     return np.clip(corrected, 0, None)

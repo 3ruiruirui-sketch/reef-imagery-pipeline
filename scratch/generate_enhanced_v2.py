@@ -175,10 +175,15 @@ def save_image(img_arr, title, out_path, cmap, dpi=300):
 
 
 # ── Reusable Processing Function ──────────────────────────────────────────────
-def process_site(site_key, date_str, buffer_m=600, out_dir=OUT_DIR, dpi=300):
+def process_site(site_key, date_str, buffer_m=600, out_dir=OUT_DIR, dpi=300, skip_render=False):
     """
     Downloads, corrects, filters and processes Sentinel-2 imagery for a given site and date.
     Returns processed bands, ratio, normalized ratio, rgb, bounds, and metadata.
+
+    Args:
+        skip_render: If True, skip all PNG rendering (save_image calls and RGB output).
+                     Use this in batch/temporal loops where only arrays are needed.
+                     Reduces runtime ~4x per call.
     """
     site = SITES[site_key]
     lat, lon = site["lat"], site["lon"]
@@ -354,48 +359,53 @@ def process_site(site_key, date_str, buffer_m=600, out_dir=OUT_DIR, dpi=300):
     b02_final  = water_stretch(b02_enh)
     ratio_norm = water_stretch(np.clip(ratio - 0.9, 0, 0.5))  # normalizar ratio ≈ 1.0
 
-    print("\n🎨 A renderizar imagens...")
     slug = site_key.replace("_", "-")
     date_slug = date_str.replace("-", "")
+    rgb = None
 
-    # A. Blue (B02 melhorado com todos os filtros)
-    out_blue = out_dir / f"{slug}_{date_slug}_blue_enhanced.png"
-    save_image(b02_final, f"{label} · Blue B02 Enhanced · {date_str}", out_blue, blue_depth_cmap, dpi)
+    if skip_render:
+        print("\n⏭️  skip_render=True — a saltar renderização PNG (apenas arrays)")
+    else:
+        print("\n🎨 A renderizar imagens...")
 
-    # B. Green (B02 no colormap verde)
-    out_green = out_dir / f"{slug}_{date_slug}_green_enhanced.png"
-    save_image(b02_final, f"{label} · Green Reef · {date_str}", out_green, green_reef_cmap, dpi)
+        # A. Blue (B02 melhorado com todos os filtros)
+        out_blue = out_dir / f"{slug}_{date_slug}_blue_enhanced.png"
+        save_image(b02_final, f"{label} · Blue B02 Enhanced · {date_str}", out_blue, blue_depth_cmap, dpi)
 
-    # C. Depth Proxy (Stumpf ratio)
-    out_depth = out_dir / f"{slug}_{date_slug}_depth_proxy.png"
-    save_image(ratio_norm, f"{label} · Depth Proxy (Stumpf B02/B03) · {date_str}", out_depth, blue_depth_cmap, dpi)
+        # B. Green (B02 no colormap verde)
+        out_green = out_dir / f"{slug}_{date_slug}_green_enhanced.png"
+        save_image(b02_final, f"{label} · Green Reef · {date_str}", out_green, green_reef_cmap, dpi)
 
-    # D. RGB natural (B04=Red, B03=Green, B02=Blue) — True Colour Sentinel-2
-    b04_sza   = sza_correction(b04, sza_deg)
-    b04_glint = hedley_glint_correction(b04_sza, b11_upsampled)
+        # C. Depth Proxy (Stumpf ratio)
+        out_depth = out_dir / f"{slug}_{date_slug}_depth_proxy.png"
+        save_image(ratio_norm, f"{label} · Depth Proxy (Stumpf B02/B03) · {date_str}", out_depth, blue_depth_cmap, dpi)
 
-    rgb_raw = np.stack([b04_glint, b03_glint, b02_glint], axis=-1).astype(np.float32)
-    rgb_smooth = cv2.GaussianBlur(rgb_raw, (7, 7), sigmaX=1.5)
+        # D. RGB natural (B04=Red, B03=Green, B02=Blue) — True Colour Sentinel-2
+        b04_sza   = sza_correction(b04, sza_deg)
+        b04_glint = hedley_glint_correction(b04_sza, b11_upsampled)
 
-    vals_flat = rgb_smooth[rgb_smooth > 0]
-    p2  = float(np.percentile(vals_flat, 2))
-    p98 = float(np.percentile(vals_flat, 98))
-    rgb_stretched = np.clip((rgb_smooth - p2) / (p98 - p2 + 1e-9), 0.0, 1.0)
+        rgb_raw = np.stack([b04_glint, b03_glint, b02_glint], axis=-1).astype(np.float32)
+        rgb_smooth = cv2.GaussianBlur(rgb_raw, (7, 7), sigmaX=1.5)
 
-    rgb = np.power(rgb_stretched, 0.5).astype(np.float32)
-    rgb = np.clip(rgb, 0.0, 1.0)
+        vals_flat = rgb_smooth[rgb_smooth > 0]
+        p2  = float(np.percentile(vals_flat, 2))
+        p98 = float(np.percentile(vals_flat, 98))
+        rgb_stretched = np.clip((rgb_smooth - p2) / (p98 - p2 + 1e-9), 0.0, 1.0)
 
-    out_rgb = out_dir / f"{slug}_{date_slug}_natural_rgb.png"
-    fig, ax = plt.subplots(figsize=(7, 7), facecolor="#000")
-    ax.imshow(rgb, interpolation="bilinear")
-    ax.set_title(f"{label} · True Colour S2 (B04/B03/B02) · {date_str}", color="white", fontsize=9, pad=6)
-    ax.axis("off")
-    fig.subplots_adjust(left=0, right=1, bottom=0.04, top=0.96)
-    fig.savefig(out_rgb, dpi=dpi, facecolor="black", bbox_inches="tight", pad_inches=0)
-    plt.close(fig)
-    print(f"  ✅ Guardado: {out_rgb.name} ({os.path.getsize(out_rgb)/1e6:.2f} MB)")
+        rgb = np.power(rgb_stretched, 0.5).astype(np.float32)
+        rgb = np.clip(rgb, 0.0, 1.0)
 
-    print(f"\n✅ Concluído! 4 imagens melhoradas em: {out_dir}")
+        out_rgb = out_dir / f"{slug}_{date_slug}_natural_rgb.png"
+        fig, ax = plt.subplots(figsize=(7, 7), facecolor="#000")
+        ax.imshow(rgb, interpolation="bilinear")
+        ax.set_title(f"{label} · True Colour S2 (B04/B03/B02) · {date_str}", color="white", fontsize=9, pad=6)
+        ax.axis("off")
+        fig.subplots_adjust(left=0, right=1, bottom=0.04, top=0.96)
+        fig.savefig(out_rgb, dpi=dpi, facecolor="black", bbox_inches="tight", pad_inches=0)
+        plt.close(fig)
+        print(f"  ✅ Guardado: {out_rgb.name} ({os.path.getsize(out_rgb)/1e6:.2f} MB)")
+
+        print(f"\n✅ Concluído! 4 imagens melhoradas em: {out_dir}")
     
     return {
         "b02": b02,

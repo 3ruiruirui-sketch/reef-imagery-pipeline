@@ -141,9 +141,9 @@ def main():
             }
             continue
 
-        # Process and retrieve arrays
+        # Process and retrieve arrays — skip PNG rendering for speed
         try:
-            res = process_site(SITE_KEY, best_date, BUFFER_M, OUT_DIR, DPI)
+            res = process_site(SITE_KEY, best_date, BUFFER_M, OUT_DIR, DPI, skip_render=True)
             processed_data[yr] = {
                 "date": best_date,
                 "ratio_norm": res["ratio_norm"],

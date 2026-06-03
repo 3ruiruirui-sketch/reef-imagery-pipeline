@@ -198,9 +198,97 @@ Use STAC or a published index to resolve the tile path; direct URL composition i
 - Use restricted datasets only when you have a written data license.
 - Prefer open, public datasets for reproducible research and publication.
 
-## 9. Suggested Future Improvements
+## 9. Implemented Scripts & Usage Examples
 
-- Add direct STAC-driven Sentinel-2 scene selection in the pipeline.
+### 9.1 Sentinel-1 SAR Surface Roughness (`scratch/fetch_sentinel1_sar.py`)
+
+This script integrates open Sentinel-1 GRD data into the reef visibility pipeline.
+It queries the CDSE catalog, extracts VV/VH sigma0 values, and computes a
+surface roughness proxy for each reef site.
+
+```bash
+# Search S1 scenes for summer 2025 (no authentication required for catalog)
+python scratch/fetch_sentinel1_sar.py --year 2025
+
+# Search for a specific month window
+python scratch/fetch_sentinel1_sar.py --year 2024 --month-start 7 --month-end 9
+
+# Only analyse specific sites
+python scratch/fetch_sentinel1_sar.py --year 2025 --sites pedra_do_alto tartaruga
+```
+
+**Surface roughness formula:**
+
+```
+roughness = log10(σ0_VV / σ0_VH)
+
+Interpretation:
+  roughness < 0.05  → calm sea (Beaufort ≤ 2) → good visibility window
+  0.05 – 0.25       → moderate (Beaufort 3-4) → acceptable conditions
+  roughness > 0.25  → rough sea (Beaufort ≥ 5) → poor visibility expected
+```
+
+**Output:** `s1_roughness_report_{year}.json` — includes CDSE scene catalog,
+per-site sigma0 records, sea-state classifications, and data provenance.
+
+### 9.2 Absolute Bathymetric Calibration (`scratch/calibrate_and_map.py`)
+
+```bash
+# Default: Pedra do Alto, 2025-09-25
+python scratch/calibrate_and_map.py
+
+# Custom site and date
+python scratch/calibrate_and_map.py --site tartaruga --date 2024-08-15
+
+# Publication-quality output (1200 DPI)
+python scratch/calibrate_and_map.py --site pedra_santa_eulalia --date 2025-09-25 --dpi 1200
+```
+
+### 9.3 Temporal Analysis 2017–2025 (`scratch/temporal_analysis.py`)
+
+```bash
+PYTHONPATH=. .venv/bin/python scratch/temporal_analysis.py
+```
+
+Outputs: `temporal_grid_pedra_alto.png`, `temporal_trend.png`, `change_detection.png`
+
+### 9.4 Multi-Site Batch Processing (`scratch/batch_all_sites.py`)
+
+```bash
+# Run all 3 sites with default best dates
+python scratch/batch_all_sites.py
+
+# Custom date for all sites, publication DPI
+python scratch/batch_all_sites.py --date 2025-09-25 --dpi 1200
+
+# Only specific sites, skip calibration (faster)
+python scratch/batch_all_sites.py --sites pedra_do_alto tartaruga --skip-calibration
+```
+
+Output: `batch_report.json` with per-site status, timings, and file list.
+
+### 9.5 CDSE Catalog Search (`scratch/fetch_cdse_catalog.py`)
+
+```bash
+PYTHONPATH=. .venv/bin/python scratch/fetch_cdse_catalog.py
+# Searches S2 L2A scenes over Albufeira (2025, cloud < 5%)
+```
+
+### 9.6 Copernicus Marine Wave Data (`scratch/fetch_copernicus_waves.py`)
+
+```bash
+# Requires free CMEMS account: https://marine.copernicus.eu/
+pip install copernicusmarine
+copernicusmarine login
+PYTHONPATH=. .venv/bin/python scratch/fetch_copernicus_waves.py
+```
+
+---
+
+## 10. Suggested Future Improvements
+
+- Chain S1 roughness into the BVI scoring model: `bvi_score *= (1 - roughness_factor)`
+- Add CMEMS wave height (VHM0) as a joint sea-state filter for scene selection.
 - Add EMODnet tile download automation and tile caching.
-- Add CMEMS auxiliary data ingestion with optional `netCDF4` support.
 - Add a provenance JSON writer for each derived product.
+- Add Sentinel-3 OLCI chlorophyll-a for turbidity co-variate analysis.

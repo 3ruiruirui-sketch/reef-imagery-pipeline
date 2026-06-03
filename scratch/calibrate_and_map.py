@@ -12,6 +12,7 @@ Data sources:
   - EMODnet Bathymetry local TIFF (Automatic Fallback)
 """
 
+import argparse
 import os
 import sys
 import json
@@ -33,11 +34,33 @@ sys.path.insert(0, os.path.join(_PROJECT_ROOT, "src"))
 from scratch.generate_enhanced_v2 import process_site, SITES, OUT_DIR, green_reef_cmap, blue_depth_cmap
 from src.bathy_calibrator import fetch_isobaths_for_bbox, calibrate_stumpf_from_isobaths, classify_benthic_zone
 
-# Configuração
-SITE_KEY   = "pedra_do_alto"  # Foco: Pedra do Alto
-DATE_STR   = "2025-09-25"
-BUFFER_M   = 600   # 1.2 km × 1.2 km
-DPI        = 300
+
+def parse_args():
+    p = argparse.ArgumentParser(
+        description="Absolute bathymetric calibration: Stumpf SDB → metric depth (IH/EMODnet)",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    p.add_argument(
+        "--site", choices=list(SITES.keys()), default="pedra_do_alto",
+        help="Reef site key (see SITES dict in generate_enhanced_v2.py)"
+    )
+    p.add_argument(
+        "--date", default="2025-09-25", metavar="YYYY-MM-DD",
+        help="Sentinel-2 acquisition date"
+    )
+    p.add_argument(
+        "--buffer-m", type=int, default=600,
+        help="Half-size of AOI window in metres (full window = 2× buffer)"
+    )
+    p.add_argument(
+        "--dpi", type=int, default=300,
+        help="Output image DPI (use 1200 for publication-ready figures)"
+    )
+    p.add_argument(
+        "--out-dir", default=None,
+        help="Output directory (default: same as generate_enhanced_v2 OUT_DIR)"
+    )
+    return p.parse_args()
 
 def calibrate_from_emodnet(b02_enh, b03_enh, s2_shape, s2_transform, s2_crs, emodnet_path="scratch/regional_emodnet.tif", n=1000.0):
     """
@@ -100,12 +123,25 @@ def calibrate_from_emodnet(b02_enh, b03_enh, s2_shape, s2_transform, s2_crs, emo
     }
 
 def main():
+    args = parse_args()
+    SITE_KEY = args.site
+    DATE_STR = args.date
+    BUFFER_M = args.buffer_m
+    DPI = args.dpi
+    out_dir = Path(args.out_dir) if args.out_dir else OUT_DIR
+
     site = SITES[SITE_KEY]
     label = site["label"]
-    
+
+    print(f"\n🖥️  calibrate_and_map.py")
+    print(f"   Site     : {label} ({SITE_KEY})")
+    print(f"   Date     : {DATE_STR}")
+    print(f"   Buffer   : {BUFFER_M}m  (AOI: {BUFFER_M*2}m × {BUFFER_M*2}m)")
+    print(f"   DPI      : {DPI}")
+    print(f"   Out dir  : {out_dir}")
     # 1. Process Sentinel-2 crop
     print("📡 A descarregar e processar Sentinel-2...")
-    res = process_site(SITE_KEY, DATE_STR, BUFFER_M, OUT_DIR, DPI)
+    res = process_site(SITE_KEY, DATE_STR, BUFFER_M, out_dir, DPI)
     
     b02_enh = res["b02_enh"]
     b03_enh = res["b03_enh"]
@@ -183,7 +219,7 @@ def main():
     cbar.outline.set_edgecolor("white")
     
     fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.92)
-    out_bathy = OUT_DIR / f"{slug}_{date_slug}_bathy_absolute.png"
+    out_bathy = out_dir / f"{slug}_{date_slug}_bathy_absolute.png"
     fig.savefig(out_bathy, dpi=DPI, facecolor=fig.get_facecolor(), bbox_inches="tight")
     plt.close(fig)
     print(f"  ✅ Guardado: {out_bathy.name} ({os.path.getsize(out_bathy)/1e6:.2f} MB)")
@@ -203,7 +239,7 @@ def main():
     ax.axis("off")
     fig.subplots_adjust(left=0, right=1, bottom=0.04, top=0.96)
     
-    out_contours = OUT_DIR / f"{slug}_{date_slug}_bathy_contours.png"
+    out_contours = out_dir / f"{slug}_{date_slug}_bathy_contours.png"
     fig.savefig(out_contours, dpi=DPI, facecolor=fig.get_facecolor(), bbox_inches="tight", pad_inches=0)
     plt.close(fig)
     print(f"  ✅ Guardado: {out_contours.name} ({os.path.getsize(out_contours)/1e6:.2f} MB)")
@@ -219,7 +255,7 @@ def main():
         "benthic_zone": zone_report
     }
     
-    out_report = OUT_DIR / f"{slug}_{date_slug}_calibration_report.json"
+    out_report = out_dir / f"{slug}_{date_slug}_calibration_report.json"
     with open(out_report, "w", encoding="utf-8") as f:
         json.dump(report_data, f, indent=2, ensure_ascii=False)
     print(f"  ✅ Guardado Relatório: {out_report.name}")
