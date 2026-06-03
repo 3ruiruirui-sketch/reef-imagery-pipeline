@@ -260,3 +260,79 @@ class TestAnalyseBand:
     def test_kd_uncertainty_flag_type(self):
         result = self._run()
         assert isinstance(result["kd_high_uncertainty"], bool)
+
+    @patch("src.orchestrator_run.rasterio.open")
+    @patch("src.orchestrator_run.Transformer")
+    @patch("scratch.fetch_sentinel1_sar.search_stac_s1_scenes")
+    @patch("scratch.fetch_sentinel1_sar.extract_sigma0_at_point")
+    @patch("scratch.fetch_sentinel1_sar.roughness_from_sigma0")
+    def test_sentinel1_calm_sea_state(self, mock_roughness, mock_extract, mock_search, mock_tf, mock_open):
+        mock_open.side_effect = _make_mock_rasterio_open(np.ones((100, 100)) * 800, np.ones((100, 100)) * 600)
+        mock_tf.from_crs.return_value.transform.return_value = (569000.0, 4102000.0)
+
+        # Mock STAC search to return a scene on the target date
+        mock_search.return_value = [{"id": "S1_calm", "date": "2025-09-25", "assets": {}}]
+        mock_extract.return_value = {"vv": 0.01, "vh": 0.009}
+        mock_roughness.return_value = {"roughness": 0.04, "sea_state": "calm"}
+
+        meta = {"date": "2025-09-25", "sza": 40.5, "cloud": 1.0, "month": 9}
+        res = analyse_band(Path("fake_b02.tif"), Path("fake_b03.tif"), meta, depth=16.0)
+
+        assert res["s1_scene_id"] == "S1_calm"
+        assert res["s1_scene_date"] == "2025-09-25"
+        assert res["s1_roughness"] == 0.04
+        assert res["s1_sea_state"] == "calm"
+        assert res["s1_penalty_pct"] == 0.0
+
+    @patch("src.orchestrator_run.rasterio.open")
+    @patch("src.orchestrator_run.Transformer")
+    @patch("scratch.fetch_sentinel1_sar.search_stac_s1_scenes")
+    @patch("scratch.fetch_sentinel1_sar.extract_sigma0_at_point")
+    @patch("scratch.fetch_sentinel1_sar.roughness_from_sigma0")
+    def test_sentinel1_rough_sea_state(self, mock_roughness, mock_extract, mock_search, mock_tf, mock_open):
+        mock_open.side_effect = _make_mock_rasterio_open(np.ones((100, 100)) * 800, np.ones((100, 100)) * 600)
+        mock_tf.from_crs.return_value.transform.return_value = (569000.0, 4102000.0)
+
+        mock_search.return_value = [{"id": "S1_rough", "date": "2025-09-25", "assets": {}}]
+        mock_extract.return_value = {"vv": 0.01, "vh": 0.005}
+        mock_roughness.return_value = {"roughness": 0.30, "sea_state": "rough"}
+
+        # Run without penalty first
+        with patch("scratch.fetch_sentinel1_sar.search_stac_s1_scenes", return_value=[]):
+            res_base = analyse_band(Path("fake_b02.tif"), Path("fake_b03.tif"),
+                                    {"date": "2025-09-25", "sza": 40.5, "cloud": 1.0, "month": 9}, depth=16.0)
+
+        res = analyse_band(Path("fake_b02.tif"), Path("fake_b03.tif"),
+                           {"date": "2025-09-25", "sza": 40.5, "cloud": 1.0, "month": 9}, depth=16.0)
+
+        assert res["s1_scene_id"] == "S1_rough"
+        assert res["s1_roughness"] == 0.30
+        assert res["s1_sea_state"] == "rough"
+        assert res["s1_penalty_pct"] == 30.0
+        assert pytest.approx(res["visibility_score"], 1e-4) == res_base["visibility_score"] * 0.70
+
+    @patch("src.orchestrator_run.rasterio.open")
+    @patch("src.orchestrator_run.Transformer")
+    @patch("scratch.fetch_sentinel1_sar.search_stac_s1_scenes")
+    @patch("scratch.fetch_sentinel1_sar.extract_sigma0_at_point")
+    @patch("scratch.fetch_sentinel1_sar.roughness_from_sigma0")
+    def test_sentinel1_moderate_sea_state(self, mock_roughness, mock_extract, mock_search, mock_tf, mock_open):
+        mock_open.side_effect = _make_mock_rasterio_open(np.ones((100, 100)) * 800, np.ones((100, 100)) * 600)
+        mock_tf.from_crs.return_value.transform.return_value = (569000.0, 4102000.0)
+
+        mock_search.return_value = [{"id": "S1_mod", "date": "2025-09-25", "assets": {}}]
+        mock_extract.return_value = {"vv": 0.01, "vh": 0.007}
+        mock_roughness.return_value = {"roughness": 0.15, "sea_state": "moderate"}
+
+        with patch("scratch.fetch_sentinel1_sar.search_stac_s1_scenes", return_value=[]):
+            res_base = analyse_band(Path("fake_b02.tif"), Path("fake_b03.tif"),
+                                    {"date": "2025-09-25", "sza": 40.5, "cloud": 1.0, "month": 9}, depth=16.0)
+
+        res = analyse_band(Path("fake_b02.tif"), Path("fake_b03.tif"),
+                           {"date": "2025-09-25", "sza": 40.5, "cloud": 1.0, "month": 9}, depth=16.0)
+
+        assert res["s1_scene_id"] == "S1_mod"
+        assert res["s1_roughness"] == 0.15
+        assert res["s1_sea_state"] == "moderate"
+        assert res["s1_penalty_pct"] == 15.0
+        assert pytest.approx(res["visibility_score"], 1e-4) == res_base["visibility_score"] * 0.85

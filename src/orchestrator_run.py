@@ -25,7 +25,7 @@ except ImportError:
 
 # Drift monitoring (shadow mode — best-effort, never blocks pipeline)
 try:
-    from src.drift_monitor import reset as drift_reset, log_summary as drift_log_summary, observe as drift_observe
+    from src.drift_monitor import reset as drift_reset, log_summary as drift_log_summary
     from src.drift_export import export_to_file as drift_export_file
     from src.drift_history import export_history_json as drift_history_json
     from src.drift_history import export_history_csv as drift_history_csv
@@ -194,6 +194,62 @@ def analyse_band(b02_path: Path, b03_path: Path, meta: dict, depth: float) -> di
     glint_ok  = 1.0 if cv < 0.015 else 0.015 / cv
     vis_score = min(1.0, usable * snr_ok * glint_ok * contrast * 5.0)
 
+    # Query Sentinel-1 SAR surface roughness and apply penalty
+    s1_scene_id = "none"
+    s1_scene_date = "none"
+    s1_roughness = -1.0
+    s1_sea_state = "unknown"
+    s1_penalty_pct = 0.0
+
+    try:
+        from scratch.fetch_sentinel1_sar import search_stac_s1_scenes, extract_sigma0_at_point, roughness_from_sigma0
+        from datetime import datetime, timedelta
+        
+        t_date = datetime.strptime(meta["date"], "%Y-%m-%d")
+        # Query window: +/- 3 days
+        start_dt = (t_date - timedelta(days=3))
+        end_dt = (t_date + timedelta(days=3))
+        
+        s1_items = search_stac_s1_scenes(
+            lon=TARGET_LON, lat=TARGET_LAT,
+            year=t_date.year,
+            month_start=start_dt.month,
+            month_end=end_dt.month,
+            max_results=10
+        )
+        
+        valid_items = []
+        for item in s1_items:
+            try:
+                it_dt = datetime.strptime(item["date"], "%Y-%m-%d")
+                if start_dt <= it_dt <= end_dt:
+                    valid_items.append(item)
+            except Exception:
+                pass
+                
+        if valid_items:
+            # Sort by proximity to S2 target date
+            valid_items.sort(key=lambda x: abs((datetime.strptime(x["date"], "%Y-%m-%d") - t_date).total_seconds()))
+            best_item = valid_items[0]
+            
+            sigma0 = extract_sigma0_at_point(best_item, TARGET_LON, TARGET_LAT)
+            if sigma0 and sigma0.get("vv") and sigma0.get("vh"):
+                r_data = roughness_from_sigma0(sigma0["vv"], sigma0["vh"])
+                if r_data.get("roughness") is not None:
+                    s1_scene_id = best_item["id"]
+                    s1_scene_date = best_item["date"]
+                    s1_roughness = r_data["roughness"]
+                    s1_sea_state = r_data["sea_state"]
+                    
+                    # Continuous penalty factor (0% when roughness <= 0.05, 30% max when roughness >= 0.25)
+                    penalty_factor = np.clip((s1_roughness - 0.05) / 0.20, 0.0, 1.0) * 0.3
+                    s1_penalty_pct = round(float(penalty_factor * 100.0), 2)
+                    vis_score *= (1.0 - penalty_factor)
+                    log.info("   [Sentinel-1 SAR]: Roughness=%.4f (%s) -> Penalty=%.2f%% for S2 date %s",
+                             s1_roughness, s1_sea_state, s1_penalty_pct, meta["date"])
+    except Exception as e:
+        log.warning("Sentinel-1 SAR roughness penalty extraction failed: %s", e)
+
     # Confidence map proxy
     high_conf_pct = 100.0 if snr >= SNR_THRESHOLD and cv < 0.02 else 50.0 if snr >= SNR_THRESHOLD else 0.0
 
@@ -240,6 +296,12 @@ def analyse_band(b02_path: Path, b03_path: Path, meta: dict, depth: float) -> di
         "visibility_score": round(vis_score, 4),
         "cleanliness": 5000, # proxy default
         "cloud_cover": meta["cloud"],
+        # --- Sentinel-1 SAR features ---
+        "s1_scene_id": s1_scene_id,
+        "s1_scene_date": s1_scene_date,
+        "s1_roughness": s1_roughness,
+        "s1_sea_state": s1_sea_state,
+        "s1_penalty_pct": s1_penalty_pct,
         # --- Bathymetry Features ---
         "nearest_isobath_distance_m": _b("nearest_isobath_distance_m"),
         "nearest_isobath_depth_m": _b("nearest_isobath_depth_m"),
@@ -369,20 +431,7 @@ def main(depth: float = 16.0):
     res_b["visibility_score"] = score_b
     res_b["ranker_mode"] = pred_b["mode"]
 
-    # Drift monitoring: observe each prediction (shadow mode, best-effort)
-    if HAS_DRIFT_MONITOR:
-        for res in (res_a, res_b):
-            try:
-                drift_features = {
-                    "kd_b02": res.get("kd490_estimated", 0.08),
-                    "water_trans": res.get("water_transmittance_twoway", 0.5),
-                    "contrast": res.get("contrast_benthic_mean", 0.0),
-                    "signal_strength": res.get("SNR_mean_16m", 15.0),
-                    "cleanliness": res.get("cleanliness", 5000),
-                }
-                drift_observe(drift_features, res["visibility_score"])
-            except Exception:
-                pass
+    # Drift monitoring: observation is handled automatically inside predict_score() with the correct schema
 
     winner = "A" if score_a >= score_b else "B"
     loser  = "B" if winner == "A" else "A"
