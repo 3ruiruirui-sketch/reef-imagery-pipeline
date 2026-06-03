@@ -89,11 +89,46 @@ def choose_least_cloudy(items: Iterable[Item]) -> Optional[Item]:
 def get_asset_hrefs(item: Item, asset_keys: Iterable[str]) -> Dict[str, str]:
     """Return a mapping of asset key -> signed asset URL for a STAC item."""
     hrefs: Dict[str, str] = {}
+
+    # Build a case-insensitive map of available asset keys
+    available = {k.lower(): v for k, v in item.assets.items()}
+
+    # Common alias mapping for Sentinel-2 band names in different STAC catalogs
+    alias_map = {
+        "b02": ["blue", "b02"],
+        "b03": ["green", "b03"],
+        "b04": ["red", "b04"],
+        "b08": ["nir", "b08", "b8a"],
+        "b11": ["swir16", "b11"],
+        "b12": ["swir22", "b12"],
+    }
+
     for key in asset_keys:
-        asset = item.assets.get(key)
-        if asset is None:
+        k_low = key.lower()
+
+        # Direct match
+        if k_low in available:
+            hrefs[key] = available[k_low].href
             continue
-        hrefs[key] = asset.href
+
+        # Try aliases (e.g., 'B02' -> 'blue')
+        aliases = alias_map.get(k_low, [k_low])
+        found = False
+        for a in aliases:
+            if a in available:
+                hrefs[key] = available[a].href
+                found = True
+                break
+
+        if found:
+            continue
+
+        # Fallback: look for any asset key that contains the band name
+        for a_key, a_asset in available.items():
+            if k_low in a_key:
+                hrefs[key] = a_asset.href
+                break
+
     return hrefs
 
 
