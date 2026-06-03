@@ -1,0 +1,18 @@
+# Requirements for reef_bathy_module.py
+# Install alongside requirements_v3.txt:
+#   pip install -r requirements_v3.txt -r requirements_bathy.txt
+
+# Spatial / vector
+shapely>=2.0
+geopandas>=0.14
+pyproj>=3.6
+
+# Scientific computing (morphological indices)
+scipy>=1.11
+
+# NetCDF4 (for GEBCO/ETOPO downloads)
+# rasterio uses GDAL's NetCDF driver to open .nc files;
+# the netCDF4-C library must be present.  On most platforms
+# this is already installed with rasterio[full] or conda.
+# If needed:  pip install netCDF4
+netCDF4>=1.6
