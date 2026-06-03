@@ -44,3 +44,16 @@ reef_output_*/
 sentinel_images/
 test_wms_ortosat*.tif
 venv/
+
+# AI session data
+.claude/
+
+# Dev scratch folders
+old/
+scratch/
+
+# Backup files
+*.bak
+
+# Planet application draft (restricted)
+docs/application/
