@@ -217,7 +217,7 @@ def observe(features_dict, score, schema_features=None):
         _worst_level = overall
     all_a = feat_drift["alerts"] + score_drift["alerts"]
     level_rank = {OK: 0, WARNING: 1, CRITICAL: 2}
-    _worst_alert = max(all_a, key=lambda a: level_rank.get(a[1], 0)) if len(all_a) > 0 else None
+    _worst_alert = max(all_a, key=lambda a: level_rank.get(a[1], 0)) if all_a else None
     
     # Throttled logging: log on level change or periodic reminder
     level_changed = (overall != _last_logged_level)

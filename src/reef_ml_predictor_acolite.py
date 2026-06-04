@@ -258,7 +258,6 @@ def run_predictor(boa_b02_path, metadata, output_dir,
         calibration_status = "skipped_no_location"  # default if lat/lon missing
         if _BATHY_AVAILABLE and lat is not None and lon is not None:
             calibration_status = "skipped_no_transform"  # will be overwritten if transform exists
-            tf = profile.get("transform") if isinstance(profile, dict) else None
             try:
                 tf = profile.get("transform")
                 if tf is not None:

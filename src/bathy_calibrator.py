@@ -228,8 +228,10 @@ def _sample_pixels_near_isobath(
             continue
         for node in feat["coords"]:
             nlon, nlat = node[0], node[1]
-            col0 = int((nlon - min_lon) / (max_lon - min_lon) * (W - 1))
-            row0 = int((max_lat - nlat) / (max_lat - min_lat) * (H - 1))
+            col0 = int(round((nlon - min_lon) / (max_lon - min_lon) * (W - 1)))
+            col0 = max(0, min(col0, W - 1))
+            row0 = int(round((max_lat - nlat) / (max_lat - min_lat) * (H - 1)))
+            row0 = max(0, min(row0, H - 1))
             for dr in range(-buf, buf + 1):
                 for dc in range(-buf, buf + 1):
                     r, c = row0 + dr, col0 + dc

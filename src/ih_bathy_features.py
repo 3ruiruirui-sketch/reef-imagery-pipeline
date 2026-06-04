@@ -254,18 +254,20 @@ class IHBathyDownloader:
         """Save to GeoPackage via geopandas (fallback to JSON if geopandas missing)."""
         try:
             import geopandas as gpd
-            from shapely.geometry import LineString
+            from shapely import LineString
+            from shapely.geometry import shape
 
             records = []
             for f in features:
+                geom = LineString(f["coords"])
                 records.append({
-                    "geometry": LineString(f["coords"]),
+                    "geometry": geom,
                     "depth": f["depth"],
                     "shape_leng": f["shape_leng"],
                     "objectid": f["objectid"],
                 })
             gdf = gpd.GeoDataFrame(records, crs="EPSG:4326")
-            gdf.to_file(path, driver="GPKG")
+            gdf.to_file(path, driver="GPKG", engine="fiona")
             log.debug("Cache saved (GeoPackage): %s (%d features)", path, len(features))
         except Exception as exc:
             log.warning("GeoPackage cache failed (%s), falling back to JSON", exc)
@@ -565,8 +567,12 @@ class BathyFeatureEngine:
             stride = max(1, n // MAX_SAMPLE)
             sampled = coords[::stride]
             for node in sampled:
-                d = float(np.hypot((node[0] - lon) * M_PER_DEG * np.cos(np.radians(lat)),
-                                   (node[1] - lat) * M_PER_DEG))
+                R = 6_371_000.0
+                phi1, phi2 = np.radians(lat), np.radians(node[1])
+                dlam = np.radians(node[0] - lon)
+                dphi = np.radians(node[1] - lat)
+                a = np.sin(dphi / 2)**2 + np.cos(phi1) * np.cos(phi2) * np.sin(dlam / 2)**2
+                d = R * 2 * np.arcsin(np.sqrt(a))
                 if d < 2000:
                     nearby_depths.append(feat["depth"])
                     break
