@@ -31,6 +31,7 @@ References:
     - Stumpf et al. (2003) on optical properties of shallow water
 """
 
+import base64
 import logging
 import json
 import os
@@ -62,43 +63,61 @@ logger = logging.getLogger(__name__)
 
 
 class CoastalTopographyAnalyzer:
-    """Extract terrain features from DGT MDT-50cm around dive sites."""
-    
+    """Extract terrain features from DGT MDT-50cm or Copernicus GLO-30 around dive sites."""
+
     # DGT STAC endpoint
     STAC_URL = "https://dgt-be.a.incd.pt:8081/collections/MDT-50cm/items"
-    
+
+    # Copernicus GLO-30 — public AWS bucket (no auth required, ~30 m resolution)
+    GLO30_BASE_URL = "https://copernicus-dem-30m.s3.amazonaws.com"
+
+    # CDSE OAuth + download (uses user's Copernicus/CMEMS credentials)
+    CDSE_TOKEN_URL = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
+    CDSE_CATALOGUE_URL = "https://catalogue.dataspace.copernicus.eu/odata/v1"
+    CDSE_DOWNLOAD_URL = "https://download.dataspace.copernicus.eu/odata/v1"
+
+    # Credentials file written by copernicus-marine-client (base64-encoded)
+    CDSE_CRED_FILE = Path.home() / ".copernicusmarine" / ".copernicusmarine-credentials"
+
     # Native CRS of DGT MDT-50cm: ETRS89 / Portugal TM06
     NATIVE_CRS = "EPSG:3763"
     WGS84_CRS = "EPSG:4326"
-    
+
     # Nodata value used by DGT
     NODATA_VALUE = -999.0
-    
-    def __init__(self, 
+
+    def __init__(self,
                  bbox: Tuple[float, float, float, float],
                  output_dir: str = "./outputs/coastal_features",
-                 cache_tiles: bool = True):
+                 cache_tiles: bool = True,
+                 dem_source: str = "auto"):
         """
         Args:
             bbox: (minx, miny, maxx, maxy) in WGS84 (lon, lat)
             output_dir: where to save tiles, mosaics, and feature tables
             cache_tiles: if True, reuse downloaded tiles across analyses
+            dem_source: one of "dgt" (50cm, requires DGT S3 credentials),
+                        "copernicus" (GLO-30 via CDSE, uses ~/.copernicusmarine creds),
+                        "srtm" (GLO-30 public AWS, no auth),
+                        "auto" (tries dgt → copernicus → srtm)
         """
         self.bbox = bbox
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.cache_tiles = cache_tiles
-        
+        self.dem_source = dem_source
+
         self.tiles_dir = self.output_dir / "mdt_tiles"
         self.tiles_dir.mkdir(exist_ok=True)
-        
+
         self.dem_mosaic_path = self.output_dir / "dem_mosaic_50cm.tif"
         self.slope_path = self.output_dir / "slope_50cm.tif"
         self.aspect_path = self.output_dir / "aspect_50cm.tif"
-        
-        logger.info(f"CoastalTopographyAnalyzer initialized")
+
+        logger.info("CoastalTopographyAnalyzer initialized")
         logger.info(f"  BBox (WGS84): {self.bbox}")
         logger.info(f"  Output: {self.output_dir}")
+        logger.info(f"  DEM source: {self.dem_source}")
     
     def fetch_stac_items(self, limit: int = 50) -> List[Dict]:
         """
@@ -176,7 +195,164 @@ class CoastalTopographyAnalyzer:
                 logger.error(f"Failed to download {href}: {e}")
         
         return tile_paths
-    
+
+    # ── Copernicus GLO-30 helpers ──────────────────────────────────────────────
+
+    @staticmethod
+    def _read_cdse_credentials() -> Tuple[str, str]:
+        """Read username/password from ~/.copernicusmarine/.copernicusmarine-credentials."""
+        cred_file = CoastalTopographyAnalyzer.CDSE_CRED_FILE
+        if not cred_file.exists():
+            raise FileNotFoundError(f"CDSE credentials not found: {cred_file}")
+        raw = base64.b64decode(cred_file.read_text().strip().rstrip("%")).decode()
+        creds: Dict[str, str] = {}
+        for line in raw.splitlines():
+            if "=" in line and not line.startswith("["):
+                k, v = line.split("=", 1)
+                creds[k.strip()] = v.strip()
+        return creds["username"], creds["password"]
+
+    def _get_cdse_token(self) -> str:
+        """Obtain a short-lived OAuth2 bearer token from CDSE."""
+        user, pwd = self._read_cdse_credentials()
+        resp = requests.post(
+            self.CDSE_TOKEN_URL,
+            data={
+                "client_id": "cdse-public",
+                "username": user,
+                "password": pwd,
+                "grant_type": "password",
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()["access_token"]
+
+    @staticmethod
+    def _glo30_tiles_for_bbox(bbox: Tuple[float, float, float, float]) -> List[Tuple[int, int]]:
+        """Return list of (lat_floor, lon_floor) pairs covering bbox for 1°×1° GLO-30 tiles."""
+        minx, miny, maxx, maxy = bbox
+        tiles = []
+        for lat in range(int(np.floor(miny)), int(np.floor(maxy)) + 1):
+            for lon in range(int(np.floor(minx)), int(np.floor(maxx)) + 1):
+                tiles.append((lat, lon))
+        return tiles
+
+    @staticmethod
+    def _glo30_tile_name(lat: int, lon: int) -> str:
+        """Return the Copernicus GLO-30 tile stem for a given (lat_floor, lon_floor)."""
+        lat_dir = "N" if lat >= 0 else "S"
+        lon_dir = "E" if lon >= 0 else "W"
+        return (
+            f"Copernicus_DSM_COG_10_{lat_dir}{abs(lat):02d}_00"
+            f"_{lon_dir}{abs(lon):03d}_00_DEM"
+        )
+
+    def download_glo30_public(self) -> List[Path]:
+        """
+        Download Copernicus GLO-30 tiles from the public AWS S3 bucket (no auth).
+
+        Resolution: ~30 m.  Covers the world.  Tiles are 1°×1°.
+        """
+        if not HAS_RASTERIO:
+            logger.error("rasterio required for GLO-30 download")
+            return []
+
+        tiles = self._glo30_tiles_for_bbox(self.bbox)
+        logger.info(f"GLO-30 public: {len(tiles)} tile(s) needed for bbox")
+
+        paths = []
+        for lat, lon in tiles:
+            stem = self._glo30_tile_name(lat, lon)
+            url = f"{self.GLO30_BASE_URL}/{stem}/{stem}.tif"
+            local = self.tiles_dir / f"{stem}.tif"
+
+            if local.exists() and self.cache_tiles:
+                logger.info(f"  Cached: {local.name}")
+                paths.append(local)
+                continue
+
+            logger.info(f"  Downloading GLO-30 tile: {stem}")
+            try:
+                with requests.get(url, stream=True, timeout=120) as r:
+                    r.raise_for_status()
+                    with open(local, "wb") as fh:
+                        for chunk in r.iter_content(chunk_size=1 << 20):
+                            if chunk:
+                                fh.write(chunk)
+                logger.info(f"  Saved {local.name} ({local.stat().st_size / 1e6:.1f} MB)")
+                paths.append(local)
+            except Exception as exc:
+                logger.error(f"  Failed to download {url}: {exc}")
+
+        return paths
+
+    def download_copernicus_cdse(self) -> List[Path]:
+        """
+        Download Copernicus DEM GLO-30 tiles via CDSE (authenticated).
+
+        Uses ~/.copernicusmarine/.copernicusmarine-credentials for OAuth2.
+        Falls back to public AWS bucket if a tile is not found on CDSE.
+        """
+        try:
+            token = self._get_cdse_token()
+            headers = {"Authorization": f"Bearer {token}"}
+        except Exception as exc:
+            logger.warning(f"CDSE auth failed ({exc}); falling back to public GLO-30")
+            return self.download_glo30_public()
+
+        tiles = self._glo30_tiles_for_bbox(self.bbox)
+        logger.info(f"GLO-30 via CDSE: {len(tiles)} tile(s) needed")
+
+        paths = []
+        for lat, lon in tiles:
+            stem = self._glo30_tile_name(lat, lon)
+            local = self.tiles_dir / f"{stem}.tif"
+
+            if local.exists() and self.cache_tiles:
+                logger.info(f"  Cached: {local.name}")
+                paths.append(local)
+                continue
+
+            # Search CDSE OData for this tile
+            product_name = f"{stem}__30"
+            search_url = (
+                f"{self.CDSE_CATALOGUE_URL}/Products"
+                f"?$filter=Collection/Name eq 'COP-DEM'"
+                f" and contains(Name,'{stem}')"
+                f"&$top=1"
+            )
+            try:
+                sr = requests.get(search_url, headers=headers, timeout=30)
+                sr.raise_for_status()
+                products = sr.json().get("value", [])
+            except Exception as exc:
+                logger.warning(f"  CDSE search failed for {stem}: {exc}")
+                products = []
+
+            if products:
+                pid = products[0]["Id"]
+                dl_url = f"{self.CDSE_DOWNLOAD_URL}/Products({pid})/$value"
+                logger.info(f"  Downloading {stem} from CDSE (id={pid})")
+                try:
+                    with requests.get(dl_url, headers=headers, stream=True, timeout=120) as r:
+                        r.raise_for_status()
+                        with open(local, "wb") as fh:
+                            for chunk in r.iter_content(chunk_size=1 << 20):
+                                if chunk:
+                                    fh.write(chunk)
+                    logger.info(f"  Saved {local.name} ({local.stat().st_size / 1e6:.1f} MB)")
+                    paths.append(local)
+                    continue
+                except Exception as exc:
+                    logger.warning(f"  CDSE download failed for {stem}: {exc}; trying public bucket")
+
+            # Fallback to public AWS for this tile
+            fallback = self.download_glo30_public()
+            paths.extend(p for p in fallback if p not in paths)
+
+        return paths
+
     def build_dem_mosaic(self, tile_paths: Optional[List[Path]] = None) -> Optional[Path]:
         """
         Merge MDT-50cm tiles into a single DEM GeoTIFF.
@@ -198,41 +374,72 @@ class CoastalTopographyAnalyzer:
             logger.info(f"DEM mosaic already cached: {self.dem_mosaic_path}")
             return self.dem_mosaic_path
         
-        # Download tiles if not provided
+        # Download tiles if not provided — dispatch based on dem_source
         if tile_paths is None:
-            tile_paths = self.download_mdt_tiles()
-        
+            source = self.dem_source
+            if source == "dgt":
+                tile_paths = self.download_mdt_tiles()
+            elif source == "copernicus":
+                tile_paths = self.download_copernicus_cdse()
+            elif source == "srtm":
+                tile_paths = self.download_glo30_public()
+            else:  # "auto": DGT first, then CDSE, then public GLO-30
+                tile_paths = self.download_mdt_tiles()
+                if not tile_paths:
+                    logger.info("DGT tiles unavailable; trying Copernicus CDSE...")
+                    tile_paths = self.download_copernicus_cdse()
+                if not tile_paths:
+                    logger.info("CDSE unavailable; falling back to public GLO-30...")
+                    tile_paths = self.download_glo30_public()
+
         if not tile_paths:
             logger.error("No tiles available for mosaicing")
             return None
         
         logger.info(f"Building mosaic from {len(tile_paths)} tiles...")
-        
+
         try:
+            import rioxarray as rxr
+            from rasterio.crs import CRS as RioCRS
+
             src_files = [rasterio.open(str(p)) for p in tile_paths]
-            
-            # Merge
+
+            # Merge tiles
             mosaic, mosaic_transform = merge(src_files)
+            src_crs = src_files[0].crs
             meta = src_files[0].meta.copy()
             meta.update({
                 "height": mosaic.shape[1],
                 "width": mosaic.shape[2],
                 "transform": mosaic_transform,
-                "dtype": mosaic.dtype,
+                "dtype": "float32",
                 "nodata": self.NODATA_VALUE,
             })
-            
-            with rasterio.open(str(self.dem_mosaic_path), "w", **meta) as dst:
-                dst.write(mosaic)
-            
             for src in src_files:
                 src.close()
-            
-            logger.info(f"Mosaic saved: {self.dem_mosaic_path}")
-            logger.info(f"  Shape: {mosaic.shape}, CRS: {meta['crs']}")
-            
+
+            # Write merged mosaic to a temp file, then reproject to EPSG:3763 if needed
+            tmp_path = self.tiles_dir / "_mosaic_raw.tif"
+            with rasterio.open(str(tmp_path), "w", **meta) as dst:
+                dst.write(mosaic.astype("float32"))
+
+            native_crs = RioCRS.from_epsg(3763)
+            if src_crs != native_crs:
+                logger.info(f"  Reprojecting mosaic from {src_crs} → EPSG:3763 ...")
+                da = rxr.open_rasterio(str(tmp_path), masked=True)
+                da_reproj = da.rio.reproject(self.NATIVE_CRS)
+                da_reproj.rio.to_raster(str(self.dem_mosaic_path), dtype="float32")
+                tmp_path.unlink(missing_ok=True)
+                logger.info(f"  Reprojection complete")
+            else:
+                tmp_path.rename(self.dem_mosaic_path)
+
+            with rasterio.open(str(self.dem_mosaic_path)) as chk:
+                logger.info(f"Mosaic saved: {self.dem_mosaic_path}")
+                logger.info(f"  Shape: {chk.shape}, CRS: {chk.crs}, res: {chk.res[0]:.1f} m")
+
             return self.dem_mosaic_path
-        
+
         except Exception as e:
             logger.error(f"Mosaic creation failed: {e}")
             return None
@@ -484,13 +691,10 @@ class CoastalTopographyAnalyzer:
         logger.info("=" * 70)
         
         try:
-            # Step 1: Download tiles
-            logger.info("\n[1/4] Downloading MDT-50cm tiles from DGT STAC...")
-            tile_paths = self.download_mdt_tiles()
-            if not tile_paths:
-                return {"status": "error", "message": "No tiles downloaded"}
-            
-            # Step 2: Mosaic
+            # Step 1: Download tiles (source dispatched inside build_dem_mosaic)
+            logger.info(f"\n[1/4] Acquiring DEM tiles (source={self.dem_source})...")
+            tile_paths = None  # let build_dem_mosaic dispatch
+            # Step 2: Mosaic (also triggers download if tile_paths is None)
             logger.info("\n[2/4] Building DEM mosaic...")
             mosaic_path = self.build_dem_mosaic(tile_paths)
             if mosaic_path is None:
@@ -519,7 +723,7 @@ class CoastalTopographyAnalyzer:
             return {
                 "status": "success",
                 "sites_analyzed": len(features_df),
-                "tiles_downloaded": len(tile_paths),
+                "tiles_downloaded": len(tile_paths) if tile_paths else "n/a",
                 "dem_mosaic": str(mosaic_path),
                 "slope_raster": str(slope_path),
                 "aspect_raster": str(aspect_path),
@@ -573,7 +777,7 @@ def main():
     
     result = analyzer.run_analysis(
         sites=survey_sites,
-        buffer_m=1000,
+        buffer_m=4000,
         output_name="algarve_coastal_features"
     )
     

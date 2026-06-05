@@ -5,12 +5,56 @@ import pickle
 import logging
 import numpy as np
 
+import math
+
 try:
     from src.drift_monitor import observe as _observe_drift
 except ImportError:
     _observe_drift = None  # drift_monitor is optional; inference remains functional
 
 log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Terrain exposure modifier (Phase 4 integration)
+# ---------------------------------------------------------------------------
+
+# Dominant Atlantic swell direction for the Algarve coast (SW = 225°)
+_ALGARVE_SWELL_DIR = 225.0
+
+
+def terrain_exposure_modifier(
+    slope_mean: float,
+    aspect_mean: float,
+    swell_direction: float = _ALGARVE_SWELL_DIR,
+) -> float:
+    """
+    Physics-based BVI score multiplier derived from coastal terrain.
+
+    A south-facing (180°) coast with low slope facing the dominant SW swell
+    is moderately exposed; a sheltered north-facing cliff face would score 1.0.
+
+    Returns a value in [0.5, 1.0] — never zeroes out an ML score.
+
+    Args:
+        slope_mean: mean terrain slope in degrees within the site buffer
+        aspect_mean: mean terrain aspect in degrees (0=N, 90=E, 180=S, 270=W)
+        swell_direction: incoming swell azimuth in degrees (default 225 = SW)
+    """
+    # Angular difference between coast aspect and swell origin
+    diff = abs(aspect_mean - swell_direction)
+    if diff > 180:
+        diff = 360 - diff
+    # exposure ∈ [-1, 1]: +1 = coast faces directly into swell, -1 = sheltered
+    exposure = math.cos(math.radians(diff))
+    # Normalise to [0, 1]: 0 = sheltered, 1 = fully exposed
+    exposure_norm = (exposure + 1.0) / 2.0
+
+    # Slope resuspension penalty: 0–15° mapped to [0, 1]
+    slope_norm = min(slope_mean / 15.0, 1.0)
+
+    # Combined modifier: exposure contributes 25%, slope 15%
+    modifier = 1.0 - 0.25 * exposure_norm - 0.15 * slope_norm
+    return max(0.5, min(1.0, modifier))
 
 # Paths
 MODELS_DIR = os.path.join(os.path.dirname(__file__), "..", "models")
@@ -108,7 +152,7 @@ def _load_resources():
         log.warning(f"ML Ranker model or metadata missing. Using FALLBACK heuristic mode.")
 
 
-def predict_score(features_dict):
+def predict_score(features_dict, terrain_features=None):
     """
     Predicts the benthic visibility score using B02-only features.
 
@@ -118,11 +162,19 @@ def predict_score(features_dict):
     B02-only representation: benthic_contrast, snr, fft_clean,
     edge_entropy, dyn_range, signal.
 
+    Args:
+        features_dict: spectral/optical features dict
+        terrain_features: optional dict with keys slope_mean, aspect_mean,
+                          and optionally swell_direction (degrees).
+                          When provided, a physics-based terrain exposure
+                          modifier is applied as a post-prediction multiplier.
+
     Returns:
         dict: {
             "score": float,
             "mode": "ML" or "Fallback",
-            "features_used": dict
+            "features_used": dict,
+            "terrain_modifier": float (if terrain_features provided),
         }
     """
     _load_resources()
@@ -190,11 +242,17 @@ def predict_score(features_dict):
             
             if _observe_drift is not None:
                 _observe_drift(standard_features, score, _FEATURE_SCHEMA)
-            return {
-                "score": score,
-                "mode": "ML",
-                "features_used": standard_features
-            }
+            result = {"score": score, "mode": "ML", "features_used": standard_features}
+            if terrain_features:
+                mod = terrain_exposure_modifier(
+                    terrain_features.get("slope_mean", 0.0) or 0.0,
+                    terrain_features.get("aspect_mean", 180.0) or 180.0,
+                    terrain_features.get("swell_direction", _ALGARVE_SWELL_DIR),
+                )
+                result["score"] = round(score * mod, 6)
+                result["terrain_modifier"] = round(mod, 4)
+                result["terrain_features"] = terrain_features
+            return result
         except Exception as e:
             log.error(f"ML Inference failed ({e}). Reverting to fallback.")
             
@@ -228,9 +286,19 @@ def predict_score(features_dict):
 
     if _observe_drift is not None:
         _observe_drift(standard_features, float(score), _FEATURE_SCHEMA)
-    return {
+    result = {
         "score": float(score),
         "mode": "Fallback",
         "features_used": standard_features,
-        "reason": "ML Model unavailable or failed"
+        "reason": "ML Model unavailable or failed",
     }
+    if terrain_features:
+        mod = terrain_exposure_modifier(
+            terrain_features.get("slope_mean", 0.0) or 0.0,
+            terrain_features.get("aspect_mean", 180.0) or 180.0,
+            terrain_features.get("swell_direction", _ALGARVE_SWELL_DIR),
+        )
+        result["score"] = round(float(score) * mod, 6)
+        result["terrain_modifier"] = round(mod, 4)
+        result["terrain_features"] = terrain_features
+    return result

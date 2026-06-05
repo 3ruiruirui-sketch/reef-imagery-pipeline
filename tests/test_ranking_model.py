@@ -3,7 +3,10 @@ import pytest
 import numpy as np
 from unittest.mock import patch, mock_open, MagicMock
 
-from src.ranking_model import predict_score, _load_resources, validate_schema, schema_fingerprint
+from src.ranking_model import (
+    predict_score, _load_resources, validate_schema, schema_fingerprint,
+    terrain_exposure_modifier,
+)
 
 @pytest.fixture(autouse=True)
 def reset_globals():
@@ -427,3 +430,77 @@ def test_drift_extra_features_do_not_block():
         
         assert res["mode"] == "ML"
         assert res["score"] == 0.85
+
+
+# =============================================================================
+# Phase 4: Terrain Exposure Modifier Tests
+# =============================================================================
+
+class TestTerrainExposureModifier:
+    def test_returns_float_in_range(self):
+        m = terrain_exposure_modifier(1.0, 180.0)
+        assert isinstance(m, float)
+        assert 0.5 <= m <= 1.0
+
+    def test_sheltered_coast_higher_than_exposed(self):
+        exposed  = terrain_exposure_modifier(0.0, 180.0, swell_direction=225.0)  # S coast, SW swell
+        sheltered = terrain_exposure_modifier(0.0,   0.0, swell_direction=225.0)  # N coast, SW swell
+        assert sheltered > exposed
+
+    def test_steep_slope_penalises(self):
+        flat  = terrain_exposure_modifier(0.0,  180.0)
+        steep = terrain_exposure_modifier(15.0, 180.0)
+        assert steep < flat
+
+    def test_floor_at_0_5(self):
+        m = terrain_exposure_modifier(100.0, 225.0, swell_direction=225.0)
+        assert m >= 0.5
+
+    def test_ceil_at_1_0(self):
+        m = terrain_exposure_modifier(0.0, 45.0, swell_direction=225.0)
+        assert m <= 1.0
+
+    def test_pedra_eulalia_known_value(self):
+        m = terrain_exposure_modifier(1.076, 179.94, swell_direction=225.0)
+        assert 0.75 <= m <= 0.80
+
+    def test_zero_slope_zero_aspect(self):
+        m = terrain_exposure_modifier(0.0, 0.0)
+        assert 0.5 <= m <= 1.0
+
+
+class TestPredictScoreWithTerrain:
+    def test_terrain_modifier_applied(self):
+        feats = dict(benthic_contrast=0.3, snr=110.0, fft_clean=12000,
+                     edge_entropy=6.8, dyn_range=0.009, signal=0.13)
+        base    = predict_score(feats)
+        terrain = predict_score(feats, terrain_features=dict(slope_mean=2.0, aspect_mean=180.0))
+        assert terrain["score"] <= base["score"]
+        assert "terrain_modifier" in terrain
+        assert 0.5 <= terrain["terrain_modifier"] <= 1.0
+
+    def test_terrain_modifier_in_result_keys(self):
+        feats = dict(benthic_contrast=0.3, snr=110.0, fft_clean=12000,
+                     edge_entropy=6.8, dyn_range=0.009, signal=0.13)
+        r = predict_score(feats, terrain_features=dict(slope_mean=1.0, aspect_mean=180.0))
+        assert "terrain_modifier" in r
+        assert "terrain_features" in r
+
+    def test_no_terrain_preserves_contract(self):
+        feats = dict(benthic_contrast=0.3, snr=110.0, fft_clean=12000,
+                     edge_entropy=6.8, dyn_range=0.009, signal=0.13)
+        r = predict_score(feats)
+        assert "terrain_modifier" not in r
+        assert "score" in r and "mode" in r and "features_used" in r
+
+    def test_terrain_none_slopes_handled(self):
+        feats = dict(benthic_contrast=0.3, snr=110.0, fft_clean=12000,
+                     edge_entropy=6.8, dyn_range=0.009, signal=0.13)
+        r = predict_score(feats, terrain_features=dict(slope_mean=None, aspect_mean=None))
+        assert 0.0 <= r["score"] <= 1.0
+
+    def test_cloud_filter_ignores_terrain(self):
+        r = predict_score({"cloud_cover": 90.0},
+                          terrain_features=dict(slope_mean=5.0, aspect_mean=180.0))
+        assert r["score"] == 0.0
+        assert r["mode"] == "HardFilter"

@@ -387,5 +387,172 @@ def download_file(filename):
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     return send_from_directory(project_root, filename, as_attachment=True)
 
+
+# ─── Phase 4: Coastal Terrain Features ───────────────────────────────────────
+
+def _coastal_features_path():
+    """Return the path to the coastal features GeoJSON, or None if not found."""
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    candidates = [
+        os.path.join(project_root, 'outputs', 'coastal_topography', 'coastal_features.geojson'),
+        os.path.join(project_root, 'test_output_glo30', 'coastal_features.geojson'),
+    ]
+    for p in candidates:
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def _dem_mosaic_path():
+    """Return the path to the DEM mosaic GeoTIFF, or None if not found."""
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    candidates = [
+        os.path.join(project_root, 'outputs', 'coastal_topography', 'dem_mosaic_50cm.tif'),
+        os.path.join(project_root, 'test_output_glo30', 'dem_mosaic_50cm.tif'),
+    ]
+    for p in candidates:
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+@app.route('/api/coastal-features')
+def get_coastal_features():
+    """
+    Return coastal terrain features (slope, aspect) for all dive sites.
+
+    Optionally filter by site name: ?site=pedra_santa_eulalia
+    Falls back to empty FeatureCollection if no features file found.
+    """
+    geojson_path = _coastal_features_path()
+    if not geojson_path:
+        return jsonify({
+            "type": "FeatureCollection",
+            "features": [],
+            "meta": {"status": "no_data", "message": "Run CoastalTopographyAnalyzer to generate features"}
+        })
+
+    try:
+        with open(geojson_path) as f:
+            data = json.load(f)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+    site_filter = request.args.get('site', '').strip().lower()
+    if site_filter:
+        data['features'] = [
+            feat for feat in data.get('features', [])
+            if feat.get('properties', {}).get('site_name', '').lower() == site_filter
+        ]
+
+    return jsonify(data)
+
+
+@app.route('/api/dem-hillshade')
+def get_dem_hillshade():
+    """
+    Generate and return a hillshade PNG from the DEM mosaic for a given bbox.
+
+    Query params: minlon, minlat, maxlon, maxlat, width (px, default 512)
+    Returns: PNG image
+
+    The hillshade uses a 315° azimuth (NW illumination, standard cartographic convention).
+    """
+    dem_path = _dem_mosaic_path()
+    if not dem_path:
+        return jsonify({"status": "error", "message": "DEM mosaic not found. Run CoastalTopographyAnalyzer first."}), 404
+
+    try:
+        min_lon = float(request.args.get('minlon', -8.25))
+        min_lat = float(request.args.get('minlat', 37.04))
+        max_lon = float(request.args.get('maxlon', -8.17))
+        max_lat = float(request.args.get('maxlat', 37.10))
+        width_px = min(int(request.args.get('width', 512)), 2048)
+    except ValueError:
+        return jsonify({"status": "error", "message": "Invalid bbox or width parameter"}), 400
+
+    import io
+    from pyproj import Transformer
+    from rasterio.windows import from_bounds as _from_bounds
+
+    try:
+        with rasterio.open(dem_path) as src:
+            # Convert WGS84 bbox to raster CRS
+            tr = Transformer.from_crs("EPSG:4326", src.crs.to_epsg(), always_xy=True)
+            x_min, y_min = tr.transform(min_lon, min_lat)
+            x_max, y_max = tr.transform(max_lon, max_lat)
+            win = _from_bounds(x_min, y_min, x_max, y_max, src.transform)
+            arr = src.read(1, window=win, masked=True, boundless=True).astype(np.float32)
+
+        if arr.count() == 0:
+            return jsonify({"status": "error", "message": "No DEM data in requested bbox"}), 404
+
+        # Resize to requested width while preserving aspect ratio
+        h, w = arr.shape
+        height_px = max(1, int(width_px * h / w))
+        arr_filled = arr.filled(0.0)
+        arr_resized = cv2.resize(arr_filled, (width_px, height_px), interpolation=cv2.INTER_LINEAR)
+
+        # Hillshade: gradient-based illumination from NW (azimuth=315°, altitude=45°)
+        dy, dx = np.gradient(arr_resized)
+        azimuth_rad = math.radians(315)
+        altitude_rad = math.radians(45)
+        slope_rad = np.arctan(np.hypot(dx, dy))
+        aspect_rad = np.arctan2(-dy, dx)
+        hillshade = (
+            np.cos(altitude_rad) * np.cos(slope_rad) +
+            np.sin(altitude_rad) * np.sin(slope_rad) *
+            np.cos(azimuth_rad - aspect_rad)
+        )
+        hillshade = np.clip(hillshade, 0, 1)
+        hs_uint8 = (hillshade * 255).astype(np.uint8)
+
+        # Encode as PNG
+        buf = io.BytesIO()
+        plt.imsave(buf, hs_uint8, cmap='gray', format='png')
+        buf.seek(0)
+        from flask import Response
+        return Response(buf.read(), mimetype='image/png')
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Hillshade generation failed: {e}"}), 500
+
+
+@app.route('/api/terrain-modifier')
+def get_terrain_modifier():
+    """
+    Compute the terrain exposure BVI modifier for a site's terrain features.
+
+    Query params: slope_mean, aspect_mean, swell_direction (optional, default 225)
+    Returns: {"modifier": float, "exposure_factor": float, "plume_km": float}
+    """
+    try:
+        slope_mean = float(request.args.get('slope_mean', 0.0))
+        aspect_mean = float(request.args.get('aspect_mean', 180.0))
+        swell_dir = float(request.args.get('swell_direction', 225.0))
+        wind_speed = float(request.args.get('wind_speed_ms', 5.0))
+    except ValueError:
+        return jsonify({"status": "error", "message": "Invalid numeric parameter"}), 400
+
+    try:
+        from src.ranking_model import terrain_exposure_modifier
+        from src.drift_monitor import estimate_plume_extent
+    except ImportError:
+        return jsonify({"status": "error", "message": "ranking_model or drift_monitor not importable"}), 500
+
+    modifier = terrain_exposure_modifier(slope_mean, aspect_mean, swell_dir)
+    plume = estimate_plume_extent(aspect_mean, wind_speed, swell_dir, slope_mean=slope_mean)
+
+    return jsonify({
+        "slope_mean": slope_mean,
+        "aspect_mean": aspect_mean,
+        "swell_direction": swell_dir,
+        "terrain_modifier": round(modifier, 4),
+        "plume_km": plume["plume_km"],
+        "exposure_factor": plume["exposure_factor"],
+        "shelter_factor": plume["shelter_factor"],
+    })
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=3000, debug=True)

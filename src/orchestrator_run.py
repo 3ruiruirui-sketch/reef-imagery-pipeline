@@ -31,6 +31,16 @@ try:
 except ImportError:
     HAS_IH_BATHY = False
 
+# Coastal terrain features (shadow mode — never blocks pipeline)
+try:
+    import pandas as _pd
+    _COASTAL_CSV = PROJECT_DIR / "outputs" / "coastal_topography" / "algarve_coastal_features.csv"
+    _TERRAIN_DF = _pd.read_csv(_COASTAL_CSV) if _COASTAL_CSV.exists() else None
+    HAS_TERRAIN = _TERRAIN_DF is not None and not _TERRAIN_DF.empty
+except Exception:
+    _TERRAIN_DF = None
+    HAS_TERRAIN = False
+
 # Drift monitoring (shadow mode — never blocks pipeline)
 try:
     from src.drift_monitor import reset as drift_reset, log_summary as drift_log_summary
@@ -323,6 +333,35 @@ def main(depth: float = 16.0, config_path: str | None = None):
                         log.info("[S1 %s] roughness=%.4f → penalty=%.2f%%", key, roughness, res["s1_penalty_pct"])
         except Exception as e:
             log.warning("Sentinel-1 penalty skipped for image %s: %s", key, e)
+
+    # Apply coastal terrain exposure modifier (best-effort, never blocks pipeline)
+    if HAS_TERRAIN:
+        try:
+            from src.ranking_model import terrain_exposure_modifier
+            import math as _math
+            # Nearest site by Euclidean distance in degrees (fast, ~1 km precision)
+            df = _TERRAIN_DF.copy()
+            df["_dist"] = (df["latitude"] - target_lat)**2 + (df["longitude"] - target_lon)**2
+            row = df.loc[df["_dist"].idxmin()]
+            terrain_feat = {
+                "slope_mean":  float(row.get("slope_mean", 0.0) or 0.0),
+                "aspect_mean": float(row.get("aspect_mean", 180.0) or 180.0),
+            }
+            mod = terrain_exposure_modifier(
+                terrain_feat["slope_mean"], terrain_feat["aspect_mean"]
+            )
+            for key, res in [("A", res_a), ("B", res_b)]:
+                original = res.get("visibility_score", 0.0)
+                res["visibility_score"] = round(original * mod, 4)
+                res["terrain_site"]     = str(row.get("site_name", "nearest"))
+                res["terrain_modifier"] = round(mod, 4)
+                res["terrain_slope"]    = terrain_feat["slope_mean"]
+                res["terrain_aspect"]   = terrain_feat["aspect_mean"]
+            log.info("[Terrain] site=%s slope=%.2f° aspect=%.1f° modifier=%.3f",
+                     row.get("site_name"), terrain_feat["slope_mean"],
+                     terrain_feat["aspect_mean"], mod)
+        except Exception as e:
+            log.warning("Terrain modifier skipped: %s", e)
 
     results = {"A": res_a, "B": res_b}
 

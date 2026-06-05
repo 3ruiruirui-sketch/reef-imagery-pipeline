@@ -12,6 +12,7 @@ Integrated as a post-prediction observation layer.
 """
 
 import logging
+import math
 import numpy as np
 from collections import deque
 
@@ -29,6 +30,109 @@ FEATURE_BASELINES = {
     "dyn_range": {"mean": 0.008, "std": 0.003},
     "signal": {"mean": 0.125, "std": 0.015},
 }
+
+# Terrain feature baselines for Algarve coast (GLO-30 derived, 4 km buffer)
+TERRAIN_BASELINES = {
+    "slope_mean":   {"mean": 1.5,   "std": 1.2,  "min": 0.0,  "max": 45.0},
+    "slope_p90":    {"mean": 4.5,   "std": 2.5,  "min": 0.0,  "max": 60.0},
+    "aspect_mean":  {"mean": 180.0, "std": 60.0, "min": 0.0,  "max": 360.0},
+}
+
+# ---------------------------------------------------------------------------
+# Plume extent estimation (Phase 4 — coastal topography integration)
+# ---------------------------------------------------------------------------
+
+# Dominant Atlantic swell / wind directions for Portugal (degrees)
+_ALGARVE_PREVAILING_WIND_DIR = 315.0  # NW — dominant summer wind
+_BASE_PLUME_KM = 5.0                  # baseline plume extent for a flat, sheltered site
+
+
+def estimate_plume_extent(
+    aspect_mean: float,
+    wind_speed_ms: float,
+    wind_direction_deg: float = _ALGARVE_PREVAILING_WIND_DIR,
+    base_km: float = _BASE_PLUME_KM,
+    slope_mean: float = 0.0,
+) -> dict:
+    """
+    Estimate sediment plume extent (km) from coastal terrain exposure and wind.
+
+    Physics:
+        exposure = cos(aspect - wind_direction)   # -1=sheltered, +1=exposed
+        plume_km = base_km * (1 + exposure_norm * wind_speed/10)
+        slope adds a resuspension bonus (steep coasts stir more sediment)
+
+    Args:
+        aspect_mean: coastal terrain aspect in degrees (0=N, 90=E)
+        wind_speed_ms: wind speed in m/s
+        wind_direction_deg: wind origin azimuth (meteorological convention)
+        base_km: baseline plume for a flat sheltered site (default 5 km)
+        slope_mean: mean terrain slope in degrees (optional, adds resuspension)
+
+    Returns:
+        dict with keys: plume_km, exposure_factor, shelter_factor, wind_speed_ms
+    """
+    diff = abs(aspect_mean - wind_direction_deg)
+    if diff > 180:
+        diff = 360 - diff
+    # +1 = coast directly faces wind origin (exposed), -1 = sheltered
+    exposure = math.cos(math.radians(diff))
+    exposure_norm = (exposure + 1.0) / 2.0   # 0 = sheltered, 1 = exposed
+
+    # Wind-driven transport factor (Beaufort-like, normalised to 10 m/s)
+    wind_factor = max(wind_speed_ms, 0.0) / 10.0
+
+    # Slope resuspension bonus (0–15° → 0–0.5 extra)
+    slope_bonus = min(slope_mean / 15.0, 1.0) * 0.5
+
+    plume_km = base_km * (1.0 + exposure_norm * wind_factor + slope_bonus)
+    plume_km = max(base_km * 0.3, min(plume_km, base_km * 5.0))  # [1.5, 25] km
+
+    return {
+        "plume_km": round(plume_km, 2),
+        "exposure_factor": round(exposure_norm, 3),
+        "shelter_factor": round(1.0 - exposure_norm, 3),
+        "wind_speed_ms": wind_speed_ms,
+    }
+
+
+def check_terrain_features(terrain_dict: dict) -> dict:
+    """
+    Validate coastal terrain features against Algarve baselines.
+
+    Args:
+        terrain_dict: keys slope_mean, slope_p90, aspect_mean (from CoastalTopographyAnalyzer)
+
+    Returns:
+        Same structure as check_feature_drift: {level, alerts, null_count}
+    """
+    alerts = []
+    null_count = 0
+    max_level = OK
+
+    for feat, baseline in TERRAIN_BASELINES.items():
+        value = terrain_dict.get(feat)
+        if value is None or (isinstance(value, float) and math.isnan(value)):
+            null_count += 1
+            continue
+
+        # Hard range check
+        if value < baseline["min"] or value > baseline["max"]:
+            alerts.append((feat, WARNING,
+                           f"out of range: {value:.2f} vs [{baseline['min']}, {baseline['max']}]"))
+            max_level = WARNING
+            continue
+
+        z = _z_score(value, baseline["mean"], baseline["std"])
+        if z >= Z_CRIT:
+            alerts.append((feat, CRITICAL, f"z={z:.1f} (value={value:.2f})"))
+            max_level = CRITICAL
+        elif z >= Z_WARN:
+            alerts.append((feat, WARNING, f"z={z:.1f} (value={value:.2f})"))
+            if max_level != CRITICAL:
+                max_level = WARNING
+
+    return {"level": max_level, "alerts": alerts, "null_count": null_count}
 
 SCORE_BASELINE = {"mean": 0.60, "std": 0.15, "min": 0.0, "max": 1.0}
 

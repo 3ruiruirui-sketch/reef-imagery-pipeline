@@ -262,3 +262,74 @@ class TestSummary:
         s = summary()
         assert s["total_observations"] == 0
         assert s["worst_level"] == OK
+
+
+# =============================================================================
+# Phase 4: Terrain drift + plume estimation tests
+# =============================================================================
+
+from src.drift_monitor import (
+    estimate_plume_extent, check_terrain_features,
+    TERRAIN_BASELINES,
+)
+
+
+class TestEstimatePlumeExtent:
+    def test_returns_dict_keys(self):
+        r = estimate_plume_extent(180.0, 5.0)
+        assert {"plume_km", "exposure_factor", "shelter_factor", "wind_speed_ms"} <= r.keys()
+
+    def test_plume_km_positive(self):
+        r = estimate_plume_extent(180.0, 8.0)
+        assert r["plume_km"] > 0
+
+    def test_higher_wind_larger_plume(self):
+        calm  = estimate_plume_extent(180.0, 0.0, wind_direction_deg=315.0)
+        windy = estimate_plume_extent(180.0, 20.0, wind_direction_deg=315.0)
+        assert windy["plume_km"] >= calm["plume_km"]
+
+    def test_exposed_coast_larger_plume(self):
+        exposed   = estimate_plume_extent(315.0, 10.0, wind_direction_deg=315.0)  # coast faces wind
+        sheltered = estimate_plume_extent(135.0, 10.0, wind_direction_deg=315.0)  # coast faces away
+        assert exposed["plume_km"] > sheltered["plume_km"]
+
+    def test_clamped_to_reasonable_range(self):
+        extreme = estimate_plume_extent(315.0, 100.0, wind_direction_deg=315.0, base_km=5.0)
+        assert extreme["plume_km"] <= 25.0
+
+    def test_steep_slope_adds_resuspension(self):
+        flat  = estimate_plume_extent(180.0, 5.0, slope_mean=0.0)
+        steep = estimate_plume_extent(180.0, 5.0, slope_mean=15.0)
+        assert steep["plume_km"] > flat["plume_km"]
+
+    def test_exposure_and_shelter_sum_to_one(self):
+        r = estimate_plume_extent(180.0, 8.0)
+        assert abs(r["exposure_factor"] + r["shelter_factor"] - 1.0) < 1e-6
+
+    def test_pedra_eulalia_plausible(self):
+        r = estimate_plume_extent(179.94, 8.0, wind_direction_deg=315.0, slope_mean=1.076)
+        assert 4.0 <= r["plume_km"] <= 10.0
+
+
+class TestCheckTerrainFeatures:
+    def test_normal_algarve_values_ok(self):
+        r = check_terrain_features({"slope_mean": 1.5, "slope_p90": 4.5, "aspect_mean": 180.0})
+        assert r["level"] == OK
+        assert r["alerts"] == []
+
+    def test_extreme_slope_warns(self):
+        r = check_terrain_features({"slope_mean": 40.0, "slope_p90": 4.5, "aspect_mean": 180.0})
+        assert r["level"] in (WARNING, CRITICAL)
+
+    def test_out_of_range_aspect_warns(self):
+        r = check_terrain_features({"slope_mean": 1.5, "slope_p90": 4.5, "aspect_mean": 400.0})
+        assert r["level"] in (WARNING, CRITICAL)
+
+    def test_null_terrain_features_counted(self):
+        r = check_terrain_features({"slope_mean": None, "slope_p90": None, "aspect_mean": None})
+        assert r["null_count"] == 3
+
+    def test_terrain_baselines_coverage(self):
+        assert "slope_mean" in TERRAIN_BASELINES
+        assert "aspect_mean" in TERRAIN_BASELINES
+        assert "slope_p90" in TERRAIN_BASELINES
