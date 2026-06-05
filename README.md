@@ -108,7 +108,9 @@ Sentinel-2 L2A (10 m)
 | `reef_ml_predictor_acolite.py` | Gordon/QAA Kd, Stumpf SDB, run_predictor() |
 | `bathy_calibrator.py` | IH/DGRM isobaths, Stumpf calibration, zone classification |
 | `stumpf_emodnet_calibration.py` | EMODnet DTM reprojection, Stumpf-EMODnet regression |
-| `ranking_model.py` | Siamese ranker + RF predict_score() |
+| `coastal_topography.py` | CoastalTopographyAnalyzer: GLO-30/DGT DEM → slope/aspect/exposure features |
+| `ranking_model.py` | Siamese ranker + RF predict_score() + terrain_exposure_modifier() |
+| `drift_monitor.py` | Feature drift detection, estimate_plume_extent(), terrain baselines |
 | `enhancer.py` | SNR-adaptive NLM denoising, CLAHE sharpening |
 | `ih_bathy_features.py` | BathyFeatureEngine for bathymetry features |
 | `utils.py` | Raster I/O, Snell refraction, Beer-Lambert |
@@ -128,6 +130,40 @@ Sentinel-2 L2A (10 m)
 | [EMODnet](https://www.emodnet-bathymetry.eu/) | European DTM (~115 m) | Depth prior for Stumpf regression |
 | [CMEMS — Copernicus Marine](https://marine.copernicus.eu/) | Kd490, chlorophyll, SST | Seasonal Kd prior, water clarity context |
 | [IPMA](https://www.ipma.pt/) | Wind, atmospheric data | Scene selection, cloud filtering |
+| [DGT STAC / INCD](https://dgt-be.a.incd.pt:8081/) | MDT-50cm LiDAR DTM | Coastal terrain features (slope/aspect); requires DGT S3 credentials |
+| [Copernicus GLO-30](https://copernicus-dem-30m.s3.amazonaws.com/) | Global 30m DEM (public AWS) | Terrain fallback when DGT credentials unavailable |
+
+---
+
+## Coastal Topography Features (Phase 3–5)
+
+Terrain features extracted from the Copernicus GLO-30 DEM (or DGT MDT-50cm when
+credentials are available) feed a **terrain exposure modifier** that adjusts the
+BVI score based on coastal geometry:
+
+```python
+from src.coastal_topography import CoastalTopographyAnalyzer
+from src.ranking_model import predict_score
+
+# Extract slope/aspect for 15 Algarve survey sites
+analyzer = CoastalTopographyAnalyzer(
+    bbox=(-8.6, 36.9, -7.6, 37.2),
+    output_dir="./outputs/coastal_topography",
+    dem_source="srtm",   # "dgt" | "copernicus" | "srtm" | "auto"
+)
+result = analyzer.run_analysis(survey_sites, buffer_m=4000)
+# → outputs/coastal_topography/algarve_coastal_features.{csv,json,geojson}
+
+# Apply terrain modifier to BVI score
+score = predict_score(
+    spectral_features,
+    terrain_features={"slope_mean": 1.07, "aspect_mean": 180.2},
+)
+# score["terrain_modifier"] ∈ [0.5, 1.0] — south-facing Algarve coast ≈ 0.78
+```
+
+Pre-computed features for all 15 Algarve sites are committed at
+`outputs/coastal_topography/algarve_coastal_features.csv`.
 
 ---
 

@@ -31,16 +31,6 @@ try:
 except ImportError:
     HAS_IH_BATHY = False
 
-# Coastal terrain features (shadow mode — never blocks pipeline)
-try:
-    import pandas as _pd
-    _COASTAL_CSV = PROJECT_DIR / "outputs" / "coastal_topography" / "algarve_coastal_features.csv"
-    _TERRAIN_DF = _pd.read_csv(_COASTAL_CSV) if _COASTAL_CSV.exists() else None
-    HAS_TERRAIN = _TERRAIN_DF is not None and not _TERRAIN_DF.empty
-except Exception:
-    _TERRAIN_DF = None
-    HAS_TERRAIN = False
-
 # Drift monitoring (shadow mode — never blocks pipeline)
 try:
     from src.drift_monitor import reset as drift_reset, log_summary as drift_log_summary
@@ -57,6 +47,17 @@ log = logging.getLogger(__name__)
 
 # ── Config defaults ──────────────────────────────────────────────────────────
 PROJECT_DIR   = Path(__file__).parent.parent
+
+# Coastal terrain features (shadow mode — never blocks pipeline)
+try:
+    import pandas as _pd
+    _COASTAL_CSV = PROJECT_DIR / "outputs" / "coastal_topography" / "algarve_coastal_features.csv"
+    _TERRAIN_DF = _pd.read_csv(_COASTAL_CSV) if _COASTAL_CSV.exists() else None
+    HAS_TERRAIN = _TERRAIN_DF is not None and not _TERRAIN_DF.empty
+except Exception:
+    _TERRAIN_DF = None
+    HAS_TERRAIN = False
+
 IMAGE_A_B02   = PROJECT_DIR / "reef_Output_Master/reef_output_pedra_to_gale_20250925/S2_B02_20250925.tif"
 IMAGE_A_B03   = PROJECT_DIR / "reef_Output_Master/reef_output_pedra_to_gale_20250925/S2_B03_20250925.tif"
 IMAGE_B_B02   = PROJECT_DIR / "reef_Output_Master/reef_output_ai_prediction_spot_2023/S2_B02_20231001.tif"

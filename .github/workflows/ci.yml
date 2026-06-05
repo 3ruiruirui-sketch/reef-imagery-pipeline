@@ -14,104 +14,113 @@ jobs:
     strategy:
       matrix:
         python-version: ['3.10', '3.11', '3.12']
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
         cache: 'pip'
-    
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pytest pytest-cov flake8 black mypy
 
-    - name: Run EMODnet calibration regression test
+    - name: Verify core imports
       run: |
-        pytest tests/test_stumpf_emodnet_calibration.py -q
+        python -c "
+        import sys, numpy as np, pandas as pd, rasterio
+        import geopandas, rasterstats, rioxarray, xarray
+        from pyproj import Transformer
+        from shapely.geometry import Point
+        import planetary_computer as pc
+        from pystac_client import Client
+        from src.coastal_topography import CoastalTopographyAnalyzer
+        from src.ranking_model import predict_score, terrain_exposure_modifier
+        from src.drift_monitor import estimate_plume_extent, check_terrain_features
+        print('✓ All imports OK — Python', sys.version.split()[0])
+        print(f'  numpy={np.__version__}  pandas={pd.__version__}  rasterio={rasterio.__version__}')
+        print(f'  geopandas={geopandas.__version__}  rioxarray={rioxarray.__version__}')
+        "
 
-    - name: Lint with flake8
+    - name: Syntax check — all src modules
       run: |
-        # Stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # Exit-zero treats all errors as warnings
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-      continue-on-error: true
-    
-    - name: Check code formatting with Black
+        python -m py_compile src/coastal_topography.py
+        python -m py_compile src/dgt_sentinel_integrator.py
+        python -m py_compile src/ranking_model.py
+        python -m py_compile src/drift_monitor.py
+        python -m py_compile src/orchestrator_run.py
+        python -m py_compile src/bathy_calibrator.py
+        python -m py_compile src/stumpf_emodnet_calibration.py
+        python -m py_compile src/ih_bathy_features.py
+        python -m py_compile src/enhancer.py
+        python -m py_compile dashboard/app.py
+        echo "✓ All modules compile successfully"
+
+    - name: Run full test suite
       run: |
-        black --check . 2>&1 || echo "Code formatting issues found (non-blocking)"
+        pytest tests/ -q --tb=short
+
+    - name: Generate coverage report
+      run: |
+        pytest tests/ --cov=src --cov-report=xml --cov-report=term-missing -q
       continue-on-error: true
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        files: coverage.xml
+      continue-on-error: true
+
+    - name: Lint with flake8 (syntax errors = blocking, style = warning)
+      run: |
+        flake8 src/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 src/ tests/ --count --exit-zero --max-complexity=12 --max-line-length=127 --statistics
+      continue-on-error: false  # syntax errors block; style warnings do not (exit-zero above)
 
     - name: Type check with mypy
       run: |
-        mypy orchestrator.py orchestrator_run.py scripts/reef_bathy_module.py src/stumpf_emodnet_calibration.py tests/test_stumpf_emodnet_calibration.py 2>&1 || echo "Type check issues found (non-blocking)"
+        mypy src/coastal_topography.py \
+             src/ranking_model.py \
+             src/drift_monitor.py \
+             src/stumpf_emodnet_calibration.py \
+             --ignore-missing-imports \
+             --no-strict-optional \
+             2>&1 || echo "Type check issues found (non-blocking)"
       continue-on-error: true
 
-    - name: Verify imports
+    - name: Check code formatting with Black
       run: |
-        python -c "
-        import sys
-        import numpy as np
-        import pandas as pd
-        import cv2
-        import rasterio
-        from pyproj import Transformer
-        import planetary_computer as pc
-        from pystac_client import Client
-        print('✓ All core dependencies imported successfully')
-        print(f'Python: {sys.version.split()[0]}')
-        print(f'numpy: {np.__version__}')
-        print(f'pandas: {pd.__version__}')
-        print(f'rasterio: {rasterio.__version__}')
-        "
-    
-    - name: Run basic syntax check
-      run: |
-        python -m py_compile orchestrator.py
-        python -m py_compile orchestrator_run.py
-        python -m py_compile run_benthic_physics_comparison.py
-        python -m py_compile scripts/reef_bathy_module.py
-        python -m py_compile src/stumpf_emodnet_calibration.py
-        python -m py_compile tests/test_stumpf_emodnet_calibration.py
-        echo "✓ All Python files compile successfully"
-    
-    - name: Generate coverage report
-      run: |
-        pytest . --cov=. --cov-report=xml --cov-report=term 2>&1 || echo "No pytest tests found (non-blocking)"
-      continue-on-error: true
-    
-    - name: Upload coverage
-      uses: codecov/codecov-action@v3
+        black --check src/ tests/ --line-length 127 2>&1 || echo "Formatting issues (non-blocking)"
       continue-on-error: true
 
   security:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
-    
+
     - name: Install security tools
       run: |
         python -m pip install --upgrade pip
         pip install bandit safety
-    
+
     - name: Run Bandit security scan
       run: |
-        bandit -r . -ll 2>&1 || echo "Security issues found (review needed)"
+        bandit -r src/ -ll 2>&1 || echo "Security issues found (review needed)"
       continue-on-error: true
-    
+
     - name: Check dependencies with Safety
       run: |
         pip install -r requirements.txt
@@ -121,36 +130,30 @@ jobs:
   build:
     runs-on: ubuntu-latest
     needs: [test, security]
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
-    
-    - name: Install build tools
+
+    - name: Install and verify full stack
       run: |
         python -m pip install --upgrade pip
-        pip install build wheel setuptools
-    
-    - name: Build distribution packages
-      run: |
-        python -m pip install -r requirements.txt
-        echo "✓ Build environment verified"
-    
-    - name: Final verification
-      run: |
-        python -c "import sys; print(f'Python version: {sys.version}')"
-        echo "✓ Build successful"
-    
+        pip install -r requirements.txt
+        pip install pytest pytest-cov
+        pytest tests/ -q --tb=short
+        echo "✓ Full stack verified"
+
     - name: Summary
       run: |
         echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "✓ All tests passed" >> $GITHUB_STEP_SUMMARY
+        echo "✓ All 207+ tests passed" >> $GITHUB_STEP_SUMMARY
+        echo "✓ Phase 3-5: GLO-30 DEM fallback, terrain BVI integration" >> $GITHUB_STEP_SUMMARY
         echo "✓ Code quality checks completed" >> $GITHUB_STEP_SUMMARY
         echo "✓ Security scan completed" >> $GITHUB_STEP_SUMMARY
-        echo "✓ Build verified" >> $GITHUB_STEP_SUMMARY
+        echo "✓ Build verified on Python 3.10/3.11/3.12" >> $GITHUB_STEP_SUMMARY

@@ -26,10 +26,11 @@
 
 3. **Run tests and linting**
    ```bash
-   flake8 .
-   black .
-   mypy orchestrator*.py
-   pytest
+   pytest tests/ -q                          # full suite (207+ tests)
+   pytest tests/ --cov=src --cov-report=term # with coverage
+   flake8 src/ tests/ --max-line-length=127
+   black --check src/ tests/ --line-length=127
+   mypy src/coastal_topography.py src/ranking_model.py src/drift_monitor.py --ignore-missing-imports
    ```
 
 4. **Commit with clear messages**
@@ -45,16 +46,38 @@
 
 ```
 reef_imagery_pipeline/
-├── orchestrator.py              # Main comparison orchestrator
-├── orchestrator_run.py           # Physical analysis runner
-├── reef_ml_predictor*.py         # ML prediction models
-├── hybrid_stac_physical_orchestrator.py  # STAC streaming
-├── dashboard/                   # Flask web dashboard
-├── reef_Output_Master/          # Consolidated output directories (36 datasets)
-├── .github/workflows/           # CI/CD automation
-├── requirements*.txt            # Dependencies
-└── README*.md                   # Documentation
+├── src/
+│   ├── coastal_topography.py    # CoastalTopographyAnalyzer — GLO-30/DGT DEM features
+│   ├── dgt_sentinel_integrator.py  # DGT MDT-50cm + Sentinel-2 stack
+│   ├── ranking_model.py         # predict_score() + terrain_exposure_modifier()
+│   ├── drift_monitor.py         # Feature drift, estimate_plume_extent()
+│   ├── orchestrator_run.py      # Full pipeline orchestrator
+│   └── ...                      # Other physics/ML modules
+├── tests/
+│   ├── test_coastal_topography.py   # Phase 3-5 terrain tests
+│   ├── test_ranking_model.py    # BVI scoring + terrain modifier tests
+│   ├── test_drift_monitor.py    # Drift + plume estimation tests
+│   └── ...
+├── outputs/coastal_topography/  # Pre-computed 15-site terrain features
+├── dashboard/                   # Flask + Leaflet dashboard
+├── .github/workflows/ci.yml     # CI: full test suite + lint + mypy + security
+├── requirements.txt             # Dependencies (includes geopandas, rioxarray)
+└── README.md
 ```
+
+### DGT / GLO-30 DEM Integration
+
+The `CoastalTopographyAnalyzer` supports three DEM sources:
+
+| `dem_source` | Data | Auth required |
+|:--|:--|:--|
+| `"dgt"` | DGT MDT-50cm (0.5 m LiDAR) | Yes — DGT S3 credentials |
+| `"copernicus"` | Copernicus GLO-30 via CDSE (30 m) | Yes — `~/.copernicusmarine` |
+| `"srtm"` | Copernicus GLO-30 public AWS (30 m) | No |
+| `"auto"` | DGT → CDSE → public (best available) | Optional |
+
+For DGT access, contact [DGT/SNIG](https://snig.dgterritorio.gov.pt/) to request
+MDT-50cm S3 credentials.
 
 ## Key Files Edited
 

@@ -90,7 +90,7 @@ class CoastalTopographyAnalyzer:
                  bbox: Tuple[float, float, float, float],
                  output_dir: str = "./outputs/coastal_features",
                  cache_tiles: bool = True,
-                 dem_source: str = "auto"):
+                 dem_source: str = "auto") -> None:
         """
         Args:
             bbox: (minx, miny, maxx, maxy) in WGS84 (lon, lat)
@@ -737,7 +737,7 @@ class CoastalTopographyAnalyzer:
             return {"status": "error", "message": str(e)}
 
 
-def main():
+def main() -> None:
     """Example usage with Algarve survey sites."""
     import sys
     
