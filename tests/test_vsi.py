@@ -8,6 +8,7 @@ from pyproj import Transformer
 lat, lon = 37.05811, -8.20978
 
 
+@pytest.mark.network
 def test_vsi_b02_read():
     catalog = Client.open('https://planetarycomputer.microsoft.com/api/stac/v1', modifier=pc.sign_inplace)
     search = catalog.search(

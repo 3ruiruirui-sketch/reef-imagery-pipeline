@@ -340,3 +340,120 @@ class TestAnalyseBand:
         assert res["s1_sea_state"]   == "moderate"
         assert res["s1_penalty_pct"] == 15.0
         assert pytest.approx(res["visibility_score"], 1e-4) == base_vis * 0.85
+
+
+# =============================================================================
+# Phase 4 — terrain loading + modifier integration tests
+# =============================================================================
+
+import pandas as pd
+import tempfile, json, os
+from src.orchestrator_run import load_config, _normalise_result
+
+
+class TestLoadConfig:
+    def test_none_returns_empty(self):
+        assert load_config(None) == {}
+
+    def test_missing_file_returns_empty(self, tmp_path):
+        assert load_config(tmp_path / "nonexistent.yaml") == {}
+
+    def test_valid_yaml_loaded(self, tmp_path):
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text("target_lat: 37.069\ntarget_lon: -8.210\n")
+        try:
+            import yaml
+        except ImportError:
+            pytest.skip("PyYAML not installed")
+        result = load_config(cfg_file)
+        assert result.get("target_lat") == 37.069
+
+    def test_invalid_yaml_returns_empty(self, tmp_path):
+        cfg_file = tmp_path / "bad.yaml"
+        cfg_file.write_text(": broken: yaml: {{}")
+        result = load_config(cfg_file)
+        # Should not raise, returns empty or partial
+        assert isinstance(result, dict)
+
+
+class TestNormaliseResult:
+    BASE_PRED = {
+        "snr_mean_16m": 115.0,
+        "visibility_score": 0.72,
+        "kd_b02_estimated": 0.045,
+        "kd_seasonal_prior": 0.045,
+    }
+    BASE_META = {"date": "2025-09-25", "cloud": 1.2, "month": 9}
+
+    def test_required_keys_present(self):
+        out = _normalise_result(self.BASE_PRED, self.BASE_META)
+        for key in ("SNR_mean_16m", "date", "cloud_cover", "b02_cv",
+                    "s1_scene_id", "s1_roughness", "s1_penalty_pct"):
+            assert key in out, f"Missing key: {key}"
+
+    def test_snr_alias_correct(self):
+        out = _normalise_result(self.BASE_PRED, self.BASE_META)
+        assert out["SNR_mean_16m"] == 115.0
+
+    def test_b02_cv_derived_from_snr(self):
+        out = _normalise_result(self.BASE_PRED, self.BASE_META)
+        expected = round(1.0 / 115.0, 5)
+        assert abs(out["b02_cv"] - expected) < 1e-4
+
+    def test_s1_defaults_set(self):
+        out = _normalise_result(self.BASE_PRED, self.BASE_META)
+        assert out["s1_scene_id"] == "none"
+        assert out["s1_roughness"] == -1.0
+        assert out["s1_penalty_pct"] == 0.0
+
+    def test_existing_values_not_overwritten(self):
+        pred = {**self.BASE_PRED, "s1_scene_id": "S1A_IW_SLC__20250924"}
+        out = _normalise_result(pred, self.BASE_META)
+        assert out["s1_scene_id"] == "S1A_IW_SLC__20250924"
+
+    def test_date_from_meta(self):
+        out = _normalise_result(self.BASE_PRED, self.BASE_META)
+        assert out["date"] == "2025-09-25"
+
+
+class TestTerrainCsvLoading:
+    def test_terrain_df_loaded_when_csv_exists(self):
+        from src import orchestrator_run as orch
+        if orch._TERRAIN_DF is not None:
+            assert len(orch._TERRAIN_DF) > 0
+            assert "slope_mean" in orch._TERRAIN_DF.columns
+            assert "aspect_mean" in orch._TERRAIN_DF.columns
+
+    def test_has_terrain_flag_matches_df(self):
+        from src import orchestrator_run as orch
+        if orch._TERRAIN_DF is not None:
+            assert orch.HAS_TERRAIN is True
+        else:
+            assert orch.HAS_TERRAIN is False
+
+    def test_terrain_modifier_applied_to_score(self, tmp_path):
+        """Simulate orchestrator terrain modifier logic with a mock CSV."""
+        import pandas as pd
+        from src.ranking_model import terrain_exposure_modifier
+
+        fake_csv = tmp_path / "terrain.csv"
+        pd.DataFrame([{
+            "site_name": "test_site",
+            "latitude": 37.069081,
+            "longitude": -8.210242,
+            "slope_mean": 1.076,
+            "aspect_mean": 179.94,
+        }]).to_csv(fake_csv, index=False)
+
+        df = pd.read_csv(fake_csv)
+        df["_dist"] = (df["latitude"] - 37.06) ** 2 + (df["longitude"] - (-8.21)) ** 2
+        row = df.loc[df["_dist"].idxmin()]
+
+        mod = terrain_exposure_modifier(
+            float(row["slope_mean"]),
+            float(row["aspect_mean"]),
+        )
+        assert 0.5 <= mod <= 1.0
+        score_before = 0.80
+        score_after  = round(score_before * mod, 4)
+        assert score_after <= score_before

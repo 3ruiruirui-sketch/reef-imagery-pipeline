@@ -84,3 +84,6 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+markers = [
+    "network: marks tests requiring live network access (skip in CI with '-m not network')",
+]

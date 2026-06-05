@@ -418,7 +418,41 @@ class CoastalTopographyAnalyzer:
             for src in src_files:
                 src.close()
 
-            # Write merged mosaic to a temp file, then reproject to EPSG:3763 if needed
+            # Clip merged array to bbox + 5% margin before writing (reduces memory ~90%)
+            from rasterio.transform import array_bounds
+            from rasterio.windows import from_bounds as _from_bounds
+
+            margin = 0.05  # degrees
+            clip_minx = self.bbox[0] - margin
+            clip_miny = self.bbox[1] - margin
+            clip_maxx = self.bbox[2] + margin
+            clip_maxy = self.bbox[3] + margin
+
+            if src_crs and str(src_crs).upper() in ("EPSG:4326", "WGS 84"):
+                # Tile is geographic — clip directly by bbox
+                win = _from_bounds(clip_minx, clip_miny, clip_maxx, clip_maxy,
+                                   mosaic_transform)
+                row_start = max(0, int(win.row_off))
+                row_stop  = min(mosaic.shape[1], int(win.row_off + win.height) + 1)
+                col_start = max(0, int(win.col_off))
+                col_stop  = min(mosaic.shape[2], int(win.col_off + win.width) + 1)
+                mosaic = mosaic[:, row_start:row_stop, col_start:col_stop]
+                from rasterio.transform import from_bounds as _tfrom_bounds
+                h, w = mosaic.shape[1], mosaic.shape[2]
+                arr_b = array_bounds(h, w, mosaic_transform)
+                # Recompute transform for clipped window
+                from affine import Affine
+                mosaic_transform = Affine(
+                    mosaic_transform.a, mosaic_transform.b,
+                    mosaic_transform.c + col_start * mosaic_transform.a,
+                    mosaic_transform.d, mosaic_transform.e,
+                    mosaic_transform.f + row_start * mosaic_transform.e,
+                )
+                meta.update(height=mosaic.shape[1], width=mosaic.shape[2],
+                            transform=mosaic_transform)
+                logger.info(f"  Clipped to bbox: {mosaic.shape[1]}×{mosaic.shape[2]} px")
+
+            # Write clipped mosaic to a temp file, then reproject to EPSG:3763 if needed
             tmp_path = self.tiles_dir / "_mosaic_raw.tif"
             with rasterio.open(str(tmp_path), "w", **meta) as dst:
                 dst.write(mosaic.astype("float32"))

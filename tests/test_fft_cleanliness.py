@@ -1,14 +1,18 @@
-import planetary_computer as pc
 import pytest
-from pystac_client import Client
 import pandas as pd
-from src.reef_ml_predictor import extract_features_from_stac
 from src.ranking_model import predict_score
 
-catalog = Client.open('https://planetarycomputer.microsoft.com/api/stac/v1', modifier=pc.sign_inplace)
 
-
+@pytest.mark.network
 def test_fft_cleanliness():
+    import planetary_computer as pc
+    from pystac_client import Client
+    from src.reef_ml_predictor import extract_features_from_stac
+
+    catalog = Client.open(
+        'https://planetarycomputer.microsoft.com/api/stac/v1',
+        modifier=pc.sign_inplace,
+    )
     search = catalog.search(
         collections=['sentinel-2-l2a'],
         intersects={'type': 'Point', 'coordinates': [-8.20978, 37.05811]},

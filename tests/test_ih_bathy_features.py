@@ -13,6 +13,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 import numpy as np
 
 # Add src to path
@@ -187,6 +189,7 @@ def test_slope_proxy_no_nearby():
 # C.  Integration / end-to-end  (uses real network — may be skipped)
 # =============================================================================
 
+@pytest.mark.network
 def test_live_fetch_pedra_do_alto():
     """
     Real network test: fetch isobaths for the Pedra do Alto AOI.
@@ -212,6 +215,7 @@ def test_live_fetch_pedra_do_alto():
     print(f"OK: fetched {len(features)} isobaths, depths={sorted(depths_found)}")
 
 
+@pytest.mark.network
 def test_live_features_for_point_albufeira():
     """
     Real network test: compute bathymetry features for Albufeira reef spot.
@@ -235,6 +239,7 @@ def test_live_features_for_point_albufeira():
     print(f"OK: features={json.dumps(feats, indent=2, default=str)}")
 
 
+@pytest.mark.network
 def test_get_bathy_features_for_summary():
     """One-liner convenience function works end-to-end."""
     import requests

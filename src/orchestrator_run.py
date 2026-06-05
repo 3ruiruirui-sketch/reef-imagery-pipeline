@@ -93,6 +93,9 @@ def load_config(config_path: str | Path | None = None) -> dict:
     except FileNotFoundError:
         log.warning("Config file not found: %s — using defaults", config_path)
         return {}
+    except Exception as e:
+        log.warning("Config file parse error (%s) — using defaults: %s", config_path, e)
+        return {}
 
 
 # ── Shell helpers ─────────────────────────────────────────────────────────────

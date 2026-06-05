@@ -62,13 +62,13 @@ jobs:
         python -m py_compile dashboard/app.py
         echo "✓ All modules compile successfully"
 
-    - name: Run full test suite
+    - name: Run full test suite (offline only)
       run: |
-        pytest tests/ -q --tb=short
+        pytest tests/ -q --tb=short -m "not network"
 
     - name: Generate coverage report
       run: |
-        pytest tests/ --cov=src --cov-report=xml --cov-report=term-missing -q
+        pytest tests/ -m "not network" --cov=src --cov-report=xml --cov-report=term-missing -q
       continue-on-error: true
 
     - name: Upload coverage to Codecov
@@ -145,7 +145,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pytest pytest-cov
-        pytest tests/ -q --tb=short
+        pytest tests/ -q --tb=short -m "not network"
         echo "✓ Full stack verified"
 
     - name: Summary

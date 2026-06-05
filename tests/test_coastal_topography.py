@@ -172,3 +172,141 @@ class TestProductionOutputs:
         with rasterio.open(str(self.DEM_TIF)) as src:
             assert src.crs.to_epsg() == 3763
             assert src.count == 1
+
+
+# =============================================================================
+# Synthetic DEM helpers + coverage tests (no network, no real tiles)
+# =============================================================================
+
+import rasterio
+from rasterio.transform import from_bounds as _tfrom_bounds
+from rasterio.crs import CRS as _RioCRS
+from affine import Affine
+
+
+def _make_dem(tmp_path, crs_epsg=3763, width=120, height=100, slope=True):
+    """Tiny synthetic DEM in EPSG:3763 near Algarve (for offline tests)."""
+    out = tmp_path / "synth_dem.tif"
+    west, south, east, north = -8000.0, -291000.0, -6800.0, -290000.0
+    transform = _tfrom_bounds(west, south, east, north, width, height)
+    x = np.linspace(0, 1, width)
+    y = np.linspace(0, 1, height)
+    xx, yy = np.meshgrid(x, y)
+    data = (xx * 80 + yy * 40).astype(np.float32) if slope else np.ones((height, width), np.float32) * 10.0
+    with rasterio.open(str(out), "w", driver="GTiff",
+                       height=height, width=width, count=1,
+                       dtype="float32", crs=_RioCRS.from_epsg(crs_epsg),
+                       transform=transform, nodata=-999.0) as dst:
+        dst.write(data, 1)
+    return out
+
+
+class TestDerivesSlopeAspect:
+    def test_slope_non_negative(self, tmp_path):
+        dem = _make_dem(tmp_path)
+        a = CoastalTopographyAnalyzer(ALGARVE_BBOX, str(tmp_path))
+        sp, ap = a.derive_slope_aspect(dem)
+        assert sp is not None and sp.exists()
+        assert ap is not None and ap.exists()
+        with rasterio.open(str(sp)) as src:
+            s = src.read(1)
+            assert np.nanmin(s) >= 0.0
+
+    def test_aspect_in_0_360(self, tmp_path):
+        dem = _make_dem(tmp_path)
+        a = CoastalTopographyAnalyzer(ALGARVE_BBOX, str(tmp_path))
+        _, ap = a.derive_slope_aspect(dem)
+        with rasterio.open(str(ap)) as src:
+            asp = src.read(1)
+            assert np.nanmin(asp) >= 0.0
+            assert np.nanmax(asp) <= 360.0
+
+    def test_flat_dem_zero_slope(self, tmp_path):
+        dem = _make_dem(tmp_path, slope=False)
+        a = CoastalTopographyAnalyzer(ALGARVE_BBOX, str(tmp_path))
+        sp, _ = a.derive_slope_aspect(dem)
+        with rasterio.open(str(sp)) as src:
+            s = src.read(1)
+            assert np.nanmean(s) < 1.0  # essentially flat
+
+    def test_missing_dem_returns_none(self, tmp_path):
+        a = CoastalTopographyAnalyzer(ALGARVE_BBOX, str(tmp_path))
+        sp, ap = a.derive_slope_aspect(tmp_path / "nonexistent.tif")
+        assert sp is None and ap is None
+
+
+class TestBuildDemMosaic:
+    def test_mosaic_from_local_tiles(self, tmp_path):
+        dem = _make_dem(tmp_path)
+        a = CoastalTopographyAnalyzer(ALGARVE_BBOX, str(tmp_path), cache_tiles=False)
+        result = a.build_dem_mosaic([dem])
+        assert result is not None
+        assert result.exists()
+
+    def test_mosaic_uses_cache(self, tmp_path):
+        dem = _make_dem(tmp_path)
+        a = CoastalTopographyAnalyzer(ALGARVE_BBOX, str(tmp_path), cache_tiles=True)
+        r1 = a.build_dem_mosaic([dem])
+        r2 = a.build_dem_mosaic([dem])  # should return cached
+        assert r1 == r2
+
+    def test_empty_tiles_returns_none(self, tmp_path):
+        a = CoastalTopographyAnalyzer(ALGARVE_BBOX, str(tmp_path), cache_tiles=False)
+        result = a.build_dem_mosaic([])
+        assert result is None
+
+
+class TestExtractFeaturesForSites:
+    def test_returns_dataframe_with_expected_columns(self, tmp_path):
+        dem = _make_dem(tmp_path)
+        a = CoastalTopographyAnalyzer(ALGARVE_BBOX, str(tmp_path), cache_tiles=False)
+        # Pre-populate slope/aspect so no download needed
+        a.dem_mosaic_path = dem
+        sp, ap = a.derive_slope_aspect(dem)
+        a.slope_path = sp
+        a.aspect_path = ap
+        sites = [("synth_site", 37.069, -8.210)]
+        df = a.extract_features_for_sites(sites, buffer_m=500)
+        assert df is not None
+        assert len(df) == 1
+        assert "slope_mean" in df.columns
+        assert "aspect_mean" in df.columns
+        assert "site_name" in df.columns
+
+    def test_multiple_sites(self, tmp_path):
+        dem = _make_dem(tmp_path)
+        a = CoastalTopographyAnalyzer(ALGARVE_BBOX, str(tmp_path), cache_tiles=False)
+        a.dem_mosaic_path = dem
+        sp, ap = a.derive_slope_aspect(dem)
+        a.slope_path = sp
+        a.aspect_path = ap
+        sites = [("site_a", 37.069, -8.210), ("site_b", 37.072, -8.205)]
+        df = a.extract_features_for_sites(sites, buffer_m=200)
+        assert df is not None
+        assert len(df) == 2
+
+
+class TestRunAnalysisWithSyntheticData:
+    def test_full_pipeline_no_download(self, tmp_path):
+        dem = _make_dem(tmp_path)
+        a = CoastalTopographyAnalyzer(ALGARVE_BBOX, str(tmp_path), cache_tiles=True)
+        # Pre-populate cache so build_dem_mosaic skips download
+        import shutil
+        shutil.copy(dem, a.dem_mosaic_path)
+        sites = [("synth_site", 37.069, -8.210)]
+        result = a.run_analysis(sites, buffer_m=500)
+        assert result["status"] == "success"
+        assert result["sites_analyzed"] == 1
+
+    def test_save_features_creates_files(self, tmp_path):
+        import pandas as pd
+        a = CoastalTopographyAnalyzer(ALGARVE_BBOX, str(tmp_path))
+        df = pd.DataFrame([{
+            "site_name": "test", "latitude": 37.069, "longitude": -8.210,
+            "buffer_m": 1000, "slope_mean": 1.5, "aspect_mean": 180.0,
+            "timestamp": "2026-01-01",
+        }])
+        paths = a.save_features(df, output_name="test_features")
+        assert Path(paths["csv"]).exists()
+        assert Path(paths["json"]).exists()
+        assert Path(paths["geojson"]).exists()

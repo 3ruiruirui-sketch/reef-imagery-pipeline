@@ -61,6 +61,18 @@ try:
 except ImportError:
     HAS_IH_BATHY = False
 
+# Terrain features + BVI scoring (Phase 4)
+try:
+    import pandas as _pd
+    _PROJ_ROOT = Path(__file__).parent.parent
+    _TERRAIN_CSV = _PROJ_ROOT / "outputs" / "coastal_topography" / "algarve_coastal_features.csv"
+    _TERRAIN_DF = _pd.read_csv(_TERRAIN_CSV) if _TERRAIN_CSV.exists() else None
+    from ranking_model import predict_score, terrain_exposure_modifier
+    HAS_TERRAIN_SCORE = True
+except Exception:
+    _TERRAIN_DF = None
+    HAS_TERRAIN_SCORE = False
+
 # Load .env variables securely if python-dotenv is present
 try:
     from dotenv import load_dotenv
@@ -566,6 +578,82 @@ def step_ratio(output_dir: str, date: str, **_) -> None:
         log.error("   Ratio step failed: %s", exc)
 
 # ---------------------------------------------------------------------------
+# Step: score  (BVI + terrain exposure modifier)
+# ---------------------------------------------------------------------------
+def step_score(output_dir: str, date: str, lat: float, lon: float, **_) -> None:
+    """
+    Compute a BVI score for the acquired scene using spectral features derived
+    from the B02/B03 ratio GeoTIFF, then apply the terrain exposure modifier
+    for the nearest Algarve survey site.
+
+    Writes: <output_dir>/bvi_score_<date>.json
+    """
+    log.info("→ Scoring BVI with terrain exposure modifier …")
+    if not HAS_TERRAIN_SCORE:
+        log.warning("   ranking_model or terrain CSV not available — step skipped")
+        return
+
+    date_str   = date.replace("-", "")
+    ratio_path = os.path.join(output_dir, f"ratio_B02_B03_{date_str}.tif")
+    score_path = os.path.join(output_dir, f"bvi_score_{date_str}.json")
+
+    if not os.path.exists(ratio_path):
+        log.warning("   Ratio TIF not found (%s). Run --step ratio first.", ratio_path)
+        return
+
+    try:
+        with rasterio.open(ratio_path) as src:
+            arr = src.read(1).astype(np.float32)
+
+        valid = arr[np.isfinite(arr) & (arr != 0)]
+        if valid.size == 0:
+            log.warning("   Ratio TIF contains no valid data — score skipped")
+            return
+
+        # Derive simple spectral proxy features from the ratio band
+        features = {
+            "benthic_contrast": float(np.nanstd(valid) / (np.nanmean(np.abs(valid)) + 1e-6)),
+            "snr":              float(np.nanmean(np.abs(valid)) / (np.nanstd(valid) + 1e-6) * 100),
+            "fft_clean":        float(min(valid.size, 50000)),
+            "edge_entropy":     float(min(np.nanstd(np.diff(valid[:1000])), 10.0)),
+            "dyn_range":        float(np.nanpercentile(valid, 98) - np.nanpercentile(valid, 2)),
+            "signal":           float(np.nanmean(np.abs(valid))),
+        }
+
+        # Nearest terrain site by lat/lon
+        terrain_feats = None
+        if _TERRAIN_DF is not None:
+            df = _TERRAIN_DF.copy()
+            df["_dist"] = (df["latitude"] - lat) ** 2 + (df["longitude"] - lon) ** 2
+            row = df.loc[df["_dist"].idxmin()]
+            terrain_feats = {
+                "slope_mean":  float(row.get("slope_mean", 0.0) or 0.0),
+                "aspect_mean": float(row.get("aspect_mean", 180.0) or 180.0),
+            }
+
+        result = predict_score(features, terrain_features=terrain_feats)
+        output = {
+            "date":             date,
+            "lat":              lat,
+            "lon":              lon,
+            "bvi_score":        round(result["score"], 4),
+            "mode":             result["mode"],
+            "terrain_modifier": result.get("terrain_modifier"),
+            "terrain_site":     str(row.get("site_name", "n/a")) if terrain_feats else None,
+            "spectral_features": features,
+        }
+
+        with open(score_path, "w") as f:
+            json.dump(output, f, indent=2)
+
+        log.info("   ✓ BVI=%.4f  modifier=%s  → %s",
+                 output["bvi_score"], output["terrain_modifier"], score_path)
+
+    except Exception as exc:
+        log.error("   Scoring step failed: %s", exc)
+
+
+# ---------------------------------------------------------------------------
 # Step: qgis
 # ---------------------------------------------------------------------------
 def step_qgis(output_dir: str, date: str, lat: float, lon: float, **_) -> None:
@@ -748,7 +836,7 @@ print('Export task created. Run from Tasks tab.');
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-STEPS = ["capabilities", "ortho", "sentinel", "ratio", "qgis", "gee", "bathy"]
+STEPS = ["capabilities", "ortho", "sentinel", "ratio", "score", "qgis", "gee", "bathy"]
 
 def main():
     parser = argparse.ArgumentParser(
@@ -852,6 +940,7 @@ def main():
         "ortho":        step_ortho,
         "sentinel":     step_sentinel,
         "ratio":        step_ratio,
+        "score":        step_score,
         "qgis":         step_qgis,
         "gee":          step_gee,
         "bathy":        _step_bathy,
