@@ -54,6 +54,7 @@ Usage
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -247,13 +248,12 @@ class DGTOrthoClient:
             return out_path
 
         try:
-            src_files = [rasterio.open(str(p)) for p in tile_paths]
-            arr, transform = _rio_merge(src_files)
-            meta = src_files[0].meta.copy()
-            meta.update(height=arr.shape[1], width=arr.shape[2],
-                        transform=transform)
-            for s in src_files:
-                s.close()
+            with contextlib.ExitStack() as stack:
+                src_files = [stack.enter_context(rasterio.open(str(p))) for p in tile_paths]
+                arr, transform = _rio_merge(src_files)
+                meta = src_files[0].meta.copy()
+                meta.update(height=arr.shape[1], width=arr.shape[2],
+                            transform=transform)
             with rasterio.open(str(out_path), "w", **meta) as dst:
                 dst.write(arr)
             logger.info(f"Mosaic saved: {out_path}")
@@ -419,7 +419,9 @@ class DGTOrthoClient:
                 ndvi_e = src.read(1).astype(np.float32)
             with rasterio.open(str(ndvi_late_path)) as src_l:
                 # Reproject late to match early grid if needed
-                if src_l.shape != rasterio.open(str(ndvi_early_path)).shape:
+                with rasterio.open(str(ndvi_early_path)) as _chk:
+                    _early_shape = _chk.shape
+                if src_l.shape != _early_shape:
                     import rioxarray as rxr
                     late_da = rxr.open_rasterio(str(ndvi_late_path), masked=True)
                     early_da = rxr.open_rasterio(str(ndvi_early_path), masked=True)

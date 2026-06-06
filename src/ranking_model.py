@@ -249,9 +249,11 @@ def predict_score(features_dict, terrain_features=None):
                 _observe_drift(standard_features, score, _FEATURE_SCHEMA)
             result = {"score": score, "mode": "ML", "features_used": standard_features}
             if terrain_features:
+                _sm = terrain_features.get("slope_mean", 0.0)
+                _am = terrain_features.get("aspect_mean", 180.0)
                 mod = terrain_exposure_modifier(
-                    terrain_features.get("slope_mean", 0.0) or 0.0,
-                    terrain_features.get("aspect_mean", 180.0) or 180.0,
+                    float(np.nan_to_num(_sm if _sm is not None else 0.0, nan=0.0)),
+                    float(np.nan_to_num(_am if _am is not None else 180.0, nan=180.0)),
                     terrain_features.get("swell_direction", _ALGARVE_SWELL_DIR),
                 )
                 result["score"] = round(score * mod, 6)
@@ -298,9 +300,11 @@ def predict_score(features_dict, terrain_features=None):
         "reason": "ML Model unavailable or failed",
     }
     if terrain_features:
+        _sm = terrain_features.get("slope_mean", 0.0)
+        _am = terrain_features.get("aspect_mean", 180.0)
         mod = terrain_exposure_modifier(
-            terrain_features.get("slope_mean", 0.0) or 0.0,
-            terrain_features.get("aspect_mean", 180.0) or 180.0,
+            float(np.nan_to_num(_sm if _sm is not None else 0.0, nan=0.0)),
+            float(np.nan_to_num(_am if _am is not None else 180.0, nan=180.0)),
             terrain_features.get("swell_direction", _ALGARVE_SWELL_DIR),
         )
         result["score"] = round(float(score) * mod, 6)

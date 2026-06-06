@@ -30,7 +30,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 # ── Physical constants ────────────────────────────────────────────────────────
 from src.constants import (
     DEFAULT_DEPTH_TARGET, SDB_OPTICAL_LIMIT_M,
-    STUMPF_M0_DEFAULT, STUMPF_M1_DEFAULT, STUMPF_M1_LITERATURE, STUMPF_N,
+    STUMPF_M0_DEFAULT, STUMPF_M1_DEFAULT, STUMPF_M1_LITERATURE, STUMPF_N, STUMPF_LOG_EPSILON,
     KD490_TABLE, KD490_DEFAULT, GLINT_PENALTY, GLINT_PENALTY_DEFAULT,
     N_WATER, SNR_THRESHOLD, BUF_PIX, SAND_R, ROCK_R,
     REFLECTANCE_DN_SCALE, REFLECTANCE_DN_THRESHOLD,
@@ -124,6 +124,20 @@ def _kd_from_band(band: np.ndarray, aw: float) -> float:
     bb = np.clip(u * a / (1 - u + 1e-9), 0, 1)
     return float(np.nanmedian(a + bb))
 
+# ── A½: Water-column reflectance inversion ───────────────────────────────────
+def invert_water_column(
+    rrs_surface: np.ndarray,
+    kd: float,
+    depth_m: float,
+) -> np.ndarray:
+    """
+    Recover bottom reflectance from surface Rrs by inverting two-way Beer-Lambert:
+        Rrs_bottom = Rrs_surface / exp(-2 * Kd * z)
+    Negative values (noisy pixels) are clipped to 0.
+    """
+    return np.clip(rrs_surface / math.exp(-2.0 * kd * depth_m), 0, None).astype(np.float32)
+
+
 # ── B: Stumpf Log-Ratio SDB depth map ────────────────────────────────────────
 def stumpf_sdb(b02: np.ndarray, b03: np.ndarray,
                m0: float = STUMPF_M0_DEFAULT,
@@ -136,7 +150,7 @@ def stumpf_sdb(b02: np.ndarray, b03: np.ndarray,
     Returns depth map in metres (positive = deeper). Values >40m set to NaN
     (optical limit exceeded, unreliable extrapolation).
     """
-    eps = 1e-6
+    eps = STUMPF_LOG_EPSILON
     with np.errstate(divide='ignore', invalid='ignore'):
         ratio = np.where(
             (b02 > eps) & (b03 > eps),
@@ -189,21 +203,30 @@ def run_predictor(boa_b02_path, metadata, output_dir,
     month   = int(date.split("-")[1]) if "-" in date else 9
     kd_tbl  = kd_prior or DEFAULT_KD_TABLE
     kd_seas = get_kd490(month, kd_tbl)
-    glint_pen = GLINT_PENALTY.get(month, 0.80)
+    glint_pen = GLINT_PENALTY.get(month, GLINT_PENALTY_DEFAULT)
 
     b02_arr, profile = read_band(boa_b02_path)
     b02_arr = np.nan_to_num(b02_arr, nan=0.0, posinf=0.0, neginf=0.0)
-    # Normalise to BOA reflectance [0..1] — handles both DN (>2) and already-BOA inputs
-    if b02_arr.max() > 2.0:
-        b02_arr = b02_arr / 10000.0
+    # Normalise to BOA reflectance [0..1].
+    # nanmax guards against NaN-only tiles silently skipping the conversion.
+    # Values in (1.0, REFLECTANCE_DN_THRESHOLD] are ambiguous — warn but accept.
+    _b02_max = float(np.nanmax(b02_arr))
+    if _b02_max > REFLECTANCE_DN_THRESHOLD:
+        logging.info("B02 looks like raw DN (max=%.1f) — scaling by 1/10000", _b02_max)
+        b02_arr = b02_arr / REFLECTANCE_DN_SCALE
+    elif _b02_max > 1.0:
+        logging.warning("B02 max=%.4f is >1.0 but <=%.1f — ambiguous DN/reflectance; "
+                        "assuming reflectance, no scaling applied", _b02_max, REFLECTANCE_DN_THRESHOLD)
 
     b03_arr = b04_arr = None
     if b03_path:
         b03_arr, _ = read_band(b03_path)
-        if b03_arr.max() > 2.0: b03_arr /= 10000.0
+        if np.nanmax(b03_arr) > REFLECTANCE_DN_THRESHOLD:
+            b03_arr /= REFLECTANCE_DN_SCALE
     if b04_path:
         b04_arr, _ = read_band(b04_path)
-        if b04_arr.max() > 2.0: b04_arr /= 10000.0
+        if np.nanmax(b04_arr) > REFLECTANCE_DN_THRESHOLD:
+            b04_arr /= REFLECTANCE_DN_SCALE
 
     # ── Kd estimation: QAA if B03 available, else band-ratio, else prior ──────
     kd_method = "seasonal_prior"
@@ -238,7 +261,8 @@ def run_predictor(boa_b02_path, metadata, output_dir,
     trans  = beer_lambert_transmittance(kd_b02, path_m)
 
     # ── Bottom reflectance estimate ───────────────────────────────────────────
-    bottom_est = np.clip(b02_arr * math.exp(-kd_b02 * path_m), 0, None).astype(np.float32)
+    # Rrs_deep ≈ 0 for clear oligotrophic water (Algarve); depth_target is z.
+    bottom_est = invert_water_column(b02_arr, kd_b02, depth_target)
 
     # ── SNR map ───────────────────────────────────────────────────────────────
     snr_map    = make_snr_map(bottom_est)
@@ -426,7 +450,8 @@ def run_predictor(boa_b02_path, metadata, output_dir,
     }
     pd.DataFrame([summary]).to_csv(out / "summary.csv", index=False)
     logging.info("Done | date=%s | Kd=%s(%.4f) | vis=%.4f | SNR=%.2f | SDB_mean=%.1fm",
-                 date, kd_method, kd_b02, vis_score, snr_mean, sdb_mean or 0)
+                 date, kd_method, kd_b02, vis_score, snr_mean,
+                 sdb_mean if sdb_mean is not None else 0)
     return summary
 
 # ── CLI ───────────────────────────────────────────────────────────────────────

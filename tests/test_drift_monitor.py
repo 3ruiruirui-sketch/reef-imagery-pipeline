@@ -126,45 +126,66 @@ class TestObserve:
 class TestThrottling:
     def test_throttle_suppresses_repeats(self):
         """After first log, repeated same-level drift is suppressed."""
-        from src.drift_monitor import _last_logged_level, _calls_since_log
         import src.drift_monitor as dm
-        
+
         reset()
         # First call — triggers log (level changes from OK to WARNING)
         observe(dict(NORMAL_FEATURES), 0.22)
-        assert dm._last_logged_level == WARNING
-        assert dm._calls_since_log == 1
-        
+        assert dm._tls._last_logged_level == WARNING
+        assert dm._tls._calls_since_log == 1
+
         # Second call — same level, suppressed
         observe(dict(NORMAL_FEATURES), 0.22)
-        assert dm._calls_since_log == 2
+        assert dm._tls._calls_since_log == 2
 
     def test_throttle_resets_on_clear(self):
         """Counter resets when drift clears."""
         import src.drift_monitor as dm
-        
+
         reset()
         observe(dict(NORMAL_FEATURES), 0.22)
-        assert dm._last_logged_level == WARNING
-        
+        assert dm._tls._last_logged_level == WARNING
+
         # Normal call clears drift
         observe(dict(NORMAL_FEATURES), 0.60)
-        assert dm._last_logged_level == OK
-        assert dm._calls_since_log == 0
+        assert dm._tls._last_logged_level == OK
+        assert dm._tls._calls_since_log == 0
 
     def test_level_escalation_logs_again(self):
         """Escalation from WARNING to CRITICAL triggers new log."""
         import src.drift_monitor as dm
-        
+
         reset()
         # WARNING level
         observe(dict(NORMAL_FEATURES), 0.22)
-        assert dm._last_logged_level == WARNING
-        
+        assert dm._tls._last_logged_level == WARNING
+
         # Escalate to CRITICAL (score z > 4.0 → |score - 0.60| / 0.15 > 4 → score < 0.0 or > 1.2)
         observe(dict(NORMAL_FEATURES), 1.5)
-        assert dm._last_logged_level == CRITICAL
-        assert dm._calls_since_log == 1  # Just logged
+        assert dm._tls._last_logged_level == CRITICAL
+        assert dm._tls._calls_since_log == 1  # Just logged
+
+    def test_no_cross_thread_state_leak(self):
+        """Thread-local state must not bleed between concurrent threads."""
+        import threading as _threading
+
+        thread_results: dict = {}
+
+        def run_in_thread(thread_id: int, score: float) -> None:
+            reset()
+            for _ in range(5):
+                observe(dict(NORMAL_FEATURES), score)
+            thread_results[thread_id] = summary()
+
+        t1 = _threading.Thread(target=run_in_thread, args=(1, 0.60))   # OK scores
+        t2 = _threading.Thread(target=run_in_thread, args=(2, 1.50))   # CRITICAL scores
+        t1.start(); t2.start()
+        t1.join(); t2.join()
+
+        assert thread_results[1]["worst_level"] == OK
+        assert thread_results[2]["worst_level"] == CRITICAL
+        assert thread_results[1]["total_observations"] == 5
+        assert thread_results[2]["total_observations"] == 5
 
 
 class TestIntegration:

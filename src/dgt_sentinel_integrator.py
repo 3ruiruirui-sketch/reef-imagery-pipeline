@@ -10,6 +10,7 @@ Outputs:
   - Metadata JSON with crs, bounds, resolution, source info
 """
 
+import contextlib
 import os
 import json
 import logging
@@ -146,31 +147,34 @@ class DGTSentinelIntegrator:
 
         logger.info(f"Mosaicing {len(tif_paths)} MDT-50cm tiles via rasterio.merge...")
 
-        src_files = []
+        good_paths = []
         for p in tif_paths:
             try:
-                src_files.append(rasterio.open(p))
+                with rasterio.open(p):
+                    pass  # validate the file opens cleanly
+                good_paths.append(p)
             except Exception as exc:
                 logger.error(f"Cannot open {p}: {exc}")
 
-        if not src_files:
+        if not good_paths:
             raise ValueError("Could not open any tile files")
 
-        # merge() uses each source's own nodata for masking; nodata= sets the
-        # output fill so uninitialized pixels become -999.0 (not 0.0).
-        mosaic_arr, mosaic_transform = _rio_merge(
-            src_files, nodata=self.MDT_NODATA)
-        # Recode any surviving float32-min values from legacy tiles
-        mosaic_arr = np.where(
-            mosaic_arr <= self.MDT_NODATA_ALT * 0.5, self.MDT_NODATA, mosaic_arr)
+        with contextlib.ExitStack() as stack:
+            src_files = [stack.enter_context(rasterio.open(p)) for p in good_paths]
 
-        src_crs = src_files[0].crs
-        meta = src_files[0].meta.copy()
-        meta.update(height=mosaic_arr.shape[1], width=mosaic_arr.shape[2],
-                    transform=mosaic_transform, dtype="float32",
-                    nodata=self.MDT_NODATA)
-        for s in src_files:
-            s.close()
+            # merge() uses each source's own nodata for masking; nodata= sets the
+            # output fill so uninitialized pixels become -999.0 (not 0.0).
+            mosaic_arr, mosaic_transform = _rio_merge(
+                src_files, nodata=self.MDT_NODATA)
+            # Recode any surviving float32-min values from legacy tiles
+            mosaic_arr = np.where(
+                mosaic_arr <= self.MDT_NODATA_ALT * 0.5, self.MDT_NODATA, mosaic_arr)
+
+            src_crs = src_files[0].crs
+            meta = src_files[0].meta.copy()
+            meta.update(height=mosaic_arr.shape[1], width=mosaic_arr.shape[2],
+                        transform=mosaic_transform, dtype="float32",
+                        nodata=self.MDT_NODATA)
 
         # Write to a MemoryFile so we can hand an xarray DataArray back
         from rasterio.io import MemoryFile as _MemFile
@@ -224,7 +228,11 @@ class DGTSentinelIntegrator:
             filtered = []
             for f in features:
                 props = f.get("properties", {})
-                cc = props.get("eo:cloud_cover") or props.get("s2:cloud_cover") or 0
+                cc = props.get("eo:cloud_cover")
+                if cc is None:
+                    cc = props.get("s2:cloud_cover")
+                if cc is None:
+                    cc = 0
                 if cc <= max_cloud_cover:
                     filtered.append(f)
 

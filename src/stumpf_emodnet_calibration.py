@@ -1,5 +1,6 @@
 import numpy as np
 import rasterio
+from src.constants import STUMPF_LOG_EPSILON
 from rasterio.warp import calculate_default_transform, reproject
 from rasterio.enums import Resampling
 from sklearn.linear_model import HuberRegressor
@@ -52,13 +53,25 @@ def validate_reprojected_emodnet(emodnet_path, min_valid_pixels: int = 500):
         raise ValueError(
             f"Reprojected EMODnet raster has too few valid pixels: {valid_pixels} < {min_valid_pixels}"
         )
+    # EMODnet bathymetry uses negative values for depth below sea level.
+    # Check sign convention on marine pixels only (< 5 m elevation) to avoid
+    # false positives on coastal tiles that include significant land area.
+    valid_arr = arr[np.isfinite(arr)]
+    marine_arr = valid_arr[valid_arr < 5.0]  # exclude obvious land (> 5 m)
+    if marine_arr.size > 0 and np.all(marine_arr >= 0.0):
+        raise ValueError(
+            f"EMODnet depth raster has unexpected sign convention: "
+            f"all {marine_arr.size} marine pixels are non-negative "
+            f"(expected negative = below sea level). "
+            f"Check that the raster was not sign-flipped before ingestion."
+        )
     return True
 
 
 def stumpf_log_ratio(b_blue, b_green, n=1000):
     """Calcula o rácio logarítmico entre as bandas Azul e Verde."""
-    b_blue = np.clip(b_blue, 1e-6, None)
-    b_green = np.clip(b_green, 1e-6, None)
+    b_blue = np.clip(b_blue, STUMPF_LOG_EPSILON, None)
+    b_green = np.clip(b_green, STUMPF_LOG_EPSILON, None)
     return np.log(n * b_blue) / np.log(n * b_green)
 
 def calibrate_stumpf_vs_emodnet(s2_blue_path, s2_green_path, emodnet_10m_path, output_path):

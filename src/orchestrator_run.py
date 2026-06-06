@@ -158,7 +158,10 @@ def _normalise_result(pred: dict, meta: dict) -> dict:
     expected by _build_justification() and the JSON report builder.
     run_predictor() does not compute b02_cv directly — derive it as 1/SNR.
     """
-    snr = pred.get("snr_mean_16m", pred.get("SNR_mean_16m", 0.0))
+    # Use explicit None check: dict.get(key, default) returns None when the key
+    # IS present but its value is None, so a truthy/falsy test would be wrong.
+    _snr_raw = pred.get("snr_mean_16m") if "snr_mean_16m" in pred else pred.get("SNR_mean_16m")
+    snr = _snr_raw if _snr_raw is not None else 0.0
     out = dict(pred)
     # Legacy aliases
     out.setdefault("SNR_mean_16m",              snr)
@@ -166,8 +169,8 @@ def _normalise_result(pred: dict, meta: dict) -> dict:
     out.setdefault("kd490_seasonal",
                    KD490_TABLE[_month] if _month in KD490_TABLE
                    else pred.get("kd_seasonal_prior", KD490_DEFAULT))
-    out.setdefault("kd490_estimated",            pred.get("kd_b02_estimated",
-                                                  pred.get("kd490_seasonal", KD490_DEFAULT)))
+    _kd_est = pred.get("kd_b02_estimated") if "kd_b02_estimated" in pred else pred.get("kd490_seasonal")
+    out.setdefault("kd490_estimated", _kd_est if _kd_est is not None else KD490_DEFAULT)
     out.setdefault("date",                       meta["date"])
     out.setdefault("cloud_cover",                meta["cloud"])
     # b02_cv: coefficient of variation — proxy from SNR (CV = 1/SNR)
@@ -323,7 +326,7 @@ def main(depth: float = 16.0, config_path: str | None = None):
                 valid.sort(key=lambda x: abs((datetime.strptime(x["date"], "%Y-%m-%d") - t_date).total_seconds()))
                 best = valid[0]
                 sigma0 = extract_sigma0_at_point(best, target_lon, target_lat)
-                if sigma0 and sigma0.get("vv") and sigma0.get("vh"):
+                if sigma0 and sigma0.get("vv") is not None and sigma0.get("vh") is not None:
                     r_data = roughness_from_sigma0(sigma0["vv"], sigma0["vh"])
                     if r_data.get("roughness") is not None:
                         roughness = r_data["roughness"]
@@ -349,8 +352,8 @@ def main(depth: float = 16.0, config_path: str | None = None):
             df["_dist"] = (df["latitude"] - target_lat)**2 + (df["longitude"] - target_lon)**2
             row = df.loc[df["_dist"].idxmin()]
             terrain_feat = {
-                "slope_mean":  float(row.get("slope_mean", 0.0) or 0.0),
-                "aspect_mean": float(row.get("aspect_mean", 180.0) or 180.0),
+                "slope_mean":  float(np.nan_to_num(row.get("slope_mean") or 0.0, nan=0.0)),
+                "aspect_mean": float(np.nan_to_num(row.get("aspect_mean") or 180.0, nan=180.0)),
             }
             mod = terrain_exposure_modifier(
                 terrain_feat["slope_mean"], terrain_feat["aspect_mean"]

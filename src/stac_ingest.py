@@ -177,7 +177,11 @@ def search_dgt_s2_scenes(
 
         for f in features:
             props = f.get("properties", {})
-            cc = props.get("eo:cloud_cover") or props.get("s2:cloud_cover") or 0.0
+            cc = props.get("eo:cloud_cover")
+            if cc is None:
+                cc = props.get("s2:cloud_cover")
+            if cc is None:
+                cc = 0.0
             if cc <= max_cloud_cover:
                 f.setdefault("_dgt_year", yr)
                 results.append(f)

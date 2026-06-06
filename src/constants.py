@@ -39,6 +39,11 @@ STUMPF_M0_DEFAULT = -16.0   # Intercept
 STUMPF_M1_DEFAULT = 20.0    # Slope — used as the default in Stumpf depth calculation
 STUMPF_N = 1000.0           # Log scaling factor
 
+# Epsilon added inside the log arguments to prevent log(0).
+# A single value across all Stumpf calibration modules avoids drift between
+# implementations that each hardcoded 1e-6 independently.
+STUMPF_LOG_EPSILON = 1e-6
+
 # Literature m1 for Stumpf n=1000 in clear oligotrophic waters
 # Range validated against Dierssen et al. 2003 and regional studies.
 # STUMPF_M1_LITERATURE is a physically-grounded fixed slope used in

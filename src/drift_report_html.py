@@ -13,6 +13,7 @@ Dependencies: stdlib only (json, os, csv, html).
 The output HTML uses Chart.js from CDN for lightweight charts.
 """
 
+import html as _html
 import os
 import json
 import csv
@@ -43,7 +44,13 @@ def _load_history(reports_dir=None):
                 for k in ("observations", "alerts_ok", "alerts_warning",
                           "alerts_critical", "feature_drift_count",
                           "score_drift_count", "null_spike_count"):
-                    row[k] = int(row.get(k, 0) or 0)
+                    v = row.get(k, "0")
+                    # CSV values are always strings; int("") and int("nan")
+                    # both raise ValueError — catch and default to 0.
+                    try:
+                        row[k] = int(float(v)) if v not in (None, "", "nan", "NaN") else 0
+                    except (ValueError, TypeError):
+                        row[k] = 0
                 rows.append(row)
             return rows
 
@@ -105,11 +112,14 @@ def generate_html(reports_dir=None):
     for i, r in enumerate(rows):
         sev = r.get("highest_severity", "ok")
         highlight = ' style="background:#fff3cd;"' if i == worst_idx else ""
+        # All string fields from history files are external data — escape to
+        # prevent XSS if a batch_id / summary contains HTML/JS.
+        esc = _html.escape
         table_rows += f"""<tr{highlight}>
-            <td>{r.get('timestamp', '')[:19]}</td>
-            <td>{r.get('batch_id', '')}</td>
-            <td>{r.get('model_version', '')}</td>
-            <td>{r.get('schema_version', '')}</td>
+            <td>{esc(str(r.get('timestamp', '')))[:19]}</td>
+            <td>{esc(str(r.get('batch_id', '')))}</td>
+            <td>{esc(str(r.get('model_version', '')))}</td>
+            <td>{esc(str(r.get('schema_version', '')))}</td>
             <td>{r.get('observations', 0)}</td>
             <td>{r.get('alerts_ok', 0)}</td>
             <td>{r.get('alerts_warning', 0)}</td>
@@ -117,8 +127,8 @@ def generate_html(reports_dir=None):
             <td>{r.get('feature_drift_count', 0)}</td>
             <td>{r.get('score_drift_count', 0)}</td>
             <td>{r.get('null_spike_count', 0)}</td>
-            <td>{_severity_badge(sev)}</td>
-            <td style="font-size:11px;">{r.get('summary', '')}</td>
+            <td>{_severity_badge(esc(sev))}</td>
+            <td style="font-size:11px;">{esc(str(r.get('summary', '')))}</td>
         </tr>\n"""
 
     # Summary stats

@@ -52,6 +52,20 @@ try:
 except ImportError:
     HAS_BATHY = False
 
+# Multiband reef analysis (optional — loaded on demand for --step reef_candidates)
+try:
+    from multiband_reef_analysis import run_analysis as _run_multiband_analysis
+    HAS_MULTIBAND = True
+except ImportError:
+    HAS_MULTIBAND = False
+
+# Reef candidate validation (optional)
+try:
+    from validate_reef_candidates import compute_polygon_statistics, validate_candidate
+    HAS_VALIDATE = True
+except ImportError:
+    HAS_VALIDATE = False
+
 # IH/DGRM bathymetry features (new — for ML-enhanced predictions)
 try:
     from pathlib import Path
@@ -834,9 +848,138 @@ print('Export task created. Run from Tasks tab.');
     log.info("   ✓ GEE script → %s", out)
 
 # ---------------------------------------------------------------------------
+# Step: reef_candidates
+# ---------------------------------------------------------------------------
+def step_reef_candidates(
+    output_dir: str, lat: float, lon: float, date: str,
+    depth_min: float = -50.0, depth_max: float = -1.0, **_
+) -> None:
+    """
+    Run multiband reef analysis (Stumpf/Lyzenga/PCA depth) on the S2 bands
+    already in output_dir, detect reef candidate polygons, then validate them
+    against bathy/TRI/BPI rasters produced by --step bathy.
+
+    Outputs:
+      reef_candidates_multiband.geojson          — raw multiband candidates
+      reef_candidates_multiband_validated.geojson — candidates + confidence score
+    """
+    log.info("→ Step reef_candidates …")
+
+    # ── 1. Multiband analysis ────────────────────────────────────────────
+    if not HAS_MULTIBAND:
+        log.error(
+            "   multiband_reef_analysis.py not found — "
+            "make sure it is in the same directory as this script."
+        )
+        return
+
+    try:
+        summary = _run_multiband_analysis(
+            output_dir, output_dir, lat, lon,
+            depth_min=depth_min, depth_max=depth_max,
+        )
+    except Exception as exc:
+        log.error("   Multiband reef analysis failed: %s", exc)
+        return
+
+    candidates_path = summary.get("reef_candidates_geojson")
+    if not candidates_path or not os.path.exists(candidates_path):
+        log.warning("   Multiband analysis produced no reef candidates — done")
+        return
+    log.info("   Multiband candidates → %s", candidates_path)
+
+    # ── 2. Validate candidates ───────────────────────────────────────────
+    if not HAS_VALIDATE:
+        log.warning("   validate_reef_candidates not importable — skipping validation")
+        return
+
+    date_tag = date.replace("-", "") if date else ""
+    # Locate bathy file — try sources in priority order
+    bathy_path: str | None = None
+    for src_name in ("emodnet", "s2_stumpf", "gebco", "geomar", "etopo"):
+        candidate = os.path.join(output_dir, f"bathy_{src_name}_{date_tag}.tif")
+        if os.path.exists(candidate):
+            bathy_path = candidate
+            break
+
+    if bathy_path is None:
+        log.warning(
+            "   No bathy_*.tif found in %s — run --step bathy first, "
+            "then re-run --step reef_candidates for full validation.",
+            output_dir,
+        )
+        return
+
+    base = os.path.splitext(os.path.basename(bathy_path))[0]
+    tri_path = os.path.join(output_dir, f"{base}_tri.tif")
+    bpi_path = os.path.join(output_dir, f"{base}_bpi_broad.tif")
+
+    if not (os.path.exists(tri_path) and os.path.exists(bpi_path)):
+        log.warning(
+            "   TRI/BPI rasters not found (%s, %s) — "
+            "run --step bathy first for full validation.",
+            tri_path, bpi_path,
+        )
+        return
+
+    try:
+        import geopandas as _gpd
+
+        gdf = _gpd.read_file(candidates_path)
+        if len(gdf) == 0:
+            log.info("   No candidates to validate (empty GeoJSON)")
+            return
+
+        def _read_raster(path):
+            with rasterio.open(path) as s:
+                arr = s.read(1).astype(np.float32)
+                nd = s.nodata
+                if nd is not None:
+                    arr = np.where(arr == nd, np.nan, arr)
+                return arr, s.transform
+
+        bathy_arr, transform = _read_raster(bathy_path)
+        tri_arr, _ = _read_raster(tri_path)
+        bpi_arr, _ = _read_raster(bpi_path)
+
+        scores, classes, notes = [], [], []
+        for _, row in gdf.iterrows():
+            geom = row.geometry
+            area_m2 = row.get("area_m2", geom.area * (111_320.0 ** 2))
+            stats = compute_polygon_statistics(geom, bathy_arr, tri_arr, bpi_arr, transform)
+            if stats is None:
+                val = {"score": 0, "classification": "ERROR — No valid data",
+                       "notes": "Could not extract raster statistics"}
+            else:
+                val = validate_candidate(stats, area_m2)
+            scores.append(val["score"])
+            classes.append(val["classification"])
+            notes.append(val["notes"])
+
+        gdf["confidence_score"] = scores
+        gdf["validation_class"] = classes
+        gdf["validation_notes"] = notes
+
+        validated_path = candidates_path.replace(".geojson", "_validated.geojson")
+        gdf.to_file(validated_path, driver="GeoJSON")
+
+        high = sum(1 for s in scores if s >= 70)
+        log.info(
+            "   ✓ Validated %d candidates — %d HIGH confidence → %s",
+            len(gdf), high, validated_path,
+        )
+
+    except Exception as exc:
+        log.error("   Candidate validation failed: %s", exc)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-STEPS = ["capabilities", "ortho", "sentinel", "ratio", "score", "qgis", "gee", "bathy"]
+STEPS = ["capabilities", "ortho", "sentinel", "ratio", "bathy", "reef_candidates", "score", "qgis", "gee"]
+
+# Step sequence for --step all: imagery acquisition → depth → discovery
+_ALL_STEPS = ["sentinel", "ratio", "bathy", "reef_candidates"]
 
 def main():
     parser = argparse.ArgumentParser(
@@ -911,7 +1054,7 @@ def main():
         depth_max=args.depth_max,
     )
 
-    run = [args.step] if args.step != "all" else STEPS
+    run = [args.step] if args.step != "all" else _ALL_STEPS
 
     def _step_bathy(**ctx):
         if not HAS_BATHY:
@@ -936,14 +1079,15 @@ def main():
         run_bathy_step(bathy_args)
 
     step_fns = {
-        "capabilities": step_capabilities,
-        "ortho":        step_ortho,
-        "sentinel":     step_sentinel,
-        "ratio":        step_ratio,
-        "score":        step_score,
-        "qgis":         step_qgis,
-        "gee":          step_gee,
-        "bathy":        _step_bathy,
+        "capabilities":  step_capabilities,
+        "ortho":         step_ortho,
+        "sentinel":      step_sentinel,
+        "ratio":         step_ratio,
+        "bathy":         _step_bathy,
+        "reef_candidates": step_reef_candidates,
+        "score":         step_score,
+        "qgis":          step_qgis,
+        "gee":           step_gee,
     }
 
     for s in run:

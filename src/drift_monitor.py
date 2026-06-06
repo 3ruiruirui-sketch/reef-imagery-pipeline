@@ -13,6 +13,7 @@ Integrated as a post-prediction observation layer.
 
 import logging
 import math
+import threading
 import numpy as np
 from collections import deque
 
@@ -147,23 +148,34 @@ OK = "OK"
 WARNING = "WARNING"
 CRITICAL = "CRITICAL"
 
-# Rolling window for score drift (last N predictions)
+# Rolling window / throttle configuration (constants — not mutable state)
 _SCORE_WINDOW_SIZE = 50
-_score_history = deque(maxlen=_SCORE_WINDOW_SIZE)
-
-# Log throttling: suppress repeated alerts
 _LOG_EVERY_N = 50  # Re-log every N calls if drift persists
-_last_logged_level = OK
-_calls_since_log = 0
 
-# Batch counters for summary reporting
-_obs_count = 0
-_level_counts = {OK: 0, WARNING: 0, CRITICAL: 0}
-_feature_drift_count = 0
-_score_drift_count = 0
-_null_spike_count = 0
-_worst_level = OK
-_worst_alert = None
+# ---------------------------------------------------------------------------
+# Per-thread mutable state (thread-local storage)
+# ---------------------------------------------------------------------------
+# All observation counters, the rolling score window, and throttle state are
+# kept in a threading.local() so concurrent callers (e.g. parallel pipeline
+# workers) cannot corrupt each other's drift summaries.
+_tls = threading.local()
+
+
+def _s():
+    """Return the current thread's mutable state, initialising on first access."""
+    if not hasattr(_tls, "_init"):
+        _tls._score_history = deque(maxlen=_SCORE_WINDOW_SIZE)
+        _tls._last_logged_level = OK
+        _tls._calls_since_log = 0
+        _tls._obs_count = 0
+        _tls._level_counts = {OK: 0, WARNING: 0, CRITICAL: 0}
+        _tls._feature_drift_count = 0
+        _tls._score_drift_count = 0
+        _tls._null_spike_count = 0
+        _tls._worst_level = OK
+        _tls._worst_alert = None
+        _tls._init = True
+    return _tls
 
 
 def _z_score(value, mean, std):
@@ -265,18 +277,19 @@ def check_score_drift(score):
         max_level = WARNING
     
     # Update rolling window
-    _score_history.append(score)
-    
+    _s()._score_history.append(score)
+
     # Rolling mean drift (only if enough history)
     rolling_mean = None
-    if len(_score_history) >= 10:
-        rolling_mean = float(np.mean(_score_history))
+    if len(_s()._score_history) >= 10:
+        rolling_mean = float(np.mean(_s()._score_history))
         rolling_z = _z_score(rolling_mean, SCORE_BASELINE["mean"], SCORE_BASELINE["std"])
+        n_hist = len(_s()._score_history)
         if rolling_z >= Z_CRIT:
-            alerts.append(("rolling_mean", CRITICAL, f"z={rolling_z:.1f} (mean={rolling_mean:.4f} over {len(_score_history)} calls)"))
+            alerts.append(("rolling_mean", CRITICAL, f"z={rolling_z:.1f} (mean={rolling_mean:.4f} over {n_hist} calls)"))
             max_level = CRITICAL
         elif rolling_z >= Z_WARN:
-            alerts.append(("rolling_mean", WARNING, f"z={rolling_z:.1f} (mean={rolling_mean:.4f} over {len(_score_history)} calls)"))
+            alerts.append(("rolling_mean", WARNING, f"z={rolling_z:.1f} (mean={rolling_mean:.4f} over {n_hist} calls)"))
             if max_level != CRITICAL:
                 max_level = WARNING
     
@@ -297,41 +310,39 @@ def observe(features_dict, score, schema_features=None):
     Returns:
         dict: {"feature_drift": {...}, "score_drift": {...}}
     """
-    global _last_logged_level, _calls_since_log
-    global _obs_count, _feature_drift_count, _score_drift_count, _null_spike_count
-    global _worst_level, _worst_alert
-    
+    s = _s()
+
     feat_drift = check_feature_drift(features_dict, schema_features)
     score_drift = check_score_drift(score)
-    
+
     # Determine overall severity
     overall = CRITICAL if CRITICAL in (feat_drift["level"], score_drift["level"]) else \
               WARNING if WARNING in (feat_drift["level"], score_drift["level"]) else OK
-    
+
     # Update batch counters
-    _obs_count += 1
-    _level_counts[overall] = _level_counts.get(overall, 0) + 1
+    s._obs_count += 1
+    s._level_counts[overall] = s._level_counts.get(overall, 0) + 1
     if feat_drift["level"] != OK:
-        _feature_drift_count += 1
+        s._feature_drift_count += 1
     if score_drift["level"] != OK:
-        _score_drift_count += 1
+        s._score_drift_count += 1
     if feat_drift["null_count"] > 0:
-        _null_spike_count += 1
-    if overall == CRITICAL or (overall == WARNING and _worst_level == OK):
-        _worst_level = overall
+        s._null_spike_count += 1
+    if overall == CRITICAL or (overall == WARNING and s._worst_level == OK):
+        s._worst_level = overall
     all_a = feat_drift["alerts"] + score_drift["alerts"]
     level_rank = {OK: 0, WARNING: 1, CRITICAL: 2}
-    _worst_alert = max(all_a, key=lambda a: level_rank.get(a[1], 0)) if all_a else None
-    
+    s._worst_alert = max(all_a, key=lambda a: level_rank.get(a[1], 0)) if all_a else None
+
     # Throttled logging: log on level change or periodic reminder
-    level_changed = (overall != _last_logged_level)
+    level_changed = (overall != s._last_logged_level)
     should_log = (
         overall != OK and (
-            level_changed or                   # Severity changed
-            _calls_since_log >= _LOG_EVERY_N   # Periodic reminder
+            level_changed or                    # Severity changed
+            s._calls_since_log >= _LOG_EVERY_N  # Periodic reminder
         )
     )
-    
+
     if should_log:
         all_alerts = feat_drift["alerts"] + score_drift["alerts"]
         if overall == CRITICAL:
@@ -340,17 +351,17 @@ def observe(features_dict, score, schema_features=None):
         else:
             warn_alerts = [(f, r) for f, l, r in all_alerts if l == WARNING]
             log.warning(f"Drift WARNING: {warn_alerts}")
-        _calls_since_log = 1
+        s._calls_since_log = 1
     elif overall != OK:
-        _calls_since_log += 1
+        s._calls_since_log += 1
     else:
-        _calls_since_log = 0
-    
+        s._calls_since_log = 0
+
     # Log when drift clears
-    if overall == OK and _last_logged_level != OK:
+    if overall == OK and s._last_logged_level != OK:
         log.debug("Drift cleared — back to normal.")
-    
-    _last_logged_level = overall
+
+    s._last_logged_level = overall
     
     return {"feature_drift": feat_drift, "score_drift": score_drift}
 
@@ -370,14 +381,15 @@ def summary():
             "worst_alert": tuple or None,
         }
     """
+    s = _s()
     return {
-        "total_observations": _obs_count,
-        "counts": dict(_level_counts),
-        "feature_drift_count": _feature_drift_count,
-        "score_drift_count": _score_drift_count,
-        "null_spike_count": _null_spike_count,
-        "worst_level": _worst_level,
-        "worst_alert": _worst_alert,
+        "total_observations": s._obs_count,
+        "counts": dict(s._level_counts),
+        "feature_drift_count": s._feature_drift_count,
+        "score_drift_count": s._score_drift_count,
+        "null_spike_count": s._null_spike_count,
+        "worst_level": s._worst_level,
+        "worst_alert": s._worst_alert,
     }
 
 
@@ -405,17 +417,15 @@ def log_summary():
 
 
 def reset():
-    """Reset all state: rolling window, throttle, and batch counters."""
-    global _last_logged_level, _calls_since_log
-    global _obs_count, _feature_drift_count, _score_drift_count, _null_spike_count
-    global _worst_level, _worst_alert, _level_counts
-    _score_history.clear()
-    _last_logged_level = OK
-    _calls_since_log = 0
-    _obs_count = 0
-    _level_counts = {OK: 0, WARNING: 0, CRITICAL: 0}
-    _feature_drift_count = 0
-    _score_drift_count = 0
-    _null_spike_count = 0
-    _worst_level = OK
-    _worst_alert = None
+    """Reset current thread's state: rolling window, throttle, and batch counters."""
+    s = _s()
+    s._score_history.clear()
+    s._last_logged_level = OK
+    s._calls_since_log = 0
+    s._obs_count = 0
+    s._level_counts = {OK: 0, WARNING: 0, CRITICAL: 0}
+    s._feature_drift_count = 0
+    s._score_drift_count = 0
+    s._null_spike_count = 0
+    s._worst_level = OK
+    s._worst_alert = None

@@ -41,6 +41,7 @@ from src.constants import (
     STUMPF_M0_DEFAULT,
     STUMPF_M1_DEFAULT,
     STUMPF_M1_LITERATURE,
+    STUMPF_LOG_EPSILON,
     BUF_PIX,
 )
 
@@ -130,11 +131,27 @@ def _haversine_m(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
     return R * 2 * np.arcsin(np.sqrt(a))
 
 
+# Algarve reference latitude for cos-scaling of longitude before KDTree query.
+# At 37 °N, 1° lon ≈ 88.7 km vs 1° lat ≈ 111 km — without scaling the tree
+# would favour lat distance, potentially returning a non-nearest vertex.
+_COS_LAT_SCALE = float(np.cos(np.radians(37.0)))
+
+
+def _scale_coords(arr: np.ndarray) -> np.ndarray:
+    """Return a copy with longitude (col 0) scaled by cos(lat_ref)."""
+    scaled = arr.copy()
+    scaled[:, 0] *= _COS_LAT_SCALE
+    return scaled
+
+
 def _build_isobath_tree(
     features: list[dict], target_depth: float
 ) -> tuple["cKDTree | None", "np.ndarray | None"]:
     """
     Build a cKDTree over all [lon, lat] vertices of the given isobath depth.
+    The tree is built in cos-scaled degree space so that degree distances in
+    lon and lat are approximately equal at the Algarve reference latitude.
+    The raw (unscaled) coords are returned separately for haversine final calc.
     Returns (None, None) if no matching features found.
     """
     coords = []
@@ -144,7 +161,7 @@ def _build_isobath_tree(
     if not coords:
         return None, None
     arr = np.array(coords, dtype=np.float64)  # shape (N, 2)
-    return cKDTree(arr), arr
+    return cKDTree(_scale_coords(arr)), arr
 
 
 def _build_all_isobath_trees(
@@ -171,7 +188,7 @@ def _build_all_isobath_trees(
             trees[depth] = (None, None)
         else:
             arr = np.array(coords, dtype=np.float64)
-            trees[depth] = (cKDTree(arr), arr)
+            trees[depth] = (cKDTree(_scale_coords(arr)), arr)
     return trees
 
 
@@ -196,15 +213,17 @@ def min_distance_to_isobath_m(
 
     if tree is None:
         return float(np.inf)
-    # Find nearest vertex in degree-space, then compute haversine for accuracy
-    _dist_deg, idx = tree.query([lon, lat])
+    # Query in cos-scaled degree space (same projection as the tree) so that
+    # lon/lat distances are approximately equal at the Algarve reference lat.
+    # Use original (unscaled) coords for the haversine final distance.
+    _dist_deg, idx = tree.query([lon * _COS_LAT_SCALE, lat])
     nearest = coords[idx]
     return _haversine_m(lon, lat, float(nearest[0]), float(nearest[1]))
 
 
 def _stumpf_ratio(b02v: float, b03v: float, n: float = 1000.0) -> float:
     """Compute Stumpf log-ratio X = ln(n·B02) / ln(n·B03)."""
-    eps = 1e-6
+    eps = STUMPF_LOG_EPSILON
     return float(np.log(n * b02v + eps) / (np.log(n * b03v + eps) + eps))
 
 

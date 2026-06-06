@@ -100,9 +100,28 @@ python reef_imagery_pipeline_v3.py --step all
 
 ## 🛠️ CLI Arguments
 
+### Step reference
+
+| Step | Requires | Output |
+|------|----------|--------|
+| `capabilities` | network | `dgt_capabilities_2018.xml` |
+| `ortho` | network | WMS GeoTIFF clips (30 cm / 25 cm) |
+| `sentinel` | network / CDSE token | `S2_B02_*.tif`, `S2_B03_*.tif` |
+| `ratio` | `sentinel` output | `ratio_B02_B03_*.tif` |
+| `bathy` | network | `bathy_*.tif`, TRI/BPI/slope rasters |
+| `reef_candidates` | `sentinel` + `bathy` output | `reef_candidates_multiband.geojson`, `reef_candidates_multiband_validated.geojson` |
+| `score` | `ratio` output | `bvi_score_*.json` (BVI intermediate product) |
+| `qgis` | any rasters present | `reef_project_*.qgs` |
+| `gee` | — | `gee_reef_export_*.js` |
+| `all` | network | Runs: sentinel → ratio → bathy → reef_candidates |
+
+**`--step all` terminates at validated reef candidates.** It does not run BVI scoring (`score`), QGIS export, or GEE script generation. Run those individually if needed.
+
+### CLI flags
+
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--step` | *(required)* | `capabilities`, `ortho`, `sentinel`, `ratio`, `qgis`, `gee`, `all` |
+| `--step` | *(required)* | See step reference table above |
 | `--date` | `2024-10-15` | Target Sentinel-2 scene date (OP20 default) |
 | `--lat` | `37.069071` | Target latitude |
 | `--lon` | `-8.210492` | Target longitude |

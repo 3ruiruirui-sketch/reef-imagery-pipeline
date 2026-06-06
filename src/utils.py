@@ -40,13 +40,14 @@ def simulate_acolite_boa(input_tif, output_tif, b03_tif=None, sunglint_strength=
     arr, profile = read_band(str(input_tif))
     arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
 
-    # Convert L2A DN to reflectance if not already (values > 2 = raw DN)
-    if arr.max() > 2.0:
+    # Convert L2A DN to reflectance if not already (values > 2 = raw DN).
+    # nanmax guards against all-NaN tiles crashing with ValueError.
+    if np.nanmax(arr) > 2.0:
         arr = arr / 10000.0
 
     if b03_tif is not None:
         b03, _ = read_band(str(b03_tif))
-        if b03.max() > 2.0:
+        if np.nanmax(b03) > 2.0:
             b03 = b03 / 10000.0
         # Hedley linear: slope from deep-water pixels
         b03_pos = b03[b03 > 0]

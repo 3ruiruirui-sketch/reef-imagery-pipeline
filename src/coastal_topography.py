@@ -32,6 +32,7 @@ References:
 """
 
 import base64
+import contextlib
 import logging
 import json
 import os
@@ -245,16 +246,15 @@ class CoastalTopographyAnalyzer:
         from rasterio.crs import CRS as RioCRS
 
         try:
-            src_files = [rasterio.open(str(p)) for p in tile_paths]
-            mosaic, mosaic_transform = _merge(src_files, nodata=self.NODATA_VALUE)
-            mosaic = np.where(mosaic <= self.NODATA_ALT * 0.5, self.NODATA_VALUE, mosaic)
-            src_crs = src_files[0].crs
-            meta = src_files[0].meta.copy()
-            meta.update(height=mosaic.shape[1], width=mosaic.shape[2],
-                        transform=mosaic_transform, dtype="float32",
-                        nodata=self.NODATA_VALUE)
-            for s in src_files:
-                s.close()
+            with contextlib.ExitStack() as stack:
+                src_files = [stack.enter_context(rasterio.open(str(p))) for p in tile_paths]
+                mosaic, mosaic_transform = _merge(src_files, nodata=self.NODATA_VALUE)
+                mosaic = np.where(mosaic <= self.NODATA_ALT * 0.5, self.NODATA_VALUE, mosaic)
+                src_crs = src_files[0].crs
+                meta = src_files[0].meta.copy()
+                meta.update(height=mosaic.shape[1], width=mosaic.shape[2],
+                            transform=mosaic_transform, dtype="float32",
+                            nodata=self.NODATA_VALUE)
 
             tmp = self.tiles_dir / "_mds_mosaic_raw.tif"
             with rasterio.open(str(tmp), "w", **meta) as dst:
@@ -555,26 +555,25 @@ class CoastalTopographyAnalyzer:
             import rioxarray as rxr
             from rasterio.crs import CRS as RioCRS
 
-            src_files = [rasterio.open(str(p)) for p in tile_paths]
+            with contextlib.ExitStack() as stack:
+                src_files = [stack.enter_context(rasterio.open(str(p))) for p in tile_paths]
 
-            # Normalise nodata: some tiles use -3.4e38 instead of -999.0.
-            # Passing nodata= to merge ensures uninitialized output cells get -999.0
-            # (not 0.0) and all source nodata values are treated consistently.
-            mosaic, mosaic_transform = merge(src_files, nodata=self.NODATA_VALUE)
-            # Recode any surviving -3.4e38 fill (from tiles whose rasterio metadata
-            # declared NODATA_ALT) so the mosaic is uniform.
-            mosaic = np.where(mosaic <= self.NODATA_ALT * 0.5, self.NODATA_VALUE, mosaic)
-            src_crs = src_files[0].crs
-            meta = src_files[0].meta.copy()
-            meta.update({
-                "height": mosaic.shape[1],
-                "width": mosaic.shape[2],
-                "transform": mosaic_transform,
-                "dtype": "float32",
-                "nodata": self.NODATA_VALUE,
-            })
-            for src in src_files:
-                src.close()
+                # Normalise nodata: some tiles use -3.4e38 instead of -999.0.
+                # Passing nodata= to merge ensures uninitialized output cells get -999.0
+                # (not 0.0) and all source nodata values are treated consistently.
+                mosaic, mosaic_transform = merge(src_files, nodata=self.NODATA_VALUE)
+                # Recode any surviving -3.4e38 fill (from tiles whose rasterio metadata
+                # declared NODATA_ALT) so the mosaic is uniform.
+                mosaic = np.where(mosaic <= self.NODATA_ALT * 0.5, self.NODATA_VALUE, mosaic)
+                src_crs = src_files[0].crs
+                meta = src_files[0].meta.copy()
+                meta.update({
+                    "height": mosaic.shape[1],
+                    "width": mosaic.shape[2],
+                    "transform": mosaic_transform,
+                    "dtype": "float32",
+                    "nodata": self.NODATA_VALUE,
+                })
 
             # Clip merged array to bbox + 5% margin before writing (reduces memory ~90%)
             from rasterio.transform import array_bounds

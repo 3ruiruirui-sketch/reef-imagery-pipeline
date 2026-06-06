@@ -4,18 +4,30 @@ import numpy as np
 from unittest.mock import patch, mock_open, MagicMock
 
 from src.ranking_model import (
-    predict_score, _load_resources, validate_schema, schema_fingerprint,
+    predict_score, validate_schema, schema_fingerprint,
     terrain_exposure_modifier,
 )
 
 @pytest.fixture(autouse=True)
 def reset_globals():
-    import src.ranking_model as rm
-    rm._RANKER_MODEL = None
-    rm._FEATURE_SCHEMA = None
-    rm._DISABLED_FEATURES = set()
-    rm._SCHEMA_FINGERPRINT = None
-    rm._IS_FALLBACK = False
+    """Reset all module-level model cache before AND after every test.
+
+    Without teardown a test that triggers real model loading (when model files
+    happen to exist) would poison the cache for the next test, making results
+    order-dependent.
+    """
+    def _reset():
+        import src.ranking_model as rm
+        rm._RANKER_MODEL = None
+        rm._FEATURE_SCHEMA = None
+        rm._DISABLED_FEATURES = set()
+        rm._SCHEMA_FINGERPRINT = None
+        rm._IS_FALLBACK = False
+        rm._LOAD_ATTEMPTED = False
+
+    _reset()
+    yield
+    _reset()
 
 def test_missing_model_fallback():
     """Test that if the model is missing, the system gracefully reverts to fallback."""
