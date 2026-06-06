@@ -23,6 +23,17 @@ from src.constants import (
     N_WATER, CLOUD_THRESHOLD, SNR_THRESHOLD, KD490_TABLE, KD490_DEFAULT,
     GLINT_PENALTY, GLINT_PENALTY_DEFAULT
 )
+try:
+    from src.cmems_kd490 import get_kd490 as _get_kd490_live
+except Exception:
+    _get_kd490_live = None  # type: ignore[assignment]
+
+try:
+    from src.ipma_sea_state import is_scene_usable as _ipma_is_scene_usable
+    from src.ipma_sea_state import get_conditions as _ipma_get_conditions
+    HAS_IPMA = True
+except Exception:
+    HAS_IPMA = False
 from src.reef_ml_predictor_acolite import run_predictor
 
 try:
@@ -166,9 +177,13 @@ def _normalise_result(pred: dict, meta: dict) -> dict:
     # Legacy aliases
     out.setdefault("SNR_mean_16m",              snr)
     _month = meta.get("month")
-    out.setdefault("kd490_seasonal",
-                   KD490_TABLE[_month] if _month in KD490_TABLE
-                   else pred.get("kd_seasonal_prior", KD490_DEFAULT))
+    if _month is not None and _get_kd490_live is not None:
+        _kd_seasonal = _get_kd490_live(int(_month))
+    elif _month in KD490_TABLE:
+        _kd_seasonal = KD490_TABLE[_month]
+    else:
+        _kd_seasonal = pred.get("kd_seasonal_prior", KD490_DEFAULT)
+    out.setdefault("kd490_seasonal", _kd_seasonal)
     _kd_est = pred.get("kd_b02_estimated") if "kd_b02_estimated" in pred else pred.get("kd490_seasonal")
     out.setdefault("kd490_estimated", _kd_est if _kd_est is not None else KD490_DEFAULT)
     out.setdefault("date",                       meta["date"])
@@ -273,6 +288,18 @@ def main(depth: float = 16.0, config_path: str | None = None):
         b03_b_path = extract_band(boa_b, 3, out_dir / "BOA_B03_B_raw.tif")
     else:
         log.info("Using L2A BOA TIFFs directly (ACOLITE not installed)")
+
+    # Step 1b: Sea-state filter (IPMA) — skip scenes during storms
+    if HAS_IPMA:
+        for label, meta in [("A", METADATA["A"]), ("B", METADATA["B"])]:
+            if not _ipma_is_scene_usable(meta["date"]):
+                log.warning(
+                    "Image %s (%s) fails IPMA sea-state check — "
+                    "BVI score may be degraded by high turbidity.",
+                    label, meta["date"],
+                )
+                # Not a hard skip: sea state affects BVI but scene may still have
+                # valid cloud-free pixels. Log the warning and continue.
 
     # Step 2: Physics — delegate entirely to run_predictor()
     log.info("Running run_predictor() for both images...")
@@ -418,6 +445,8 @@ def main(depth: float = 16.0, config_path: str | None = None):
             f"Datum: WGS84/UTM Zone 29N",
             f"ACOLITE: {'used' if use_acolite else 'not installed — L2A BOA used directly'}",
         ],
+        "sea_state": _ipma_get_conditions() if HAS_IPMA else None,
+        "kd490_source": "CMEMS live" if _get_kd490_live is not None else "static table",
         "warnings": warnings,
         "training_inputs_reef_ml_predictor": {
             "month_9_glint_penalty": GLINT_PENALTY.get(9, GLINT_PENALTY_DEFAULT),
@@ -436,6 +465,29 @@ def main(depth: float = 16.0, config_path: str | None = None):
     log.info("Winner: %s | Score A=%.4f B=%.4f", report["chosen_image"], score_a, score_b)
     log.info("JSON → %s", report_path)
     log.info("CSV  → %s", csv_path)
+
+    # ICESat-2 validation — optional, runs after depth maps are generated
+    try:
+        from src.icesat2_validation import run_icesat2_validation
+        winner_pred_dir = out_dir / f"pred_{winner}"
+        sdb_path = winner_pred_dir / "sdb_depth_map.tif"
+        val_report = run_icesat2_validation(
+            depth_map_path=sdb_path,
+            output_dir=out_dir / "icesat2_validation",
+            scene_date=results[winner].get("date"),
+        )
+        if val_report and val_report.get("status") == "ok":
+            report["icesat2_validation"] = {
+                "rmse_m": val_report["rmse_m"],
+                "bias_m": val_report["bias_m"],
+                "n_points": val_report["n_colocated"],
+                "report_path": str(out_dir / "icesat2_validation" / "validation_report.json"),
+            }
+            # Rewrite the JSON report with the validation results appended
+            with open(report_path, "w") as f:
+                json.dump(report, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        log.debug("ICESat-2 validation (non-critical): %s", e)
 
     # Drift monitoring: batch-end summary + export (shadow mode)
     if HAS_DRIFT_MONITOR:

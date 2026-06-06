@@ -38,7 +38,10 @@ from src.constants import (
 
 # Aliases for backward compat
 DEPTH_TARGET    = DEFAULT_DEPTH_TARGET
-DEFAULT_KD_TABLE = KD490_TABLE
+try:
+    from src.cmems_kd490 import KD490_TABLE_LIVE as DEFAULT_KD_TABLE
+except Exception:
+    DEFAULT_KD_TABLE = KD490_TABLE  # static fallback
 
 # Sentinel-2 band pure-water attenuation (aw, m⁻¹) — Pope & Fry 1997
 AW = {"B02": 0.0145, "B03": 0.0612, "B04": 0.4300}

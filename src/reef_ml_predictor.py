@@ -17,6 +17,10 @@ from datetime import datetime
 from src.ranking_model import predict_score
 from src.constants import KD490_TABLE
 from src.utils import get_kd490
+try:
+    from src.cmems_kd490 import KD490_TABLE_LIVE as KD490_TABLE  # shadows the static import above
+except Exception:
+    pass  # keep static KD490_TABLE on any failure
 
 # Constantes Físicas (Banda B02 - Azul 490nm / Banda B03 - Verde 560nm)
 SAND_R_REF = 0.25     # Refletância da areia branca
