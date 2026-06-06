@@ -74,7 +74,10 @@ def _fetch_cmems_climatology() -> Dict[int, float]:
     table: Dict[int, float] = {}
     if "time" in kd_var.dims:
         monthly = kd_var.groupby("time.month").mean(dim="time")
+        available_months = set(int(v) for v in monthly.month.values)
         for m in range(1, 13):
+            if m not in available_months:
+                continue  # filled from static table in the loop below
             vals = monthly.sel(month=m).values.ravel()
             valid = vals[np.isfinite(vals) & (vals > 0)]
             if valid.size > 0:

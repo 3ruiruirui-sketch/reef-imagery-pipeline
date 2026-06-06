@@ -213,11 +213,11 @@ def run_icesat2_validation(
                     e, n = tf.transform(b.right, b.top)
                     bbox = (w, s, e, n)
                 if scene_date is None:
-                    # Try to extract date from filename (expects YYYYMMDD or YYYY-MM-DD)
+                    # Extract date from filename: supports YYYY-MM-DD, YYYY_MM_DD, YYYYMMDD
                     import re
-                    m = re.search(r"(20\d{2}[-_]?\d{2}[-_]?\d{2})", depth_map_path.stem)
+                    m = re.search(r"(20\d{2})([-_]?)(\d{2})\2(\d{2})", depth_map_path.stem)
                     if m:
-                        scene_date = m.group(1).replace("_", "-")
+                        scene_date = f"{m.group(1)}-{m.group(3)}-{m.group(4)}"
         except Exception as e:
             log.warning("Could not read depth raster metadata: %s", e)
             return None
