@@ -10,18 +10,20 @@ from datetime import datetime
 import warnings
 import os
 
-if not os.getenv("PC_SDK_SUBSCRIPTION_KEY"):
-    warnings.warn(
-        "PC_SDK_SUBSCRIPTION_KEY não definida — "
-        "Planetary Computer vai falhar silenciosamente. "
-        "Define a variável de ambiente antes de usar fetch_vsi_patch().",
-        RuntimeWarning,
-        stacklevel=2,
-    )
+_PC_KEY_WARNED = False
 
 from src.reef_ml_predictor_acolite import make_snr_map
 
 def fetch_vsi_patch(lat, lon, date_str, buffer_m=500.0):
+    global _PC_KEY_WARNED
+    if not os.getenv("PC_SDK_SUBSCRIPTION_KEY") and not _PC_KEY_WARNED:
+        warnings.warn(
+            "PC_SDK_SUBSCRIPTION_KEY not set — Planetary Computer will fail silently. "
+            "Set the environment variable before calling fetch_vsi_patch().",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        _PC_KEY_WARNED = True
     catalog = Client.open('https://planetarycomputer.microsoft.com/api/stac/v1', modifier=pc.sign_inplace)
     search = catalog.search(
         collections=['sentinel-2-l2a'],
@@ -52,7 +54,8 @@ def run_enhancement_pipeline(lat, lon, image_date, target_snr):
     b02_ref = fetch_vsi_patch(lat, lon, image_date, buffer_m=1000.0)
     
     # 2. Sunglint removal (Empirical for this fast script)
-    p95 = np.percentile(b02_ref[b02_ref > 0], 95)
+    _pos = b02_ref[b02_ref > 0]
+    p95 = np.percentile(_pos, 95) if _pos.size > 0 else 0.0
     b02_glint_free = np.clip(b02_ref - 0.8 * p95 * 0.05, 0, 1.0)
     
     # 3. Spatial Denoising (SNR-adaptive Non-Local Means)

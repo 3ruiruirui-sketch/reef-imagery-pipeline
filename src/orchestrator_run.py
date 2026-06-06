@@ -162,9 +162,10 @@ def _normalise_result(pred: dict, meta: dict) -> dict:
     out = dict(pred)
     # Legacy aliases
     out.setdefault("SNR_mean_16m",              snr)
-    out.setdefault("kd490_seasonal",             meta.get("month") and
-                                                  KD490_TABLE.get(meta["month"], KD490_DEFAULT)
-                                                  or pred.get("kd_seasonal_prior", KD490_DEFAULT))
+    _month = meta.get("month")
+    out.setdefault("kd490_seasonal",
+                   KD490_TABLE[_month] if _month in KD490_TABLE
+                   else pred.get("kd_seasonal_prior", KD490_DEFAULT))
     out.setdefault("kd490_estimated",            pred.get("kd_b02_estimated",
                                                   pred.get("kd490_seasonal", KD490_DEFAULT)))
     out.setdefault("date",                       meta["date"])

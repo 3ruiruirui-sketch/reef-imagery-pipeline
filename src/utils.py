@@ -49,7 +49,11 @@ def simulate_acolite_boa(input_tif, output_tif, b03_tif=None, sunglint_strength=
         if b03.max() > 2.0:
             b03 = b03 / 10000.0
         # Hedley linear: slope from deep-water pixels
-        mask = (arr > 0) & (b03 > 0) & (b03 < np.percentile(b03[b03 > 0], 20))
+        b03_pos = b03[b03 > 0]
+        if b03_pos.size == 0:
+            b03_pos = b03[b03 >= 0]  # fall back to non-negative if all-zero
+        p20 = np.percentile(b03_pos, 20) if b03_pos.size > 0 else 0.0
+        mask = (arr > 0) & (b03 > 0) & (b03 < p20)
         if mask.sum() > 10:
             slope = np.cov(arr[mask].ravel(), b03[mask].ravel())[0, 1] / (np.var(b03[mask]) + 1e-12)
             slope = np.clip(slope, 0, 2.0)

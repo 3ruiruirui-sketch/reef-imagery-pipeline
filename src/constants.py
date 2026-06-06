@@ -49,11 +49,12 @@ STUMPF_M1_LITERATURE = 20.0
 # Both constants are currently 20.0. This assertion fires if they diverge,
 # which should only happen after deliberate recalibration — update the
 # calibration logic accordingly if that occurs.
-assert STUMPF_M1_DEFAULT == STUMPF_M1_LITERATURE, (
-    "STUMPF_M1_DEFAULT and STUMPF_M1_LITERATURE should be equal. "
-    "If intentionally diverging (e.g. after local calibration), update "
-    "the calibration logic that depends on each value accordingly."
-)
+if STUMPF_M1_DEFAULT != STUMPF_M1_LITERATURE:
+    raise ValueError(
+        "STUMPF_M1_DEFAULT and STUMPF_M1_LITERATURE should be equal. "
+        "If intentionally diverging (e.g. after local calibration), update "
+        "the calibration logic that depends on each value accordingly."
+    )
 
 # =============================================================================
 # ATTENUATION COEFFICIENTS (Kd490)

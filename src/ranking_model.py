@@ -67,6 +67,7 @@ _FEATURE_SCHEMA = None
 _DISABLED_FEATURES = set()
 _SCHEMA_FINGERPRINT = None
 _IS_FALLBACK = False
+_LOAD_ATTEMPTED = False  # prevents retrying a failed/missing load on every call
 
 
 def schema_fingerprint(features_list):
@@ -114,11 +115,15 @@ def validate_schema(incoming_features, expected_schema, disabled=None):
 
 def _load_resources():
     """Loads the ML ranker model and metadata schema from disk."""
-    global _RANKER_MODEL, _FEATURE_SCHEMA, _DISABLED_FEATURES, _SCHEMA_FINGERPRINT, _IS_FALLBACK
-    
+    global _RANKER_MODEL, _FEATURE_SCHEMA, _DISABLED_FEATURES, _SCHEMA_FINGERPRINT, _IS_FALLBACK, _LOAD_ATTEMPTED
+
     if _RANKER_MODEL is not None and _FEATURE_SCHEMA is not None and not _IS_FALLBACK:
         return
-        
+    # If we already tried and failed (files missing or corrupt), don't hit disk again.
+    if _LOAD_ATTEMPTED and _IS_FALLBACK:
+        return
+
+    _LOAD_ATTEMPTED = True
     _IS_FALLBACK = True
     
     if os.path.exists(MODEL_PATH) and os.path.exists(METADATA_PATH):

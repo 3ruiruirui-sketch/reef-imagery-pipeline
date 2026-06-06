@@ -301,7 +301,8 @@ def run_predictor(boa_b02_path, metadata, output_dir,
         sdb_map = stumpf_sdb(b02_arr, b03_arr, m0=stumpf_m0, m1=stumpf_m1)
         sdb_path = out / "sdb_depth_map.tif"
         write_band(str(sdb_path), sdb_map, profile)
-        sdb_mean = float(np.nanmean(sdb_map[sdb_map > 0]))
+        _sdb_pos = sdb_map[sdb_map > 0]
+        sdb_mean = float(np.nanmean(_sdb_pos)) if _sdb_pos.size > 0 else 0.0
         logging.info("SDB depth map: mean=%.1fm, written to %s", sdb_mean, sdb_path)
 
         # Validate SDB vs IH chart (if calibration ran)
