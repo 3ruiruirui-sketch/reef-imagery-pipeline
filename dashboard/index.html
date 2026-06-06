@@ -622,6 +622,34 @@
       color: var(--text-muted);
     }
 
+    /* ---- TERRAIN ---- */
+    .terrain-stat-cell {
+      background: rgba(0,0,0,0.22);
+      border-radius: 6px;
+      padding: 6px 8px;
+    }
+    .terrain-stat-label {
+      font-size: 9px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 3px;
+    }
+    .terrain-stat-value {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+    .terrain-badge {
+      display: inline-block;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 2px 5px;
+      border-radius: 4px;
+      margin-left: 5px;
+      vertical-align: middle;
+    }
+
     /* ---- SCROLLBAR ---- */
     .sidebar::-webkit-scrollbar { width: 4px; }
     .sidebar::-webkit-scrollbar-track { background: transparent; }
@@ -788,6 +816,43 @@
       <!-- Danger legend note -->
       <div style="margin-top:8px;font-size:10px;color:var(--text-muted);line-height:1.3;">
         ⚠️ Zones with confiança <30% shown as danger areas (orange/red dashed outline).
+      </div>
+    </div>
+    <!-- ── Terrain Exposure Layer ── -->
+    <div class="sidebar-section" id="terrainSection">
+      <div class="sidebar-section-title">🏔️ Terrain Exposure</div>
+
+      <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;">
+          <input type="checkbox" id="showHillshade"> Hillshade overlay (GLO-30 DEM)
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;">
+          <input type="checkbox" id="showTerrainSites" checked> Site exposure markers
+        </label>
+      </div>
+
+      <div id="hillshadeOpacityRow" class="opacity-control" style="display:none;margin-top:8px;">
+        <label>Hillshade</label>
+        <input type="range" class="opacity-slider" id="hillshadeOpacity" min="0" max="100" value="40">
+        <span class="opacity-value" id="hillshadeOpacityVal">40%</span>
+      </div>
+
+      <!-- Exposure legend -->
+      <div style="margin-top:10px;display:flex;gap:6px;align-items:center;font-size:10px;color:var(--text-muted);">
+        <span style="width:10px;height:10px;border-radius:50%;background:#22c55e;display:inline-block;"></span>Sheltered
+        <span style="width:10px;height:10px;border-radius:50%;background:#f59e0b;display:inline-block;margin-left:4px;"></span>Moderate
+        <span style="width:10px;height:10px;border-radius:50%;background:#ef4444;display:inline-block;margin-left:4px;"></span>Exposed
+      </div>
+
+      <!-- Live stats for selected site -->
+      <div id="terrainInfoPanel" style="display:none;margin-top:10px;background:rgba(0,0,0,0.25);border:1px solid var(--border);border-radius:8px;padding:10px;">
+        <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Site Terrain</div>
+        <div id="terrainSiteName" style="font-size:12px;font-weight:600;color:var(--text-primary);margin-bottom:8px;"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;" id="terrainStatsGrid"></div>
+        <div style="margin-top:8px;font-size:10px;color:var(--text-muted);line-height:1.35;">
+          BVI modifier applies a terrain-based exposure penalty (SW Atlantic swell, 225°).
+          Plume estimated at 8 m/s wind.
+        </div>
       </div>
     </div>
   </div>
@@ -1676,6 +1741,215 @@
     }
 
     loadChartLibraries();
+
+    // =========================================================================
+    // TERRAIN EXPOSURE LAYER (Phase 4 dashboard integration)
+    // =========================================================================
+    let terrainFeatures = null;
+    let hillshadeLayer  = null;
+    let terrainMarkersLayer = null;
+
+    // Full Algarve DEM coverage bbox
+    const TERRAIN_BBOX = { minlon: -8.65, minlat: 36.95, maxlon: -7.63, maxlat: 37.20 };
+
+    // ---- colour helpers ----
+    function modifierColor(m) {
+      if (!m) return '#94a3b8';
+      return m >= 0.88 ? '#22c55e' : m >= 0.78 ? '#f59e0b' : '#ef4444';
+    }
+    function modifierLabel(m) {
+      if (!m) return '—';
+      return m >= 0.88 ? 'Sheltered' : m >= 0.78 ? 'Moderate' : 'Exposed';
+    }
+    function aspectCompass(deg) {
+      const d = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+      return d[Math.round((deg||0) / 22.5) % 16];
+    }
+
+    // ---- load features from /api/coastal-features ----
+    async function loadTerrainFeatures() {
+      try {
+        const resp = await fetch('/api/coastal-features');
+        const data = await resp.json();
+        if (data.features && data.features.length > 0) {
+          terrainFeatures = data;
+          if (document.getElementById('showTerrainSites').checked) renderTerrainMarkers();
+        }
+      } catch(e) { console.warn('Terrain features unavailable:', e); }
+    }
+
+    function getNearestTerrainFeature(lat, lon) {
+      if (!terrainFeatures) return null;
+      let best = null, bestD = Infinity;
+      terrainFeatures.features.forEach(f => {
+        const p = f.properties;
+        const d = (p.latitude - lat)**2 + (p.longitude - lon)**2;
+        if (d < bestD) { bestD = d; best = f; }
+      });
+      return best;
+    }
+
+    // ---- render site markers ----
+    function renderTerrainMarkers() {
+      if (terrainMarkersLayer) { map.removeLayer(terrainMarkersLayer); terrainMarkersLayer = null; }
+      if (!terrainFeatures) return;
+
+      terrainMarkersLayer = L.featureGroup();
+      terrainFeatures.features.forEach(f => {
+        const p = f.properties;
+        if (!p.latitude || !p.longitude) return;
+        const marker = L.circleMarker([p.latitude, p.longitude], {
+          radius: 7, fillColor: '#94a3b8',
+          color: 'rgba(255,255,255,0.55)', weight: 1.5, fillOpacity: 0.88,
+        });
+        const name = (p.site_name||'').replace(/_/g,' ');
+        marker.bindTooltip(
+          `<strong>${name}</strong><br>slope ${(p.slope_mean||0).toFixed(2)}° · aspect ${(p.aspect_mean||180).toFixed(0)}° ${aspectCompass(p.aspect_mean)}`,
+          { direction: 'top', className: 'iho-tooltip' }
+        );
+        marker.on('click', () => showTerrainForSite(p));
+        terrainMarkersLayer.addLayer(marker);
+      });
+      terrainMarkersLayer.addTo(map);
+
+      // Eagerly fetch modifiers for all sites and colour the markers
+      terrainFeatures.features.forEach(f => prefetchModifier(f.properties));
+    }
+
+    // Pre-colour each marker after fetching its modifier
+    async function prefetchModifier(props) {
+      try {
+        const params = new URLSearchParams({
+          slope_mean: (props.slope_mean||0).toFixed(3),
+          aspect_mean: (props.aspect_mean||180).toFixed(1),
+          wind_speed_ms: 8,
+        });
+        const resp = await fetch(`/api/terrain-modifier?${params}`);
+        const data = await resp.json();
+        const color = modifierColor(data.terrain_modifier);
+        props._modifier = data.terrain_modifier;
+        props._plume    = data.plume_km;
+        updateMarkerColor(props.site_name, color);
+      } catch(e) {}
+    }
+
+    function updateMarkerColor(siteName, color) {
+      if (!terrainMarkersLayer) return;
+      terrainMarkersLayer.eachLayer(m => {
+        try {
+          const tip = m.getTooltip().getContent() || '';
+          if (tip.includes((siteName||'').replace(/_/g,' '))) m.setStyle({ fillColor: color });
+        } catch(e) {}
+      });
+    }
+
+    // ---- show stats panel for a site ----
+    async function showTerrainForSite(props) {
+      const panel  = document.getElementById('terrainInfoPanel');
+      const nameEl = document.getElementById('terrainSiteName');
+      const grid   = document.getElementById('terrainStatsGrid');
+
+      panel.style.display = 'block';
+      nameEl.textContent = (props.site_name||'').replace(/_/g,' ').replace(/\b\w/g, l => l.toUpperCase());
+      grid.innerHTML = '<div style="color:var(--text-muted);font-size:10px;grid-column:1/-1;text-align:center;">Loading…</div>';
+
+      // Use cached modifier if pre-fetched, else fetch now
+      let modData;
+      if (props._modifier !== undefined) {
+        modData = { terrain_modifier: props._modifier, plume_km: props._plume,
+                    exposure_factor: null, shelter_factor: null };
+      } else {
+        try {
+          const params = new URLSearchParams({
+            slope_mean: (props.slope_mean||0).toFixed(3),
+            aspect_mean: (props.aspect_mean||180).toFixed(1),
+            wind_speed_ms: 8,
+          });
+          const resp = await fetch(`/api/terrain-modifier?${params}`);
+          modData = await resp.json();
+          props._modifier = modData.terrain_modifier;
+          props._plume    = modData.plume_km;
+        } catch(e) {
+          grid.innerHTML = '<div style="color:var(--danger);font-size:10px;grid-column:1/-1;">Error loading terrain data</div>';
+          return;
+        }
+      }
+
+      const mColor = modifierColor(modData.terrain_modifier);
+      const mLabel = modifierLabel(modData.terrain_modifier);
+
+      grid.innerHTML = `
+        <div class="terrain-stat-cell">
+          <div class="terrain-stat-label">Slope</div>
+          <div class="terrain-stat-value">${(props.slope_mean||0).toFixed(2)}°</div>
+        </div>
+        <div class="terrain-stat-cell">
+          <div class="terrain-stat-label">Aspect</div>
+          <div class="terrain-stat-value">${(props.aspect_mean||180).toFixed(0)}° ${aspectCompass(props.aspect_mean||180)}</div>
+        </div>
+        <div class="terrain-stat-cell">
+          <div class="terrain-stat-label">BVI Modifier</div>
+          <div class="terrain-stat-value" style="color:${mColor};">${(modData.terrain_modifier||0).toFixed(3)}
+            <span style="font-size:10px;font-weight:500;">${mLabel}</span>
+          </div>
+        </div>
+        <div class="terrain-stat-cell">
+          <div class="terrain-stat-label">Plume @ 8 m/s</div>
+          <div class="terrain-stat-value">${(modData.plume_km||0).toFixed(1)} km</div>
+        </div>
+      `;
+      updateMarkerColor(props.site_name, mColor);
+    }
+
+    // Auto-show terrain for the selected map location
+    function showTerrainForLatLon(lat, lon) {
+      const feat = getNearestTerrainFeature(lat, lon);
+      if (feat) showTerrainForSite(feat.properties);
+    }
+
+    // ---- hillshade overlay ----
+    function loadHillshade() {
+      if (hillshadeLayer) { map.removeLayer(hillshadeLayer); hillshadeLayer = null; }
+      const opacity = parseInt(document.getElementById('hillshadeOpacity').value) / 100;
+      const p = TERRAIN_BBOX;
+      const url = `/api/dem-hillshade?minlon=${p.minlon}&minlat=${p.minlat}&maxlon=${p.maxlon}&maxlat=${p.maxlat}&width=1024`;
+      hillshadeLayer = L.imageOverlay(url,
+        [[p.minlat, p.minlon], [p.maxlat, p.maxlon]],
+        { opacity, interactive: false, zIndex: 200 }
+      ).addTo(map);
+    }
+
+    document.getElementById('showHillshade').addEventListener('change', function() {
+      document.getElementById('hillshadeOpacityRow').style.display = this.checked ? 'flex' : 'none';
+      if (this.checked) loadHillshade();
+      else if (hillshadeLayer) { map.removeLayer(hillshadeLayer); hillshadeLayer = null; }
+    });
+
+    document.getElementById('showTerrainSites').addEventListener('change', function() {
+      if (this.checked) renderTerrainMarkers();
+      else if (terrainMarkersLayer) { map.removeLayer(terrainMarkersLayer); terrainMarkersLayer = null; }
+    });
+
+    document.getElementById('hillshadeOpacity').addEventListener('input', function() {
+      document.getElementById('hillshadeOpacityVal').textContent = this.value + '%';
+      if (hillshadeLayer) hillshadeLayer.setOpacity(this.value / 100);
+    });
+
+    // ---- patch selectLocation to show terrain on site select ----
+    const _selectLocationOrig = selectLocation;
+    selectLocation = function(boundsKey, layerIdx) {
+      _selectLocationOrig(boundsKey, layerIdx);
+      const group = locationGroups[boundsKey];
+      if (!group) return;
+      const center = [
+        (group.bounds[0][0] + group.bounds[1][0]) / 2,
+        (group.bounds[0][1] + group.bounds[1][1]) / 2,
+      ];
+      showTerrainForLatLon(center[0], center[1]);
+    };
+
+    // Kick off terrain loading on startup
+    loadTerrainFeatures();
   </script>
 
   <!-- SPECTRAL & SDB ANALYSIS MODAL (OPTION 3 INTEGRATION) -->

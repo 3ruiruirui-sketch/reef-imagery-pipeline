@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import math
 import os
 import json
 from flask import Flask, send_from_directory, send_file, request, jsonify
@@ -394,6 +395,8 @@ def _coastal_features_path():
     """Return the path to the coastal features GeoJSON, or None if not found."""
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     candidates = [
+        # Production 15-site file takes priority
+        os.path.join(project_root, 'outputs', 'coastal_topography', 'algarve_coastal_features.geojson'),
         os.path.join(project_root, 'outputs', 'coastal_topography', 'coastal_features.geojson'),
         os.path.join(project_root, 'test_output_glo30', 'coastal_features.geojson'),
     ]
@@ -407,6 +410,7 @@ def _dem_mosaic_path():
     """Return the path to the DEM mosaic GeoTIFF, or None if not found."""
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     candidates = [
+        # Production full-Algarve DEM takes priority
         os.path.join(project_root, 'outputs', 'coastal_topography', 'dem_mosaic_50cm.tif'),
         os.path.join(project_root, 'test_output_glo30', 'dem_mosaic_50cm.tif'),
     ]
