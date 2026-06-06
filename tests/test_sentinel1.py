@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 from unittest.mock import patch, MagicMock
-from scratch.fetch_sentinel1_sar import roughness_from_sigma0, extract_sigma0_at_point
+from src.sentinel1_roughness import roughness_from_sigma0, extract_sigma0_at_point
 
 def test_roughness_from_sigma0_calm():
     # VV and VH are equal or close -> roughness close to 0 (calm)

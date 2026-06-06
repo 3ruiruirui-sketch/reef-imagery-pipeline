@@ -335,7 +335,7 @@ def main(depth: float = 16.0, config_path: str | None = None):
     # Apply Sentinel-1 roughness penalty (best-effort, uses existing S1 integration)
     for key, res, meta in [("A", res_a, METADATA["A"]), ("B", res_b, METADATA["B"])]:
         try:
-            from scratch.fetch_sentinel1_sar import search_stac_s1_scenes, extract_sigma0_at_point, roughness_from_sigma0
+            from src.sentinel1_roughness import search_stac_s1_scenes, extract_sigma0_at_point, roughness_from_sigma0
             from datetime import timedelta
             t_date = datetime.strptime(meta["date"], "%Y-%m-%d")
             start_dt = t_date - timedelta(days=3)
