@@ -109,23 +109,28 @@ def _algarve_wave_conditions() -> dict:
 def _algarve_wind_ms() -> Optional[float]:
     """
     Return the maximum wind speed in m/s from the most recent observation
-    at any Algarve-area meteorological station.
+    at Algarve-area meteorological stations only.
 
-    Returns None if observations are unavailable.
+    Filters by _ALGARVE_STATION_IDS so that inland or northern-Portugal stations
+    (e.g. mountain sites with extreme wind) cannot reject an Algarve scene.
+    Returns None if no Algarve station data is available.
     """
     obs_by_time = _fetch_wind_obs()
     if not obs_by_time:
         return None
 
-    # Latest timestamp is the first key (API returns times as dict keys)
     latest_ts = sorted(obs_by_time.keys())[-1]
     stations = obs_by_time[latest_ts]
 
-    speeds = [
-        float(s["intensidadeVento"])
-        for s in stations.values()
-        if s.get("intensidadeVento") is not None
-    ]
+    speeds = []
+    for sid, s in stations.items():
+        try:
+            if int(sid) not in _ALGARVE_STATION_IDS:
+                continue
+        except (ValueError, TypeError):
+            continue
+        if s.get("intensidadeVento") is not None:
+            speeds.append(float(s["intensidadeVento"]))
     return max(speeds) if speeds else None
 
 

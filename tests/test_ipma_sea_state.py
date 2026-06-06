@@ -35,11 +35,12 @@ def _wave_station(lat="37.19", lon="-8.00", wave_max="0.8", wave_min="0.5",
     }
 
 
-def _wind_obs(speed_ms=5.0):
+def _wind_obs(speed_ms=5.0, station_id="1080526"):
+    """Return a minimal IPMA wind observation dict using an Algarve station ID."""
     return {
         "2026-06-06T12:00": {
-            "123456": {"intensidadeVento": speed_ms, "temperatura": 20.0,
-                       "humidade": 60.0, "pressao": 1013.0},
+            str(station_id): {"intensidadeVento": speed_ms, "temperatura": 20.0,
+                              "humidade": 60.0, "pressao": 1013.0},
         }
     }
 
@@ -147,17 +148,29 @@ class TestAlgarveWaveConditions:
 # ── _algarve_wind_ms ─────────────────────────────────────────────────────────
 
 class TestAlgarveWindMs:
-    def test_returns_max_speed_across_stations(self):
+    def test_returns_max_speed_from_algarve_stations(self):
+        """Only Algarve station IDs contribute to the max wind reading."""
         obs = {
             "2026-06-06T12:00": {
-                "A": {"intensidadeVento": 5.0},
-                "B": {"intensidadeVento": 12.3},
-                "C": {"intensidadeVento": 8.0},
+                "1080526": {"intensidadeVento": 5.0},    # Faro — Algarve ✓
+                "1081526": {"intensidadeVento": 12.3},   # Sagres — Algarve ✓
+                "9999999": {"intensidadeVento": 25.0},   # mountain — NOT Algarve ✗
             }
         }
         with patch("src.ipma_sea_state._fetch_wind_obs", return_value=obs):
             result = _mod._algarve_wind_ms()
-        assert result == 12.3
+        assert result == 12.3  # mountain station excluded
+
+    def test_ignores_non_algarve_stations(self):
+        """A mountain station with extreme wind must not reject an Algarve scene."""
+        obs = {
+            "2026-06-06T12:00": {
+                "9999999": {"intensidadeVento": 25.0},  # non-Algarve station only
+            }
+        }
+        with patch("src.ipma_sea_state._fetch_wind_obs", return_value=obs):
+            result = _mod._algarve_wind_ms()
+        assert result is None  # no Algarve station data → treat as unavailable
 
     def test_returns_none_when_obs_empty(self):
         with patch("src.ipma_sea_state._fetch_wind_obs", return_value={}):
@@ -166,8 +179,8 @@ class TestAlgarveWindMs:
 
     def test_uses_latest_timestamp(self):
         obs = {
-            "2026-06-06T06:00": {"A": {"intensidadeVento": 3.0}},
-            "2026-06-06T18:00": {"A": {"intensidadeVento": 9.0}},
+            "2026-06-06T06:00": {"1080526": {"intensidadeVento": 3.0}},
+            "2026-06-06T18:00": {"1080526": {"intensidadeVento": 9.0}},
         }
         with patch("src.ipma_sea_state._fetch_wind_obs", return_value=obs):
             result = _mod._algarve_wind_ms()
@@ -176,8 +189,8 @@ class TestAlgarveWindMs:
     def test_skips_stations_with_none_speed(self):
         obs = {
             "2026-06-06T12:00": {
-                "A": {"intensidadeVento": None},
-                "B": {"intensidadeVento": 4.5},
+                "1080526": {"intensidadeVento": None},
+                "1081526": {"intensidadeVento": 4.5},
             }
         }
         with patch("src.ipma_sea_state._fetch_wind_obs", return_value=obs):

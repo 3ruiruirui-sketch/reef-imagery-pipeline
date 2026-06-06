@@ -38,9 +38,11 @@ from src.constants import (
 
 # Aliases for backward compat
 DEPTH_TARGET    = DEFAULT_DEPTH_TARGET
+_log = logging.getLogger(__name__)
 try:
     from src.cmems_kd490 import KD490_TABLE_LIVE as DEFAULT_KD_TABLE
-except Exception:
+except Exception as _cmems_err:
+    _log.warning("cmems_kd490 unavailable (%s) — using static Kd490 table.", _cmems_err)
     DEFAULT_KD_TABLE = KD490_TABLE  # static fallback
 
 # Sentinel-2 band pure-water attenuation (aw, m⁻¹) — Pope & Fry 1997

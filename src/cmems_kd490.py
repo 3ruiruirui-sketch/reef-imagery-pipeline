@@ -118,17 +118,42 @@ def _build_table() -> Dict[int, float]:
     return dict(_STATIC_TABLE)
 
 
-# Module-level table — built once at import.
-# Uses CMEMS if credentials are set, static table otherwise.
-KD490_TABLE_LIVE: Dict[int, float] = _build_table()
+# Module-level table — initialised from the static table at import time so that
+# importing this module never makes a network connection.  Call
+# refresh_from_cmems() explicitly (e.g. in the orchestrator at start-up) to
+# populate from CMEMS when credentials are available.
+KD490_TABLE_LIVE: Dict[int, float] = dict(_STATIC_TABLE)
+
+
+def refresh_from_cmems() -> bool:
+    """
+    Attempt to populate KD490_TABLE_LIVE from CMEMS.
+
+    Returns True on success, False if credentials are missing, copernicusmarine
+    is not installed, or the fetch fails.  KD490_TABLE_LIVE is not modified on
+    failure — the static fallback values are retained.
+    """
+    global KD490_TABLE_LIVE
+    try:
+        result = _fetch_cmems_climatology()
+        KD490_TABLE_LIVE = result
+        return True
+    except RuntimeError as e:
+        log.warning("CMEMS Kd490 unavailable (%s) — retaining static table.", e)
+    except ImportError:
+        log.warning("copernicusmarine not installed — retaining static Kd490 table.")
+    except Exception as e:
+        log.warning("CMEMS Kd490 fetch failed (%s: %s) — retaining static table.",
+                    type(e).__name__, e)
+    return False
 
 
 def get_kd490(month: int) -> float:
     """
     Return Kd490 (m⁻¹) for the given calendar month (1=Jan … 12=Dec).
 
-    Uses the live CMEMS climatology when credentials are available,
-    otherwise falls back to the static Algarve seasonal table.
+    Uses KD490_TABLE_LIVE (static table by default; CMEMS values after a
+    successful refresh_from_cmems() call).
     """
     m = int(month)
     return KD490_TABLE_LIVE.get(m, KD490_DEFAULT)
