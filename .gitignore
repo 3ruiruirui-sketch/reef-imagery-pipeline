@@ -51,6 +51,7 @@ venv/
 # Dev scratch folders
 old/
 scratch/
+test_output_glo30/
 
 # Backup files
 *.bak

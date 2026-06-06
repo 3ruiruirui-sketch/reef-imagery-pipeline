@@ -32,13 +32,22 @@ logger = logging.getLogger(__name__)
 class DGTSentinelIntegrator:
     """Download and align MDT-50cm (DGT) + Sentinel-2 for reef imagery."""
     
-    # DGT STAC endpoint
+    # DGT STAC endpoints
     DGT_STAC_URL = "https://dgt-be.a.incd.pt:8081/collections/MDT-50cm/items"
-    
+    DGT_MDS_STAC_URL = "https://dgt-be.a.incd.pt:8081/collections/MDS-50cm/items"
+    # DGT hosts annual Sentinel-2 L2A mosaics (MosaicoS2-YYYY) — useful when
+    # CDSE/Planetary Computer is unavailable.
+    DGT_S2_STAC_BASE = "https://dgt-be.a.incd.pt:8081/collections/MosaicoS2-{year}/items"
+    DGT_S2_YEARS = list(range(2015, 2026))  # 2015 – 2025
+
+    # Primary nodata; a minority of DGT tiles use float32-min (-3.4e38) instead
+    MDT_NODATA = -999.0
+    MDT_NODATA_ALT = -3.4028235e38
+
     # Target CRS: ETRS89 / Portugal TM06 (used by DGT MDT-50cm)
     TARGET_CRS = "EPSG:3763"
-    
-    def __init__(self, 
+
+    def __init__(self,
                  bbox: Tuple[float, float, float, float],
                  output_dir: str = "./data/dgt_sentinel_integrated",
                  mdt_nodata: float = -999.0):
@@ -121,63 +130,112 @@ class DGTSentinelIntegrator:
         return tif_paths
     
     def mosaic_mdt50cm(self, tif_paths: List[str]) -> xr.DataArray:
+        """Load and mosaic MDT-50cm tiles into a single aligned DataArray.
+
+        Uses rasterio.merge (not xr.concat) so that per-tile nodata values are
+        correctly masked and the output fill is uniform (-999.0).  Tiles that
+        declare nodata=-3.4e38 (float32-min) are also recoded to -999.0 so
+        downstream consumers see a consistent nodata value.
         """
-        Load and mosaic MDT-50cm tiles.
-        
-        Assumes all tiles are in EPSG:3763 with same resolution.
-        
-        Args:
-            tif_paths: list of local GeoTIFF paths
-            
-        Returns:
-            xarray DataArray with shape (y, x)
-        """
+        import rasterio
+        from rasterio.merge import merge as _rio_merge
+        import numpy as np
+
         if not tif_paths:
             raise ValueError("No tiles provided for mosaicing")
-        
-        logger.info(f"Loading {len(tif_paths)} MDT-50cm tiles...")
-        
-        rasters = []
+
+        logger.info(f"Mosaicing {len(tif_paths)} MDT-50cm tiles via rasterio.merge...")
+
+        src_files = []
         for p in tif_paths:
             try:
-                ds = rxr.open_rasterio(p, masked=True)
-                # Squeeze out band dimension if it's 1
-                if ds.sizes.get("band", 1) == 1:
-                    ds = ds.squeeze("band")
-                rasters.append(ds)
-                logger.info(f"Loaded {p}, shape: {ds.shape}, CRS: {ds.rio.crs}")
-            except Exception as e:
-                logger.error(f"Failed to load {p}: {e}")
-        
-        if not rasters:
-            raise ValueError("Could not load any raster files")
-        
-        # Ensure all in same CRS
-        target_crs = rasters[0].rio.crs
-        rasters_reproj = []
-        for ds in rasters:
-            if ds.rio.crs != target_crs:
-                logger.info(f"Reprojecting to {target_crs}")
-                ds = ds.rio.reproject(target_crs)
-            rasters_reproj.append(ds)
-        
-        # Merge by finding common bounds
-        logger.info("Merging MDT tiles...")
-        combined = xr.concat(rasters_reproj, dim="tile")
-        
-        # Compute common bounds
-        bounds_list = [ds.rio.bounds() for ds in rasters_reproj]
-        minx = min(b[0] for b in bounds_list)
-        miny = min(b[1] for b in bounds_list)
-        maxx = max(b[2] for b in bounds_list)
-        maxy = max(b[3] for b in bounds_list)
-        
-        # Clip to bbox bounds
-        mosaic = combined.rio.clip_box(minx, miny, maxx, maxy)
-        
-        logger.info(f"Mosaiced MDT shape: {mosaic.shape}, bounds: ({minx}, {miny}, {maxx}, {maxy})")
-        return mosaic
+                src_files.append(rasterio.open(p))
+            except Exception as exc:
+                logger.error(f"Cannot open {p}: {exc}")
+
+        if not src_files:
+            raise ValueError("Could not open any tile files")
+
+        # merge() uses each source's own nodata for masking; nodata= sets the
+        # output fill so uninitialized pixels become -999.0 (not 0.0).
+        mosaic_arr, mosaic_transform = _rio_merge(
+            src_files, nodata=self.MDT_NODATA)
+        # Recode any surviving float32-min values from legacy tiles
+        mosaic_arr = np.where(
+            mosaic_arr <= self.MDT_NODATA_ALT * 0.5, self.MDT_NODATA, mosaic_arr)
+
+        src_crs = src_files[0].crs
+        meta = src_files[0].meta.copy()
+        meta.update(height=mosaic_arr.shape[1], width=mosaic_arr.shape[2],
+                    transform=mosaic_transform, dtype="float32",
+                    nodata=self.MDT_NODATA)
+        for s in src_files:
+            s.close()
+
+        # Write to a MemoryFile so we can hand an xarray DataArray back
+        from rasterio.io import MemoryFile as _MemFile
+        with _MemFile() as mem:
+            with mem.open(**meta) as ds:
+                ds.write(mosaic_arr.astype("float32"))
+            da = rxr.open_rasterio(mem.name, masked=True)
+            if da.sizes.get("band", 1) == 1:
+                da = da.squeeze("band")
+
+        # Reproject to EPSG:3763 if tiles came in a different CRS
+        if str(src_crs) != "EPSG:3763":
+            logger.info(f"Reprojecting mosaic from {src_crs} → EPSG:3763")
+            da = da.rio.reproject(self.TARGET_CRS)
+
+        logger.info(f"MDT mosaic shape: {da.shape}, CRS: {da.rio.crs}")
+        return da
     
+    def find_dgt_s2_items(self,
+                          year: Optional[int] = None,
+                          max_cloud_cover: float = 20.0) -> List[Dict]:
+        """Query DGT STAC for Sentinel-2 L2A items over the bbox.
+
+        DGT hosts annual Sentinel-2 mosaics (MosaicoS2-2015 … MosaicoS2-2025)
+        as a fallback when CDSE/Planetary Computer is unavailable.
+
+        Args:
+            year: specific year to search (None → tries current year then walks back)
+            max_cloud_cover: filter items above this cloud percentage
+
+        Returns:
+            list of STAC feature dicts, sorted by cloud cover ascending
+        """
+        from datetime import datetime as _dt
+
+        years_to_try = [year] if year else list(range(_dt.now().year, 2014, -1))
+        bbox_str = f"{self.bbox[0]},{self.bbox[1]},{self.bbox[2]},{self.bbox[3]}"
+
+        for yr in years_to_try:
+            url = self.DGT_S2_STAC_BASE.format(year=yr)
+            try:
+                r = requests.get(url, params={"bbox": bbox_str, "limit": 50, "f": "json"},
+                                 timeout=20)
+                r.raise_for_status()
+                features = r.json().get("features", [])
+            except Exception as exc:
+                logger.debug(f"DGT S2 {yr}: {exc}")
+                continue
+
+            # Filter by cloud cover (property name varies)
+            filtered = []
+            for f in features:
+                props = f.get("properties", {})
+                cc = props.get("eo:cloud_cover") or props.get("s2:cloud_cover") or 0
+                if cc <= max_cloud_cover:
+                    filtered.append(f)
+
+            if filtered:
+                logger.info(f"DGT S2 {yr}: {len(filtered)} items ≤{max_cloud_cover}% cloud")
+                return sorted(filtered,
+                              key=lambda f: f.get("properties", {}).get("eo:cloud_cover", 100))
+
+        logger.warning("No DGT S2 items found for bbox/cloud criteria")
+        return []
+
     def fetch_sentinel2_copernicus(self,
                                    date_start: str = "2024-01-01",
                                    date_end: str = "2024-12-31",

@@ -65,8 +65,9 @@ logger = logging.getLogger(__name__)
 class CoastalTopographyAnalyzer:
     """Extract terrain features from DGT MDT-50cm or Copernicus GLO-30 around dive sites."""
 
-    # DGT STAC endpoint
+    # DGT STAC endpoints
     STAC_URL = "https://dgt-be.a.incd.pt:8081/collections/MDT-50cm/items"
+    MDS_STAC_URL = "https://dgt-be.a.incd.pt:8081/collections/MDS-50cm/items"
 
     # Copernicus GLO-30 — public AWS bucket (no auth required, ~30 m resolution)
     GLO30_BASE_URL = "https://copernicus-dem-30m.s3.amazonaws.com"
@@ -83,8 +84,9 @@ class CoastalTopographyAnalyzer:
     NATIVE_CRS = "EPSG:3763"
     WGS84_CRS = "EPSG:4326"
 
-    # Nodata value used by DGT
+    # Primary nodata used by most DGT tiles; a minority use -3.4028235e38 (float32 min)
     NODATA_VALUE = -999.0
+    NODATA_ALT = -3.4028235e38  # seen in MDT-50cm-193014-04-2024 and similar tiles
 
     def __init__(self,
                  bbox: Tuple[float, float, float, float],
@@ -111,6 +113,8 @@ class CoastalTopographyAnalyzer:
         self.tiles_dir.mkdir(exist_ok=True)
 
         self.dem_mosaic_path = self.output_dir / "dem_mosaic_50cm.tif"
+        self.mds_mosaic_path = self.output_dir / "mds_mosaic_50cm.tif"
+        self.chm_path = self.output_dir / "chm_50cm.tif"
         self.slope_path = self.output_dir / "slope_50cm.tif"
         self.aspect_path = self.output_dir / "aspect_50cm.tif"
 
@@ -133,18 +137,7 @@ class CoastalTopographyAnalyzer:
         }
         
         logger.info(f"Querying DGT STAC: {self.STAC_URL}")
-        try:
-            r = requests.get(self.STAC_URL, params=params, timeout=30)
-            r.raise_for_status()
-        except requests.RequestException as e:
-            logger.error(f"STAC query failed: {e}")
-            return []
-        
-        fc = r.json()
-        n_returned = fc.get("context", {}).get("returned", 0)
-        logger.info(f"DGT STAC returned {n_returned} features")
-        
-        return fc.get("features", [])
+        return self._fetch_stac_items_from(self.STAC_URL, limit=limit)
     
     def download_mdt_tiles(self, limit: int = 50) -> List[Path]:
         """
@@ -195,6 +188,166 @@ class CoastalTopographyAnalyzer:
                 logger.error(f"Failed to download {href}: {e}")
         
         return tile_paths
+
+    # ── MDS-50cm (Digital Surface Model) + Canopy Height Model ────────────────
+
+    def download_mds_tiles(self, limit: int = 50) -> List[Path]:
+        """Download MDS-50cm (Digital Surface Model) tiles from DGT STAC.
+
+        MDS includes vegetation canopy and building tops; MDT is bare ground.
+        CHM = MDS − MDT gives structure/vegetation height above terrain.
+        """
+        features = self._fetch_stac_items_from(self.MDS_STAC_URL, limit=limit)
+        if not features:
+            logger.warning("No MDS-50cm tiles found for bbox")
+            return []
+
+        tile_paths = []
+        for feat in features:
+            item_id = feat.get("id", "unknown")
+            href = feat.get("assets", {}).get("Data", {}).get("href")
+            if not href:
+                continue
+            local_path = self.tiles_dir / Path(href).name
+            if local_path.exists():
+                tile_paths.append(local_path)
+                continue
+            logger.info(f"Downloading MDS tile {item_id}")
+            try:
+                with requests.get(href, stream=True, timeout=60) as r:
+                    r.raise_for_status()
+                    with open(local_path, "wb") as f:
+                        for chunk in r.iter_content(chunk_size=1 << 20):
+                            if chunk:
+                                f.write(chunk)
+                tile_paths.append(local_path)
+            except Exception as exc:
+                logger.error(f"Failed to download MDS tile {href}: {exc}")
+        return tile_paths
+
+    def build_mds_mosaic(self, tile_paths: Optional[List[Path]] = None) -> Optional[Path]:
+        """Merge MDS-50cm tiles into a mosaic GeoTIFF (mirrors build_dem_mosaic)."""
+        if not HAS_RASTERIO:
+            logger.error("rasterio required for MDS mosaic")
+            return None
+        if self.mds_mosaic_path.exists() and self.cache_tiles:
+            return self.mds_mosaic_path
+
+        if tile_paths is None:
+            tile_paths = self.download_mds_tiles()
+        if not tile_paths:
+            logger.error("No MDS tiles available")
+            return None
+
+        # Reuse the same merge logic as the MDT mosaic
+        import rioxarray as rxr
+        from rasterio.merge import merge as _merge
+        from rasterio.crs import CRS as RioCRS
+
+        try:
+            src_files = [rasterio.open(str(p)) for p in tile_paths]
+            mosaic, mosaic_transform = _merge(src_files, nodata=self.NODATA_VALUE)
+            mosaic = np.where(mosaic <= self.NODATA_ALT * 0.5, self.NODATA_VALUE, mosaic)
+            src_crs = src_files[0].crs
+            meta = src_files[0].meta.copy()
+            meta.update(height=mosaic.shape[1], width=mosaic.shape[2],
+                        transform=mosaic_transform, dtype="float32",
+                        nodata=self.NODATA_VALUE)
+            for s in src_files:
+                s.close()
+
+            tmp = self.tiles_dir / "_mds_mosaic_raw.tif"
+            with rasterio.open(str(tmp), "w", **meta) as dst:
+                dst.write(mosaic.astype("float32"))
+
+            native_crs = RioCRS.from_epsg(3763)
+            if src_crs != native_crs:
+                da = rxr.open_rasterio(str(tmp), masked=True)
+                da.rio.reproject(self.NATIVE_CRS).rio.to_raster(
+                    str(self.mds_mosaic_path), dtype="float32")
+                tmp.unlink(missing_ok=True)
+            else:
+                tmp.rename(self.mds_mosaic_path)
+
+            logger.info(f"MDS mosaic saved: {self.mds_mosaic_path}")
+            return self.mds_mosaic_path
+        except Exception as exc:
+            logger.error(f"MDS mosaic failed: {exc}")
+            return None
+
+    def compute_canopy_height(self,
+                              mdt_path: Optional[Path] = None,
+                              mds_path: Optional[Path] = None) -> Optional[Path]:
+        """Compute Canopy Height Model (CHM = MDS − MDT) and save as GeoTIFF.
+
+        For coastal reef sites the CHM represents dune/vegetation height above
+        bare ground, which is a proxy for coastal shelter and sediment trapping.
+        Values are clamped to [0, 50] m; negatives (LiDAR noise) are set to 0.
+        """
+        if not HAS_RASTERIO:
+            return None
+
+        mdt_path = mdt_path or self.dem_mosaic_path
+        mds_path = mds_path or self.mds_mosaic_path
+
+        if not mdt_path.exists():
+            logger.error(f"MDT not found: {mdt_path}")
+            return None
+        if not mds_path.exists():
+            logger.error(f"MDS not found: {mds_path}")
+            return None
+
+        if self.chm_path.exists() and self.cache_tiles:
+            return self.chm_path
+
+        try:
+            with rasterio.open(str(mdt_path)) as mdt_src, \
+                 rasterio.open(str(mds_path)) as mds_src:
+                mdt = mdt_src.read(1, masked=True).astype(np.float32)
+                mds = mds_src.read(1, masked=True).astype(np.float32)
+                profile = mdt_src.profile.copy()
+
+            # Align if grids differ (MDS and MDT should be identical but guard anyway)
+            if mdt.shape != mds.shape:
+                logger.warning("MDT/MDS grids differ — reprojecting MDS to match MDT")
+                import rioxarray as rxr
+                mdt_da = rxr.open_rasterio(str(mdt_path), masked=True)
+                mds_da = rxr.open_rasterio(str(mds_path), masked=True)
+                mds_da = mds_da.rio.reproject_match(mdt_da)
+                mds = mds_da.values[0].astype(np.float32)
+
+            nodata_mask = (mdt == self.NODATA_VALUE) | (mds == self.NODATA_VALUE)
+            chm = np.where(nodata_mask, np.nan, np.clip(mds - mdt, 0.0, 50.0))
+
+            profile.update(dtype="float32", nodata=np.nan)
+            with rasterio.open(str(self.chm_path), "w", **profile) as dst:
+                dst.write(chm.astype("float32"), 1)
+
+            valid = chm[~np.isnan(chm)]
+            logger.info(f"CHM saved: {self.chm_path}  "
+                        f"mean={np.mean(valid):.2f}m  max={np.max(valid):.2f}m")
+            return self.chm_path
+        except Exception as exc:
+            logger.error(f"CHM computation failed: {exc}")
+            return None
+
+    def _fetch_stac_items_from(self, url: str, limit: int = 50) -> List[Dict]:
+        """Generic STAC item fetch from any DGT collection URL."""
+        params = {
+            "bbox": f"{self.bbox[0]},{self.bbox[1]},{self.bbox[2]},{self.bbox[3]}",
+            "limit": limit,
+            "f": "json",
+        }
+        try:
+            r = requests.get(url, params=params, timeout=30)
+            r.raise_for_status()
+            fc = r.json()
+            n = fc.get("context", {}).get("returned", 0)
+            logger.info(f"STAC {url.split('/')[-2]} returned {n} features")
+            return fc.get("features", [])
+        except requests.RequestException as exc:
+            logger.error(f"STAC query failed ({url}): {exc}")
+            return []
 
     # ── Copernicus GLO-30 helpers ──────────────────────────────────────────────
 
@@ -404,8 +557,13 @@ class CoastalTopographyAnalyzer:
 
             src_files = [rasterio.open(str(p)) for p in tile_paths]
 
-            # Merge tiles
-            mosaic, mosaic_transform = merge(src_files)
+            # Normalise nodata: some tiles use -3.4e38 instead of -999.0.
+            # Passing nodata= to merge ensures uninitialized output cells get -999.0
+            # (not 0.0) and all source nodata values are treated consistently.
+            mosaic, mosaic_transform = merge(src_files, nodata=self.NODATA_VALUE)
+            # Recode any surviving -3.4e38 fill (from tiles whose rasterio metadata
+            # declared NODATA_ALT) so the mosaic is uniform.
+            mosaic = np.where(mosaic <= self.NODATA_ALT * 0.5, self.NODATA_VALUE, mosaic)
             src_crs = src_files[0].crs
             meta = src_files[0].meta.copy()
             meta.update({
@@ -557,7 +715,8 @@ class CoastalTopographyAnalyzer:
     def extract_features_for_sites(self,
                                    sites: List[Tuple[str, float, float]],
                                    buffer_m: float = 1000,
-                                   stats: Optional[List[str]] = None) -> Optional[pd.DataFrame]:
+                                   stats: Optional[List[str]] = None,
+                                   include_chm: bool = True) -> Optional[pd.DataFrame]:
         """
         Extract terrain features (slope, aspect) for dive sites.
         
@@ -614,20 +773,19 @@ class CoastalTopographyAnalyzer:
                 
                 logger.debug(f"Processing {site_name}...")
                 
-                # Slope stats
+                # Slope/aspect rasters are written with nodata=NaN (not NODATA_VALUE)
                 slope_stats = zonal_stats(
                     [buffer_geom],
                     str(self.slope_path),
                     stats=stats,
-                    nodata=self.NODATA_VALUE
+                    nodata=np.nan
                 )[0]
-                
-                # Aspect stats (need circular mean)
+
                 aspect_stats = zonal_stats(
                     [buffer_geom],
                     str(self.aspect_path),
                     stats=["mean", "median", "std", "min", "max"],
-                    nodata=self.NODATA_VALUE
+                    nodata=np.nan
                 )[0]
                 
                 # Build row
@@ -645,7 +803,18 @@ class CoastalTopographyAnalyzer:
                 # Add aspect stats with prefix
                 for key, val in aspect_stats.items():
                     feature_row[f"aspect_{key}"] = val
-                
+
+                # CHM (Canopy Height Model) stats — skipped silently if not built
+                if include_chm and HAS_RASTERSTATS and self.chm_path.exists():
+                    chm_stats = zonal_stats(
+                        [buffer_geom],
+                        str(self.chm_path),
+                        stats=["mean", "median", "std", "max", "percentile_90"],
+                        nodata=np.nan
+                    )[0]
+                    for key, val in chm_stats.items():
+                        feature_row[f"chm_{key}"] = val
+
                 features_list.append(feature_row)
         
         except Exception as e:
@@ -708,56 +877,71 @@ class CoastalTopographyAnalyzer:
     def run_analysis(self,
                     sites: List[Tuple[str, float, float]],
                     buffer_m: float = 1000,
-                    output_name: str = "coastal_features") -> Dict:
+                    output_name: str = "coastal_features",
+                    include_chm: bool = True) -> Dict:
         """
-        Full pipeline: download tiles → mosaic → slope/aspect → features → save.
-        
+        Full pipeline: download MDT+MDS tiles → mosaics → CHM → slope/aspect → features → save.
+
         Args:
             sites: list of (site_name, lat, lon) tuples
             buffer_m: buffer radius around each site (meters)
             output_name: base name for output files
-            
+            include_chm: if True, attempt to download MDS-50cm and compute the
+                         Canopy Height Model (CHM = MDS − MDT).  CHM stats are
+                         added as chm_* columns.  Failure is non-fatal.
+
         Returns:
             dict with status and file paths
         """
         logger.info("=" * 70)
         logger.info("COASTAL TOPOGRAPHY ANALYSIS PIPELINE")
         logger.info("=" * 70)
-        
+
         try:
-            # Step 1: Download tiles (source dispatched inside build_dem_mosaic)
-            logger.info(f"\n[1/4] Acquiring DEM tiles (source={self.dem_source})...")
-            tile_paths = None  # let build_dem_mosaic dispatch
-            # Step 2: Mosaic (also triggers download if tile_paths is None)
-            logger.info("\n[2/4] Building DEM mosaic...")
-            mosaic_path = self.build_dem_mosaic(tile_paths)
+            # Step 1+2: MDT mosaic (triggers download for chosen dem_source)
+            logger.info(f"\n[1/5] Acquiring MDT tiles (source={self.dem_source})...")
+            mosaic_path = self.build_dem_mosaic()
             if mosaic_path is None:
-                return {"status": "error", "message": "Mosaic creation failed"}
-            
-            # Step 3: Derive slope/aspect
-            logger.info("\n[3/4] Deriving slope and aspect...")
+                return {"status": "error", "message": "MDT mosaic creation failed"}
+
+            # Step 3: MDS mosaic + CHM (best-effort — DGT source only)
+            chm_path = None
+            if include_chm and self.dem_source in ("dgt", "auto"):
+                logger.info("\n[2/5] Building MDS mosaic + Canopy Height Model...")
+                mds_path = self.build_mds_mosaic()
+                if mds_path is not None:
+                    chm_path = self.compute_canopy_height()
+                    if chm_path is None:
+                        logger.warning("CHM computation failed; continuing without it")
+                else:
+                    logger.warning("MDS tiles unavailable; skipping CHM")
+            else:
+                logger.info("\n[2/5] Skipping MDS/CHM (dem_source != dgt/auto)")
+
+            # Step 4: Slope/aspect
+            logger.info("\n[3/5] Deriving slope and aspect...")
             slope_path, aspect_path = self.derive_slope_aspect(mosaic_path)
             if slope_path is None or aspect_path is None:
                 return {"status": "error", "message": "Slope/aspect derivation failed"}
-            
-            # Step 4: Extract features
-            logger.info("\n[4/4] Extracting features for dive sites...")
-            features_df = self.extract_features_for_sites(sites, buffer_m=buffer_m)
+
+            # Step 5: Feature extraction
+            logger.info("\n[4/5] Extracting features for dive sites...")
+            features_df = self.extract_features_for_sites(
+                sites, buffer_m=buffer_m, include_chm=include_chm)
             if features_df is None:
                 return {"status": "error", "message": "Feature extraction failed"}
-            
-            # Step 5: Save
+
+            # Step 6: Save
             logger.info("\n[5/5] Saving results...")
             file_paths = self.save_features(features_df, output_name=output_name)
-            
+
             logger.info("=" * 70)
             logger.info("ANALYSIS COMPLETE")
             logger.info("=" * 70)
-            
-            return {
+
+            result: Dict = {
                 "status": "success",
                 "sites_analyzed": len(features_df),
-                "tiles_downloaded": len(tile_paths) if tile_paths else "n/a",
                 "dem_mosaic": str(mosaic_path),
                 "slope_raster": str(slope_path),
                 "aspect_raster": str(aspect_path),
@@ -765,7 +949,10 @@ class CoastalTopographyAnalyzer:
                 "features_shape": features_df.shape,
                 "features_columns": list(features_df.columns),
             }
-        
+            if chm_path:
+                result["chm_raster"] = str(chm_path)
+            return result
+
         except Exception as e:
             logger.error(f"Pipeline failed: {e}", exc_info=True)
             return {"status": "error", "message": str(e)}

@@ -18,6 +18,12 @@ EARTH_SEARCH_STAC_URL = "https://earth-search.aws.element84.com/v1"
 DEFAULT_S2_COLLECTION = "sentinel-2-l2a"
 STAC_URL_PRIORITY = [EARTH_SEARCH_STAC_URL, PC_STAC_URL]
 
+# DGT (Portugal national mapping agency) hosts annual Sentinel-2 L2A mosaics
+# under collections named MosaicoS2-YYYY (2015–2025).  They use a different
+# collection scheme so they get their own search function below.
+DGT_STAC_URL = "https://dgt-be.a.incd.pt:8081"
+DGT_S2_YEARS = list(range(2025, 2014, -1))  # newest first
+
 
 def open_stac_catalog(url: str = EARTH_SEARCH_STAC_URL) -> Client:
     """Open a STAC catalog and apply signing if required."""
@@ -130,6 +136,57 @@ def get_asset_hrefs(item: Item, asset_keys: Iterable[str]) -> Dict[str, str]:
                 break
 
     return hrefs
+
+
+def search_dgt_s2_scenes(
+    lat: float,
+    lon: float,
+    max_cloud_cover: float = 25.0,
+    year: Optional[int] = None,
+    limit: int = 10,
+) -> List[Dict[str, Any]]:
+    """Search DGT-hosted Sentinel-2 L2A mosaics (MosaicoS2-YYYY collections).
+
+    Returns raw STAC feature dicts (not pystac Items) since the DGT STAC does
+    not expose a pystac-compatible search endpoint.  Use this as a fallback when
+    Earth Search and Planetary Computer are unavailable.
+
+    Args:
+        lat, lon: point of interest
+        max_cloud_cover: filter items above this percentage
+        year: specific year to search (None → tries all years newest-first)
+        limit: max items to return
+
+    Returns:
+        list of STAC feature dicts sorted by cloud cover ascending
+    """
+    import requests as _req
+
+    years = [year] if year else DGT_S2_YEARS
+    bbox = f"{lon - 0.05},{lat - 0.05},{lon + 0.05},{lat + 0.05}"
+
+    results: List[Dict[str, Any]] = []
+    for yr in years:
+        url = f"{DGT_STAC_URL}/collections/MosaicoS2-{yr}/items"
+        try:
+            r = _req.get(url, params={"bbox": bbox, "limit": 50, "f": "json"}, timeout=20)
+            r.raise_for_status()
+            features = r.json().get("features", [])
+        except Exception:
+            continue
+
+        for f in features:
+            props = f.get("properties", {})
+            cc = props.get("eo:cloud_cover") or props.get("s2:cloud_cover") or 0.0
+            if cc <= max_cloud_cover:
+                f.setdefault("_dgt_year", yr)
+                results.append(f)
+
+        if results:
+            break  # found items in this year — don't walk further back
+
+    results.sort(key=lambda f: f.get("properties", {}).get("eo:cloud_cover", 100.0))
+    return results[:limit]
 
 
 def scene_summary(item: Item) -> Dict[str, Any]:

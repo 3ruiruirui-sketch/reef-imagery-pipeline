@@ -15,7 +15,7 @@
     "aspect_mean": 194.59991287572345,
     "aspect_std": 109.63499909438667,
     "aspect_median": 179.99998474121094,
-    "timestamp": "2026-06-06T00:23:29.634376"
+    "timestamp": "2026-06-06T01:03:17.189418"
   },
   {
     "site_name": "ilha_de_tavira",
@@ -33,7 +33,7 @@
     "aspect_mean": 190.30000155537928,
     "aspect_std": 119.37285102172454,
     "aspect_median": 202.45724487304688,
-    "timestamp": "2026-06-06T00:23:29.634376"
+    "timestamp": "2026-06-06T01:03:17.189418"
   },
   {
     "site_name": "fuseta",
@@ -51,7 +51,7 @@
     "aspect_mean": 184.93081878442723,
     "aspect_std": 103.53962359523197,
     "aspect_median": 179.99998474121094,
-    "timestamp": "2026-06-06T00:23:29.634376"
+    "timestamp": "2026-06-06T01:03:17.189418"
   },
   {
     "site_name": "olhao_offshore",
@@ -69,7 +69,7 @@
     "aspect_mean": 181.10998039398748,
     "aspect_std": 98.08592246392766,
     "aspect_median": 179.99998474121094,
-    "timestamp": "2026-06-06T00:23:29.634376"
+    "timestamp": "2026-06-06T01:03:17.189418"
   },
   {
     "site_name": "faro_east",
@@ -87,7 +87,7 @@
     "aspect_mean": 178.80106723917982,
     "aspect_std": 93.16973250328633,
     "aspect_median": 179.99998474121094,
-    "timestamp": "2026-06-06T00:23:29.634376"
+    "timestamp": "2026-06-06T01:03:17.189418"
   },
   {
     "site_name": "praia_de_faro",
@@ -105,7 +105,7 @@
     "aspect_mean": 176.9481903162086,
     "aspect_std": 66.4410243612422,
     "aspect_median": 179.99998474121094,
-    "timestamp": "2026-06-06T00:23:29.634376"
+    "timestamp": "2026-06-06T01:03:17.189418"
   },
   {
     "site_name": "ancao_peninsula",
@@ -123,7 +123,7 @@
     "aspect_mean": 179.69542831365595,
     "aspect_std": 7.613509956481386,
     "aspect_median": 179.99998474121094,
-    "timestamp": "2026-06-06T00:23:29.634376"
+    "timestamp": "2026-06-06T01:03:17.189418"
   },
   {
     "site_name": "quarteira",
@@ -141,7 +141,7 @@
     "aspect_mean": 174.14340150867096,
     "aspect_std": 82.02163464118335,
     "aspect_median": 179.99998474121094,
-    "timestamp": "2026-06-06T00:23:29.634376"
+    "timestamp": "2026-06-06T01:03:17.189418"
   },
   {
     "site_name": "vilamoura",
@@ -159,7 +159,7 @@
     "aspect_mean": 174.423954313457,
     "aspect_std": 80.42520215710478,
     "aspect_median": 179.99998474121094,
-    "timestamp": "2026-06-06T00:23:29.634376"
+    "timestamp": "2026-06-06T01:03:17.189418"
   },
   {
     "site_name": "olhos_de_agua",
@@ -177,7 +177,7 @@
     "aspect_mean": 179.53121207406255,
     "aspect_std": 90.1005519657157,
     "aspect_median": 179.99998474121094,
-    "timestamp": "2026-06-06T00:23:29.634376"
+    "timestamp": "2026-06-06T01:03:17.189418"
   },
   {
     "site_name": "pedra_sta_eulalia",
@@ -195,7 +195,7 @@
     "aspect_mean": 179.937178150816,
     "aspect_std": 54.23626400557904,
     "aspect_median": 179.99998474121094,
-    "timestamp": "2026-06-06T00:23:29.634376"
+    "timestamp": "2026-06-06T01:03:17.189418"
   },
   {
     "site_name": "albufeira_reef",
@@ -213,7 +213,7 @@
     "aspect_mean": 179.9678548645579,
     "aspect_std": 54.08308649183617,
     "aspect_median": 179.99998474121094,
-    "timestamp": "2026-06-06T00:23:29.634376"
+    "timestamp": "2026-06-06T01:03:17.189418"
   },
   {
     "site_name": "gale",
@@ -231,7 +231,7 @@
     "aspect_mean": 180.3424934644591,
     "aspect_std": 28.378093674493126,
     "aspect_median": 179.99998474121094,
-    "timestamp": "2026-06-06T00:23:29.634376"
+    "timestamp": "2026-06-06T01:03:17.189418"
   },
   {
     "site_name": "salgados",
@@ -249,7 +249,7 @@
     "aspect_mean": 167.15428660339194,
     "aspect_std": 97.66411157425544,
     "aspect_median": 179.99998474121094,
-    "timestamp": "2026-06-06T00:23:29.634376"
+    "timestamp": "2026-06-06T01:03:17.189418"
   },
   {
     "site_name": "armacao_de_pera",
@@ -267,6 +267,6 @@
     "aspect_mean": 179.11876196256011,
     "aspect_std": 33.474803995081665,
     "aspect_median": 179.99998474121094,
-    "timestamp": "2026-06-06T00:23:29.634376"
+    "timestamp": "2026-06-06T01:03:17.189418"
   }
 ]

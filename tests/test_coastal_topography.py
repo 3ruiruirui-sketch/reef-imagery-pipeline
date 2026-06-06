@@ -184,9 +184,10 @@ from rasterio.crs import CRS as _RioCRS
 from affine import Affine
 
 
-def _make_dem(tmp_path, crs_epsg=3763, width=120, height=100, slope=True):
+def _make_dem(tmp_path, crs_epsg=3763, width=120, height=100, slope=True,
+              nodata=-999.0, filename="synth_dem.tif"):
     """Tiny synthetic DEM in EPSG:3763 near Algarve (for offline tests)."""
-    out = tmp_path / "synth_dem.tif"
+    out = tmp_path / filename
     west, south, east, north = -8000.0, -291000.0, -6800.0, -290000.0
     transform = _tfrom_bounds(west, south, east, north, width, height)
     x = np.linspace(0, 1, width)
@@ -196,9 +197,104 @@ def _make_dem(tmp_path, crs_epsg=3763, width=120, height=100, slope=True):
     with rasterio.open(str(out), "w", driver="GTiff",
                        height=height, width=width, count=1,
                        dtype="float32", crs=_RioCRS.from_epsg(crs_epsg),
-                       transform=transform, nodata=-999.0) as dst:
+                       transform=transform, nodata=nodata) as dst:
         dst.write(data, 1)
     return out
+
+
+# ── Nodata normalisation tests ─────────────────────────────────────────────────
+
+class TestNodataNormalisation:
+    """Verify that -3.4e38 (float32-min) tiles are recoded to -999.0 in the mosaic."""
+
+    def test_alt_nodata_recoded_in_mosaic(self, tmp_path):
+        # Create a tile that declares nodata = float32-min (-3.4e28)
+        alt_nodata = -3.4028235e38
+        dem_alt = _make_dem(tmp_path, nodata=alt_nodata, filename="dem_alt.tif")
+        a = CoastalTopographyAnalyzer(ALGARVE_BBOX, str(tmp_path), cache_tiles=False)
+        result = a.build_dem_mosaic([dem_alt])
+        assert result is not None
+        with rasterio.open(str(result)) as src:
+            data = src.read(1)
+            # No pixel should carry the old alt nodata value
+            assert not np.any(data <= alt_nodata * 0.5), \
+                "float32-min nodata survived into mosaic"
+            # The declared nodata in the file should be -999.0
+            assert src.nodata == pytest.approx(-999.0)
+
+    def test_standard_nodata_unchanged(self, tmp_path):
+        dem = _make_dem(tmp_path)
+        a = CoastalTopographyAnalyzer(ALGARVE_BBOX, str(tmp_path), cache_tiles=False)
+        result = a.build_dem_mosaic([dem])
+        assert result is not None
+        with rasterio.open(str(result)) as src:
+            assert src.nodata == pytest.approx(-999.0)
+
+
+# ── CHM (Canopy Height Model) tests ───────────────────────────────────────────
+
+class TestComputeCanopyHeight:
+    def test_chm_non_negative(self, tmp_path):
+        # MDT and MDS same grid; MDS = MDT + 2 m everywhere → CHM = 2 m
+        mdt = _make_dem(tmp_path, slope=False, filename="mdt.tif")
+        # Build MDS with 2 m added
+        mds_out = tmp_path / "mds.tif"
+        with rasterio.open(str(mdt)) as src:
+            data = src.read(1).astype(np.float32) + 2.0
+            meta = src.meta.copy()
+        with rasterio.open(str(mds_out), "w", **meta) as dst:
+            dst.write(data, 1)
+
+        a = CoastalTopographyAnalyzer(ALGARVE_BBOX, str(tmp_path), cache_tiles=False)
+        chm_path = a.compute_canopy_height(mdt_path=mdt, mds_path=mds_out)
+        assert chm_path is not None and chm_path.exists()
+        with rasterio.open(str(chm_path)) as src:
+            chm = src.read(1)
+            assert np.nanmin(chm) >= 0.0
+            assert np.nanmean(chm) == pytest.approx(2.0, abs=0.1)
+
+    def test_chm_clamped_at_50m(self, tmp_path):
+        mdt = _make_dem(tmp_path, slope=False, filename="mdt.tif")
+        mds_out = tmp_path / "mds.tif"
+        with rasterio.open(str(mdt)) as src:
+            data = src.read(1).astype(np.float32) + 100.0  # exceeds 50 m cap
+            meta = src.meta.copy()
+        with rasterio.open(str(mds_out), "w", **meta) as dst:
+            dst.write(data, 1)
+
+        a = CoastalTopographyAnalyzer(ALGARVE_BBOX, str(tmp_path), cache_tiles=False)
+        chm_path = a.compute_canopy_height(mdt_path=mdt, mds_path=mds_out)
+        assert chm_path is not None
+        with rasterio.open(str(chm_path)) as src:
+            assert np.nanmax(src.read(1)) <= 50.0
+
+    def test_chm_missing_mds_returns_none(self, tmp_path):
+        mdt = _make_dem(tmp_path)
+        a = CoastalTopographyAnalyzer(ALGARVE_BBOX, str(tmp_path), cache_tiles=False)
+        result = a.compute_canopy_height(mdt_path=mdt, mds_path=tmp_path / "no_mds.tif")
+        assert result is None
+
+    def test_chm_stats_in_extracted_features(self, tmp_path):
+        mdt = _make_dem(tmp_path, slope=False, filename="mdt.tif")
+        mds_out = tmp_path / "mds.tif"
+        with rasterio.open(str(mdt)) as src:
+            data = src.read(1).astype(np.float32) + 3.0
+            meta = src.meta.copy()
+        with rasterio.open(str(mds_out), "w", **meta) as dst:
+            dst.write(data, 1)
+
+        a = CoastalTopographyAnalyzer(ALGARVE_BBOX, str(tmp_path), cache_tiles=False)
+        a.dem_mosaic_path = mdt
+        sp, ap = a.derive_slope_aspect(mdt)
+        a.slope_path = sp
+        a.aspect_path = ap
+        a.chm_path = a.compute_canopy_height(mdt_path=mdt, mds_path=mds_out)
+
+        sites = [("synth_site", 37.069, -8.210)]
+        df = a.extract_features_for_sites(sites, buffer_m=500, include_chm=True)
+        assert df is not None
+        chm_cols = [c for c in df.columns if c.startswith("chm_")]
+        assert len(chm_cols) > 0, "No chm_* columns in extracted features"
 
 
 class TestDerivesSlopeAspect:
