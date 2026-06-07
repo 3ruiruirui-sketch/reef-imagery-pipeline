@@ -370,8 +370,10 @@ def run_predictor(boa_b02_path, metadata, output_dir,
 
     sand_btm = SAND_R * trans
     rock_btm = ROCK_R * trans
-    contrast  = ((sand_btm - rock_btm) / sand_btm * glint_pen
-                 if sand_btm > 0 else 0.0)
+    # Normalise by surface reflectance (SAND_R), not sand_btm, so that trans does not
+    # cancel out and contrast properly decreases with depth.
+    contrast  = ((sand_btm - rock_btm) / SAND_R * glint_pen
+                 if SAND_R > 0 else 0.0)
 
     # ML Ranker inference instead of manual heuristic
     from src.ranking_model import predict_score

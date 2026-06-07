@@ -44,6 +44,17 @@ _DEFAULT_MAX_WAVE_M  = 1.5   # metres (significant wave height)
 _DEFAULT_MAX_WIND_MS = 10.0  # m/s  (~Beaufort 5)
 
 
+def _safe_float(value, default: float = 0.0) -> float:
+    """Convert value to float, returning default for None, NaN, or unparseable strings."""
+    if value is None:
+        return default
+    try:
+        f = float(value)
+        return f if f == f else default  # f != f is True only for NaN
+    except (ValueError, TypeError):
+        return default
+
+
 @lru_cache(maxsize=4)
 def _fetch_wave_forecast() -> list[dict]:
     """Fetch today's sea-state forecast. Cached per process run."""
@@ -92,17 +103,17 @@ def _algarve_wave_conditions() -> dict:
         return {}
 
     # Return worst-case (highest wave) across stations
-    worst = max(algarve, key=lambda s: float(s.get("waveHighMax") or 0))
+    worst = max(algarve, key=lambda s: _safe_float(s.get("waveHighMax")))
     return {
-        "wave_high_max_m":  float(worst.get("waveHighMax") or 0),
-        "wave_high_min_m":  float(worst.get("waveHighMin") or 0),
-        "total_sea_max_m":  float(worst.get("totalSeaMax") or 0),
-        "wave_period_max_s": float(worst.get("wavePeriodMax") or 0),
+        "wave_high_max_m":  _safe_float(worst.get("waveHighMax")),
+        "wave_high_min_m":  _safe_float(worst.get("waveHighMin")),
+        "total_sea_max_m":  _safe_float(worst.get("totalSeaMax")),
+        "wave_period_max_s": _safe_float(worst.get("wavePeriodMax")),
         "pred_wave_dir":    worst.get("predWaveDir", "?"),
-        "sst_max_c":        float(worst.get("sstMax") or 0),
+        "sst_max_c":        _safe_float(worst.get("sstMax")),
         "station_id":       worst.get("globalIdLocal"),
-        "station_lat":      float(worst.get("latitude") or 0),
-        "station_lon":      float(worst.get("longitude") or 0),
+        "station_lat":      _safe_float(worst.get("latitude")),
+        "station_lon":      _safe_float(worst.get("longitude")),
     }
 
 
@@ -167,7 +178,7 @@ def get_conditions(date: str | None = None) -> dict:
     }
 
     # Derive usability under default thresholds
-    wave_ok = (wave.get("wave_high_max_m") or 0) <= _DEFAULT_MAX_WAVE_M
+    wave_ok = _safe_float(wave.get("wave_high_max_m")) <= _DEFAULT_MAX_WAVE_M
     wind_ok = wind is None or wind <= _DEFAULT_MAX_WIND_MS
     result["usable"] = wave_ok and wind_ok
 

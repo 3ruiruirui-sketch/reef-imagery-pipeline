@@ -136,6 +136,18 @@ class TestAlgarveWaveConditions:
             result = _mod._algarve_wave_conditions()
         assert result == {}
 
+    def test_nan_wave_height_coerced_to_zero(self):
+        """API returning 'nan' or float NaN for waveHighMax must not propagate NaN."""
+        s = _wave_station(wave_max="nan")  # IPMA sometimes returns "nan" as string
+        with patch("src.ipma_sea_state._fetch_wave_forecast", return_value=[s]):
+            result = _mod._algarve_wave_conditions()
+        assert result["wave_high_max_m"] == 0.0
+        # And the usable flag in get_conditions must not be False due to NaN
+        with patch("src.ipma_sea_state._fetch_wave_forecast", return_value=[s]), \
+             patch("src.ipma_sea_state._fetch_wind_obs", return_value={}):
+            cond = _mod.get_conditions()
+        assert cond["usable"] is True  # 0.0 <= 1.5 → usable
+
     def test_all_expected_keys_present(self):
         s = _wave_station()
         with patch("src.ipma_sea_state._fetch_wave_forecast", return_value=[s]):
