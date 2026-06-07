@@ -18,11 +18,17 @@ import os
 import json
 import csv
 import logging
+import re as _re
 from datetime import datetime, timezone
 
 log = logging.getLogger(__name__)
 
 _REPORTS_DIR = os.path.join(os.path.dirname(__file__), "..", "drift_reports")
+
+
+def _js_json(obj) -> str:
+    """json.dumps safe for inline <script> blocks — escapes </ to prevent </script> injection."""
+    return _re.sub(r"</", r"<\\/", json.dumps(obj))
 
 
 def _load_history(reports_dir=None):
@@ -199,15 +205,15 @@ def generate_html(reports_dir=None):
 <p class="generated">Generated: {datetime.now(timezone.utc).isoformat()[:19]}Z</p>
 
 <script>
-const labels = {json.dumps(labels)};
+const labels = {_js_json(labels)};
 
 new Chart(document.getElementById('alertChart'), {{
   type: 'bar',
   data: {{
     labels: labels,
     datasets: [
-      {{ label: 'Warnings', data: {json.dumps(warnings)}, backgroundColor: '#ffc107' }},
-      {{ label: 'Critical', data: {json.dumps(criticals)}, backgroundColor: '#dc3545' }},
+      {{ label: 'Warnings', data: {_js_json(warnings)}, backgroundColor: '#ffc107' }},
+      {{ label: 'Critical', data: {_js_json(criticals)}, backgroundColor: '#dc3545' }},
     ]
   }},
   options: {{
@@ -222,9 +228,9 @@ new Chart(document.getElementById('driftChart'), {{
   data: {{
     labels: labels,
     datasets: [
-      {{ label: 'Feature Drift', data: {json.dumps(feat_drift)}, borderColor: '#6f42c1', fill: false, tension: 0.3 }},
-      {{ label: 'Score Drift', data: {json.dumps(score_drift)}, borderColor: '#fd7e14', fill: false, tension: 0.3 }},
-      {{ label: 'Null Spikes', data: {json.dumps(null_spikes)}, borderColor: '#20c997', fill: false, tension: 0.3 }},
+      {{ label: 'Feature Drift', data: {_js_json(feat_drift)}, borderColor: '#6f42c1', fill: false, tension: 0.3 }},
+      {{ label: 'Score Drift', data: {_js_json(score_drift)}, borderColor: '#fd7e14', fill: false, tension: 0.3 }},
+      {{ label: 'Null Spikes', data: {_js_json(null_spikes)}, borderColor: '#20c997', fill: false, tension: 0.3 }},
     ]
   }},
   options: {{
