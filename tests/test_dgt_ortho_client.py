@@ -115,30 +115,50 @@ class TestBestAvailable:
 
 
 class TestDownloadTiles:
-    def test_skips_on_403(self, tmp_path, caplog):
+    def test_skips_on_403(self, tmp_path, caplog, monkeypatch):
         """403 from storage server → logs error, returns empty list, no exception."""
+        # Simulate credentials present so we get past the credential check
+        monkeypatch.setenv("DGT_CDD_USERNAME", "test_user")
+        monkeypatch.setenv("DGT_CDD_PASSWORD", "test_pass")
+        import src.dgt_ortho_client as _mod
+        _mod._DGT_USER = "test_user"
+        _mod._DGT_PASS = "test_pass"
+
         client = DGTOrthoClient(bbox=ALGARVE_BBOX, output_dir=str(tmp_path))
+
+        # Keycloak token response
+        token_resp = MagicMock(status_code=200)
+        token_resp.json.return_value = {"access_token": "fake-jwt", "expires_in": 300}
 
         stream_resp = MagicMock()
         stream_resp.status_code = 403
         stream_resp.__enter__ = lambda s: s
         stream_resp.__exit__ = MagicMock(return_value=False)
 
-        with patch("src.dgt_ortho_client.requests.get") as mock_get:
+        # _download_url probes the CDD backend (404 → falls back to direct href)
+        cdd_probe = MagicMock(status_code=404)
+
+        with patch("src.dgt_ortho_client.requests.get") as mock_get, \
+             patch("src.dgt_ortho_client.requests.post", return_value=token_resp):
             mock_get.side_effect = [
-                # First call = STAC discovery
-                MagicMock(**{
-                    "status_code": 200,
-                    "json.return_value": _FAKE_FC,
-                    "raise_for_status": MagicMock(),
-                }),
-                # Second call = COG download attempt
+                # 1. STAC discovery
+                MagicMock(**{"status_code": 200, "json.return_value": _FAKE_FC,
+                             "raise_for_status": MagicMock()}),
+                # 2. CDD proxy probe (404 → use direct href)
+                cdd_probe,
+                # 3. Direct download → 403
                 stream_resp,
             ]
             paths = client.download_tiles("ORTOSAT-2023", limit=1)
 
         assert paths == []
         assert "403" in caplog.text
+
+        # Restore module-level state
+        _mod._DGT_USER = None
+        _mod._DGT_PASS = None
+        _mod._token_cache["access_token"] = None
+        _mod._token_cache["expires_at"] = 0.0
 
     def test_uses_cache(self, tmp_path):
         """If the file already exists, it is returned without a download request."""

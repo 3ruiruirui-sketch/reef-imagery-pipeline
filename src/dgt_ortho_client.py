@@ -8,17 +8,28 @@ The v3 pipeline uses DGT WMS/WCS to retrieve ORTOSAT-2023 30 cm imagery.
 WMS is unreliable for programmatic use (SharePoint redirect, session cookies,
 max-image-size limits).  The DGT STAC API at dgt-be.a.incd.pt:8081 exposes
 the same data as Cloud-Optimized GeoTIFFs hosted on a MinIO bucket at
-stor-002.a.acnca.pt.
+stor-002.a.acnca.pt, accessible via the DGT Centro de Dados portal.
 
-Authentication note
--------------------
-STAC metadata queries (list_tiles, best_available) are **publicly accessible**
-and work without credentials.  The underlying COG downloads via
-stor-002.a.acnca.pt require DGT S3 credentials (HTTP 403 otherwise).  Set
-the DGT_S3_ACCESS_KEY and DGT_S3_SECRET_KEY environment variables, or pass
-a pre-signed URL session, before calling download_tiles / compute_ndvi /
-change_summary.  Without credentials those methods log an error and return
-empty results rather than raising.
+Authentication — how it actually works
+--------------------------------------
+There are NO public S3 keys.  The correct access path is:
+
+  1. Register a free account at https://cdd.dgterritorio.gov.pt
+     (open self-registration; fields: username, email, firstName,
+     lastName, organizationname, password; license CC-BY 4.0)
+
+  2. Set environment variables:
+       DGT_CDD_USERNAME=your_username
+       DGT_CDD_PASSWORD=your_password
+
+  3. This client uses the Keycloak OIDC password grant to obtain a
+     JWT bearer token from auth.cdd.dgterritorio.gov.pt, then
+     calls the backend proxy at cdd.dgterritorio.gov.pt/dgt-be/v1/
+     which signs and proxies the MinIO downloads.
+
+  STAC metadata queries (list_tiles, best_available) remain publicly
+  accessible without credentials.  Download calls log a clear error
+  and return [] when credentials are absent rather than raising.
 
 Available collections
 ---------------------
@@ -54,24 +65,83 @@ Usage
 
 from __future__ import annotations
 
-import contextlib
 import logging
+import os
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-import os
-
 import numpy as np
 import requests
-from requests.auth import HTTPBasicAuth
 
 logger = logging.getLogger(__name__)
 
-# DGT S3 credentials — set via environment variables.
-# STAC discovery works without these; COG downloads require them.
-_DGT_S3_KEY = os.environ.get("DGT_S3_ACCESS_KEY")
-_DGT_S3_SECRET = os.environ.get("DGT_S3_SECRET_KEY")
-_DGT_AUTH = HTTPBasicAuth(_DGT_S3_KEY, _DGT_S3_SECRET) if (_DGT_S3_KEY and _DGT_S3_SECRET) else None
+# ── Keycloak / CDD auth constants ────────────────────────────────────────────
+_KEYCLOAK_TOKEN_URL = (
+    "https://auth.cdd.dgterritorio.gov.pt"
+    "/realms/dgterritorio/protocol/openid-connect/token"
+)
+_CDD_CLIENT_ID  = "aai-oidc-dgt"
+_CDD_BACKEND    = "https://cdd.dgterritorio.gov.pt/dgt-be"
+
+# Credentials — set via environment variables after registering at
+# https://cdd.dgterritorio.gov.pt  (free, CC-BY 4.0, open self-registration)
+_DGT_USER = os.environ.get("DGT_CDD_USERNAME")
+_DGT_PASS = os.environ.get("DGT_CDD_PASSWORD")
+
+# Cached token state
+_token_cache: Dict[str, object] = {"access_token": None, "expires_at": 0.0}
+
+
+def _get_bearer_token() -> Optional[str]:
+    """
+    Obtain a Keycloak JWT for the DGT CDD realm via OIDC password grant.
+
+    Returns the access token string, or None if credentials are missing
+    or the request fails.  Token is cached until 60 s before expiry.
+    """
+    if not _DGT_USER or not _DGT_PASS:
+        return None
+
+    # Return cached token if still valid
+    if _token_cache["access_token"] and time.time() < float(_token_cache["expires_at"]) - 60:
+        return str(_token_cache["access_token"])
+
+    try:
+        resp = requests.post(
+            _KEYCLOAK_TOKEN_URL,
+            data={
+                "grant_type": "password",
+                "client_id": _CDD_CLIENT_ID,
+                "username": _DGT_USER,
+                "password": _DGT_PASS,
+                "scope": "openid profile email",
+            },
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            logger.warning(
+                "DGT CDD token request failed: HTTP %d — %s",
+                resp.status_code, resp.text[:200],
+            )
+            return None
+
+        data = resp.json()
+        _token_cache["access_token"] = data["access_token"]
+        _token_cache["expires_at"]   = time.time() + data.get("expires_in", 300)
+        logger.info("DGT CDD: obtained Keycloak token (expires in %ds)",
+                    data.get("expires_in", 300))
+        return str(_token_cache["access_token"])
+
+    except Exception as exc:
+        logger.warning("DGT CDD token fetch failed: %s", exc)
+        return None
+
+
+def _auth_headers() -> Dict[str, str]:
+    """Return Authorization header dict, or empty dict if not authenticated."""
+    token = _get_bearer_token()
+    return {"Authorization": f"Bearer {token}"} if token else {}
 
 # ── STAC catalogue constants ───────────────────────────────────────────────────
 
@@ -160,8 +230,43 @@ class DGTOrthoClient:
 
     # ── Download ───────────────────────────────────────────────────────────────
 
+    def _download_url(self, href: str, item_id: str) -> Optional[str]:
+        """
+        Resolve the best download URL for a STAC asset href.
+
+        Priority:
+          1. CDD backend proxy  (cdd.dgterritorio.gov.pt/dgt-be/v1/items/{id}/download)
+             — requires DGT_CDD_USERNAME / DGT_CDD_PASSWORD; returns a signed URL.
+          2. Direct MinIO href  — only works if credentials are present as Bearer token.
+
+        Returns the resolved URL string, or None if auth is unavailable.
+        """
+        token = _get_bearer_token()
+        if not token:
+            return None
+
+        # Try the CDD backend proxy first: it signs the MinIO URL server-side
+        cdd_url = f"{_CDD_BACKEND}/v1/items/{item_id}/download"
+        try:
+            r = requests.get(cdd_url, headers={"Authorization": f"Bearer {token}"},
+                             timeout=15, allow_redirects=False)
+            if r.status_code in (200, 302):
+                # 302 → Location is the signed MinIO URL
+                return r.headers.get("Location", href)
+            if r.status_code == 404:
+                # Item not in the backend index — fall through to direct href
+                pass
+        except Exception:
+            pass
+
+        # Fall back: direct MinIO with Bearer token (may work if bucket policy allows it)
+        return href
+
     def download_tiles(self, collection: str, limit: int = 100) -> List[Path]:
         """Download all COG tiles for a collection that overlap the bbox.
+
+        Requires a free DGT CDD account (register at https://cdd.dgterritorio.gov.pt).
+        Set DGT_CDD_USERNAME and DGT_CDD_PASSWORD environment variables.
 
         Files are saved to ``output_dir/collection/``.  Already-downloaded
         files are skipped when ``cache=True``.
@@ -183,10 +288,11 @@ class DGTOrthoClient:
 
         paths: List[Path] = []
         for feat in features:
+            item_id = feat.get("id", "")
             asset_key = "visual" if "visual" in feat.get("assets", {}) else "Data"
             href = feat.get("assets", {}).get(asset_key, {}).get("href")
             if not href:
-                logger.warning(f"Feature {feat.get('id')} has no downloadable asset")
+                logger.warning(f"Feature {item_id} has no downloadable asset")
                 continue
 
             fname = Path(href).name
@@ -198,19 +304,33 @@ class DGTOrthoClient:
                 continue
 
             logger.info(f"Downloading {collection}/{fname}")
-            if _DGT_AUTH is None:
-                logger.warning(
-                    "DGT_S3_ACCESS_KEY / DGT_S3_SECRET_KEY not set — "
-                    "COG download will likely return 403.  "
-                    "Tile discovery still works without credentials."
+            if not _DGT_USER or not _DGT_PASS:
+                logger.error(
+                    "DGT_CDD_USERNAME / DGT_CDD_PASSWORD not set. "
+                    "Register free at https://cdd.dgterritorio.gov.pt and set env vars."
                 )
+                continue
+
+            download_url = self._download_url(href, item_id)
+            if download_url is None:
+                logger.error(
+                    "Could not obtain a download URL for %s — "
+                    "check DGT_CDD_USERNAME / DGT_CDD_PASSWORD.", fname
+                )
+                continue
+
             try:
-                with requests.get(href, stream=True, timeout=120, auth=_DGT_AUTH) as resp:
+                headers = _auth_headers()
+                with requests.get(download_url, stream=True, timeout=120,
+                                  headers=headers) as resp:
                     if resp.status_code == 403:
                         logger.error(
-                            f"  403 Forbidden for {href} — DGT S3 credentials required. "
-                            "Set DGT_S3_ACCESS_KEY and DGT_S3_SECRET_KEY env vars."
+                            "  403 Forbidden for %s — "
+                            "token may have expired or account lacks access. "
+                            "Re-check credentials at cdd.dgterritorio.gov.pt.", fname
                         )
+                        # Invalidate cached token so next call retries login
+                        _token_cache["expires_at"] = 0.0
                         continue
                     resp.raise_for_status()
                     with open(local, "wb") as fh:
