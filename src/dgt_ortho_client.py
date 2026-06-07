@@ -65,9 +65,12 @@ Usage
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import logging
 import os
-import time
+import re
+import secrets
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -76,72 +79,113 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-# ── Keycloak / CDD auth constants ────────────────────────────────────────────
-_KEYCLOAK_TOKEN_URL = (
-    "https://auth.cdd.dgterritorio.gov.pt"
-    "/realms/dgterritorio/protocol/openid-connect/token"
+# ── CDD auth constants ────────────────────────────────────────────────────────
+_KC_AUTH_URL = (
+    "https://auth.cdd.dgterritorio.gov.pt/realms/dgterritorio"
+    "/protocol/openid-connect/auth"
 )
-_CDD_CLIENT_ID  = "aai-oidc-dgt"
-_CDD_BACKEND    = "https://cdd.dgterritorio.gov.pt/dgt-be"
+_CDD_CLIENT_ID = "aai-oidc-dgt"
+_CDD_BACKEND   = "https://cdd.dgterritorio.gov.pt/dgt-be"
+_CDD_CALLBACK  = "https://cdd.dgterritorio.gov.pt/auth/callback"
 
 # Credentials — set via environment variables after registering at
 # https://cdd.dgterritorio.gov.pt  (free, CC-BY 4.0, open self-registration)
 _DGT_USER = os.environ.get("DGT_CDD_USERNAME")
 _DGT_PASS = os.environ.get("DGT_CDD_PASSWORD")
 
-# Cached token state
-_token_cache: Dict[str, object] = {"access_token": None, "expires_at": 0.0}
+# Module-level authenticated session (reused across calls)
+_cdd_session: Optional[requests.Session] = None
 
 
-def _get_bearer_token() -> Optional[str]:
+def _build_authenticated_session() -> Optional[requests.Session]:
     """
-    Obtain a Keycloak JWT for the DGT CDD realm via OIDC password grant.
+    Authenticate against DGT CDD via Keycloak PKCE authorization-code flow.
 
-    Returns the access token string, or None if credentials are missing
-    or the request fails.  Token is cached until 60 s before expiry.
+    The CDD uses a Backend-for-Frontend (BFF) pattern:
+      1. GET Keycloak login page (with PKCE code_challenge)
+      2. POST credentials to Keycloak → redirect to /auth/callback
+      3. BFF at /auth/callback exchanges the code for tokens (server-side,
+         using a confidential client_secret not exposed to us)
+      4. BFF sets session cookies (connect.sid, auth_session)
+      5. Subsequent calls to /dgt-be/v1/* carry those cookies → authenticated
+
+    The authenticated item endpoint returns asset hrefs with a signed hash:
+      /dgt-be/v1/download/{sha256-hash}
+    that resolves directly to the COG file.
+
+    Returns an authenticated requests.Session, or None on failure.
     """
     if not _DGT_USER or not _DGT_PASS:
         return None
 
-    # Return cached token if still valid
-    if _token_cache["access_token"] and time.time() < float(_token_cache["expires_at"]) - 60:
-        return str(_token_cache["access_token"])
-
+    session = requests.Session()
     try:
-        resp = requests.post(
-            _KEYCLOAK_TOKEN_URL,
-            data={
-                "grant_type": "password",
-                "client_id": _CDD_CLIENT_ID,
-                "username": _DGT_USER,
-                "password": _DGT_PASS,
+        # PKCE verifier + challenge
+        verifier  = secrets.token_urlsafe(48)
+        challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(verifier.encode()).digest()
+        ).rstrip(b"=").decode()
+
+        # Step 1: get Keycloak login page
+        r = session.get(
+            _KC_AUTH_URL,
+            params={
+                "client_id": _CDD_CLIENT_ID, "response_type": "code",
+                "redirect_uri": _CDD_CALLBACK,
                 "scope": "openid profile email",
+                "code_challenge": challenge, "code_challenge_method": "S256",
             },
-            timeout=15,
+            timeout=15, allow_redirects=True,
         )
-        if resp.status_code != 200:
-            logger.warning(
-                "DGT CDD token request failed: HTTP %d — %s",
-                resp.status_code, resp.text[:200],
-            )
+        r.raise_for_status()
+
+        form_action = re.search(r'action=["\']([^"\']+)["\']', r.text)
+        if not form_action:
+            logger.error("DGT CDD: could not find Keycloak login form")
+            return None
+        action_url = form_action.group(1).replace("&amp;", "&")
+
+        # Step 2: submit credentials
+        r2 = session.post(
+            action_url,
+            data={"username": _DGT_USER, "password": _DGT_PASS, "credentialId": ""},
+            timeout=15, allow_redirects=False,
+        )
+        if r2.status_code not in (301, 302):
+            # Login failed — likely wrong credentials
+            err = re.search(r'(?:alert-error|kc-feedback-text)[^>]*>([^<]+)', r2.text)
+            logger.error("DGT CDD login failed: %s",
+                         err.group(1).strip() if err else f"HTTP {r2.status_code}")
             return None
 
-        data = resp.json()
-        _token_cache["access_token"] = data["access_token"]
-        _token_cache["expires_at"]   = time.time() + data.get("expires_in", 300)
-        logger.info("DGT CDD: obtained Keycloak token (expires in %ds)",
-                    data.get("expires_in", 300))
-        return str(_token_cache["access_token"])
+        callback_url = r2.headers.get("Location", "")
+
+        # Step 3: follow redirect to BFF /auth/callback — it sets session cookies
+        r3 = session.get(callback_url, timeout=15, allow_redirects=True)
+        if "connect.sid" not in session.cookies and "auth_session" not in session.cookies:
+            logger.error("DGT CDD: BFF callback did not set session cookies")
+            return None
+
+        logger.info("DGT CDD: authenticated successfully (session cookies obtained)")
+        return session
 
     except Exception as exc:
-        logger.warning("DGT CDD token fetch failed: %s", exc)
+        logger.warning("DGT CDD authentication failed: %s", exc)
         return None
 
 
-def _auth_headers() -> Dict[str, str]:
-    """Return Authorization header dict, or empty dict if not authenticated."""
-    token = _get_bearer_token()
-    return {"Authorization": f"Bearer {token}"} if token else {}
+def _get_session() -> Optional[requests.Session]:
+    """Return the cached authenticated session, creating one if needed."""
+    global _cdd_session
+    if _cdd_session is None or "connect.sid" not in _cdd_session.cookies:
+        _cdd_session = _build_authenticated_session()
+    return _cdd_session
+
+
+def _invalidate_session() -> None:
+    """Force re-authentication on the next call."""
+    global _cdd_session
+    _cdd_session = None
 
 # ── STAC catalogue constants ───────────────────────────────────────────────────
 
@@ -230,37 +274,51 @@ class DGTOrthoClient:
 
     # ── Download ───────────────────────────────────────────────────────────────
 
-    def _download_url(self, href: str, item_id: str) -> Optional[str]:
+    def _signed_download_url(self, collection: str, item_id: str) -> Optional[str]:
         """
-        Resolve the best download URL for a STAC asset href.
+        Get a signed download URL for a STAC item via the authenticated CDD backend.
 
-        Priority:
-          1. CDD backend proxy  (cdd.dgterritorio.gov.pt/dgt-be/v1/items/{id}/download)
-             — requires DGT_CDD_USERNAME / DGT_CDD_PASSWORD; returns a signed URL.
-          2. Direct MinIO href  — only works if credentials are present as Bearer token.
+        The authenticated /v1/collections/{col}/items/{id} endpoint returns an
+        asset href of the form:
+            /dgt-be/v1/download/{sha256-hash}
+        which is a time-limited signed URL that resolves directly to the COG file.
 
-        Returns the resolved URL string, or None if auth is unavailable.
+        Returns the full signed URL, or None if auth fails.
         """
-        token = _get_bearer_token()
-        if not token:
+        session = _get_session()
+        if session is None:
             return None
 
-        # Try the CDD backend proxy first: it signs the MinIO URL server-side
-        cdd_url = f"{_CDD_BACKEND}/v1/items/{item_id}/download"
+        url = f"{_CDD_BACKEND}/v1/collections/{collection}/items/{item_id}"
         try:
-            r = requests.get(cdd_url, headers={"Authorization": f"Bearer {token}"},
-                             timeout=15, allow_redirects=False)
-            if r.status_code in (200, 302):
-                # 302 → Location is the signed MinIO URL
-                return r.headers.get("Location", href)
-            if r.status_code == 404:
-                # Item not in the backend index — fall through to direct href
-                pass
-        except Exception:
-            pass
+            r = session.get(url, timeout=15)
+            if r.status_code == 401:
+                # Session expired — re-authenticate once
+                _invalidate_session()
+                session = _get_session()
+                if session is None:
+                    return None
+                r = session.get(url, timeout=15)
 
-        # Fall back: direct MinIO with Bearer token (may work if bucket policy allows it)
-        return href
+            if r.status_code != 200:
+                logger.warning("CDD item lookup failed: HTTP %d for %s", r.status_code, item_id)
+                return None
+
+            data = r.json().get("data", {})
+            assets = data.get("assets", {})
+            asset = assets.get("visual") or assets.get("Data") or assets.get("data")
+            if not asset:
+                return None
+
+            href = asset.get("href", "")
+            # Convert relative /dgt-be/... to absolute if needed
+            if href.startswith("/dgt-be"):
+                href = "https://cdd.dgterritorio.gov.pt" + href
+            return href
+
+        except Exception as exc:
+            logger.warning("CDD signed URL fetch failed for %s: %s", item_id, exc)
+            return None
 
     def download_tiles(self, collection: str, limit: int = 100) -> List[Path]:
         """Download all COG tiles for a collection that overlap the bbox.
@@ -288,14 +346,11 @@ class DGTOrthoClient:
 
         paths: List[Path] = []
         for feat in features:
-            item_id = feat.get("id", "")
+            item_id  = feat.get("id", "")
+            coll_id  = ORTHO_COLLECTIONS.get(collection, collection)
             asset_key = "visual" if "visual" in feat.get("assets", {}) else "Data"
-            href = feat.get("assets", {}).get(asset_key, {}).get("href")
-            if not href:
-                logger.warning(f"Feature {item_id} has no downloadable asset")
-                continue
-
-            fname = Path(href).name
+            raw_href  = feat.get("assets", {}).get(asset_key, {}).get("href", "")
+            fname = Path(raw_href).name or f"{item_id}.tif"
             local = tiles_dir / fname
 
             if local.exists() and self.cache:
@@ -307,30 +362,28 @@ class DGTOrthoClient:
             if not _DGT_USER or not _DGT_PASS:
                 logger.error(
                     "DGT_CDD_USERNAME / DGT_CDD_PASSWORD not set. "
-                    "Register free at https://cdd.dgterritorio.gov.pt and set env vars."
+                    "Register free at https://cdd.dgterritorio.gov.pt then set env vars."
                 )
                 continue
 
-            download_url = self._download_url(href, item_id)
-            if download_url is None:
+            signed_url = self._signed_download_url(coll_id, item_id)
+            if signed_url is None:
                 logger.error(
-                    "Could not obtain a download URL for %s — "
-                    "check DGT_CDD_USERNAME / DGT_CDD_PASSWORD.", fname
+                    "Could not obtain a signed download URL for %s/%s — "
+                    "check credentials.", collection, item_id
                 )
                 continue
 
+            session = _get_session()
             try:
-                headers = _auth_headers()
-                with requests.get(download_url, stream=True, timeout=120,
-                                  headers=headers) as resp:
-                    if resp.status_code == 403:
+                with session.get(signed_url, stream=True, timeout=120) as resp:
+                    if resp.status_code in (401, 403):
                         logger.error(
-                            "  403 Forbidden for %s — "
-                            "token may have expired or account lacks access. "
-                            "Re-check credentials at cdd.dgterritorio.gov.pt.", fname
+                            "  HTTP %d for %s — session expired or account lacks access. "
+                            "Re-check credentials at cdd.dgterritorio.gov.pt.",
+                            resp.status_code, fname,
                         )
-                        # Invalidate cached token so next call retries login
-                        _token_cache["expires_at"] = 0.0
+                        _invalidate_session()
                         continue
                     resp.raise_for_status()
                     with open(local, "wb") as fh:

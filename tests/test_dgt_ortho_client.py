@@ -116,49 +116,47 @@ class TestBestAvailable:
 
 class TestDownloadTiles:
     def test_skips_on_403(self, tmp_path, caplog, monkeypatch):
-        """403 from storage server → logs error, returns empty list, no exception."""
-        # Simulate credentials present so we get past the credential check
-        monkeypatch.setenv("DGT_CDD_USERNAME", "test_user")
-        monkeypatch.setenv("DGT_CDD_PASSWORD", "test_pass")
+        """403 from signed download URL → logs error, returns empty list, no exception."""
         import src.dgt_ortho_client as _mod
-        _mod._DGT_USER = "test_user"
-        _mod._DGT_PASS = "test_pass"
+        monkeypatch.setattr(_mod, "_DGT_USER", "test_user")
+        monkeypatch.setattr(_mod, "_DGT_PASS", "test_pass")
+        monkeypatch.setattr(_mod, "_cdd_session", None)
 
         client = DGTOrthoClient(bbox=ALGARVE_BBOX, output_dir=str(tmp_path))
 
-        # Keycloak token response
-        token_resp = MagicMock(status_code=200)
-        token_resp.json.return_value = {"access_token": "fake-jwt", "expires_in": 300}
+        # Mock authenticated session with connect.sid cookie
+        fake_session = MagicMock()
+        fake_session.cookies = {"connect.sid": "fake-sid"}
 
-        stream_resp = MagicMock()
-        stream_resp.status_code = 403
+        # Item endpoint returns a signed URL
+        signed_item_resp = MagicMock(status_code=200)
+        signed_item_resp.json.return_value = {
+            "data": {
+                "id": "ORTOSAT-2023-cog-30cm-605-4",
+                "assets": {"visual": {"href": "/dgt-be/v1/download/abc123"}}
+            }
+        }
+        # Download returns 403
+        stream_resp = MagicMock(status_code=403)
         stream_resp.__enter__ = lambda s: s
         stream_resp.__exit__ = MagicMock(return_value=False)
 
-        # _download_url probes the CDD backend (404 → falls back to direct href)
-        cdd_probe = MagicMock(status_code=404)
+        fake_session.get.side_effect = [
+            signed_item_resp,   # _signed_download_url call
+            stream_resp,        # actual download
+        ]
 
         with patch("src.dgt_ortho_client.requests.get") as mock_get, \
-             patch("src.dgt_ortho_client.requests.post", return_value=token_resp):
-            mock_get.side_effect = [
-                # 1. STAC discovery
-                MagicMock(**{"status_code": 200, "json.return_value": _FAKE_FC,
-                             "raise_for_status": MagicMock()}),
-                # 2. CDD proxy probe (404 → use direct href)
-                cdd_probe,
-                # 3. Direct download → 403
-                stream_resp,
-            ]
+             patch("src.dgt_ortho_client._build_authenticated_session",
+                   return_value=fake_session):
+            mock_get.return_value = MagicMock(**{
+                "status_code": 200, "json.return_value": _FAKE_FC,
+                "raise_for_status": MagicMock(),
+            })
             paths = client.download_tiles("ORTOSAT-2023", limit=1)
 
         assert paths == []
         assert "403" in caplog.text
-
-        # Restore module-level state
-        _mod._DGT_USER = None
-        _mod._DGT_PASS = None
-        _mod._token_cache["access_token"] = None
-        _mod._token_cache["expires_at"] = 0.0
 
     def test_uses_cache(self, tmp_path):
         """If the file already exists, it is returned without a download request."""
