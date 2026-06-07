@@ -118,9 +118,10 @@ class TestDownloadTiles:
     def test_skips_on_403(self, tmp_path, caplog, monkeypatch):
         """403 from signed download URL → logs error, returns empty list, no exception."""
         import src.dgt_ortho_client as _mod
+        import src.dgt_cdd_auth as _auth
         monkeypatch.setattr(_mod, "_DGT_USER", "test_user")
         monkeypatch.setattr(_mod, "_DGT_PASS", "test_pass")
-        monkeypatch.setattr(_mod, "_cdd_session", None)
+        monkeypatch.setattr(_auth, "_session", None)
 
         client = DGTOrthoClient(bbox=ALGARVE_BBOX, output_dir=str(tmp_path))
 
@@ -142,13 +143,13 @@ class TestDownloadTiles:
         stream_resp.__exit__ = MagicMock(return_value=False)
 
         fake_session.get.side_effect = [
-            signed_item_resp,   # _signed_download_url call
-            stream_resp,        # actual download
+            stream_resp,        # actual download (signed_url now mocked at module level)
         ]
 
         with patch("src.dgt_ortho_client.requests.get") as mock_get, \
-             patch("src.dgt_ortho_client._build_authenticated_session",
-                   return_value=fake_session):
+             patch("src.dgt_cdd_auth._login", return_value=fake_session), \
+             patch("src.dgt_cdd_auth.get_signed_url",
+                   return_value="https://cdd.dgterritorio.gov.pt/dgt-be/v1/download/abc123"):
             mock_get.return_value = MagicMock(**{
                 "status_code": 200, "json.return_value": _FAKE_FC,
                 "raise_for_status": MagicMock(),

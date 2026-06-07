@@ -65,127 +65,34 @@ Usage
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import logging
 import os
-import re
-import secrets
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import requests
 
+from src.dgt_cdd_auth import get_cdd_session, get_signed_url, invalidate
+
 logger = logging.getLogger(__name__)
 
-# ── CDD auth constants ────────────────────────────────────────────────────────
-_KC_AUTH_URL = (
-    "https://auth.cdd.dgterritorio.gov.pt/realms/dgterritorio"
-    "/protocol/openid-connect/auth"
-)
-_CDD_CLIENT_ID = "aai-oidc-dgt"
-_CDD_BACKEND   = "https://cdd.dgterritorio.gov.pt/dgt-be"
-_CDD_CALLBACK  = "https://cdd.dgterritorio.gov.pt/auth/callback"
-
-# Credentials — set via environment variables after registering at
-# https://cdd.dgterritorio.gov.pt  (free, CC-BY 4.0, open self-registration)
+# Module-level aliases kept for test patching compatibility
 _DGT_USER = os.environ.get("DGT_CDD_USERNAME")
 _DGT_PASS = os.environ.get("DGT_CDD_PASSWORD")
 
-# Module-level authenticated session (reused across calls)
-_cdd_session: Optional[requests.Session] = None
-
 
 def _build_authenticated_session() -> Optional[requests.Session]:
-    """
-    Authenticate against DGT CDD via Keycloak PKCE authorization-code flow.
-
-    The CDD uses a Backend-for-Frontend (BFF) pattern:
-      1. GET Keycloak login page (with PKCE code_challenge)
-      2. POST credentials to Keycloak → redirect to /auth/callback
-      3. BFF at /auth/callback exchanges the code for tokens (server-side,
-         using a confidential client_secret not exposed to us)
-      4. BFF sets session cookies (connect.sid, auth_session)
-      5. Subsequent calls to /dgt-be/v1/* carry those cookies → authenticated
-
-    The authenticated item endpoint returns asset hrefs with a signed hash:
-      /dgt-be/v1/download/{sha256-hash}
-    that resolves directly to the COG file.
-
-    Returns an authenticated requests.Session, or None on failure.
-    """
-    if not _DGT_USER or not _DGT_PASS:
-        return None
-
-    session = requests.Session()
-    try:
-        # PKCE verifier + challenge
-        verifier  = secrets.token_urlsafe(48)
-        challenge = base64.urlsafe_b64encode(
-            hashlib.sha256(verifier.encode()).digest()
-        ).rstrip(b"=").decode()
-
-        # Step 1: get Keycloak login page
-        r = session.get(
-            _KC_AUTH_URL,
-            params={
-                "client_id": _CDD_CLIENT_ID, "response_type": "code",
-                "redirect_uri": _CDD_CALLBACK,
-                "scope": "openid profile email",
-                "code_challenge": challenge, "code_challenge_method": "S256",
-            },
-            timeout=15, allow_redirects=True,
-        )
-        r.raise_for_status()
-
-        form_action = re.search(r'action=["\']([^"\']+)["\']', r.text)
-        if not form_action:
-            logger.error("DGT CDD: could not find Keycloak login form")
-            return None
-        action_url = form_action.group(1).replace("&amp;", "&")
-
-        # Step 2: submit credentials
-        r2 = session.post(
-            action_url,
-            data={"username": _DGT_USER, "password": _DGT_PASS, "credentialId": ""},
-            timeout=15, allow_redirects=False,
-        )
-        if r2.status_code not in (301, 302):
-            # Login failed — likely wrong credentials
-            err = re.search(r'(?:alert-error|kc-feedback-text)[^>]*>([^<]+)', r2.text)
-            logger.error("DGT CDD login failed: %s",
-                         err.group(1).strip() if err else f"HTTP {r2.status_code}")
-            return None
-
-        callback_url = r2.headers.get("Location", "")
-
-        # Step 3: follow redirect to BFF /auth/callback — it sets session cookies
-        r3 = session.get(callback_url, timeout=15, allow_redirects=True)
-        if "connect.sid" not in session.cookies and "auth_session" not in session.cookies:
-            logger.error("DGT CDD: BFF callback did not set session cookies")
-            return None
-
-        logger.info("DGT CDD: authenticated successfully (session cookies obtained)")
-        return session
-
-    except Exception as exc:
-        logger.warning("DGT CDD authentication failed: %s", exc)
-        return None
+    """Compatibility shim — delegates to dgt_cdd_auth.get_cdd_session."""
+    return get_cdd_session(force_refresh=True)
 
 
 def _get_session() -> Optional[requests.Session]:
-    """Return the cached authenticated session, creating one if needed."""
-    global _cdd_session
-    if _cdd_session is None or "connect.sid" not in _cdd_session.cookies:
-        _cdd_session = _build_authenticated_session()
-    return _cdd_session
+    return get_cdd_session()
 
 
 def _invalidate_session() -> None:
-    """Force re-authentication on the next call."""
-    global _cdd_session
-    _cdd_session = None
+    invalidate()
 
 # ── STAC catalogue constants ───────────────────────────────────────────────────
 
@@ -275,50 +182,8 @@ class DGTOrthoClient:
     # ── Download ───────────────────────────────────────────────────────────────
 
     def _signed_download_url(self, collection: str, item_id: str) -> Optional[str]:
-        """
-        Get a signed download URL for a STAC item via the authenticated CDD backend.
-
-        The authenticated /v1/collections/{col}/items/{id} endpoint returns an
-        asset href of the form:
-            /dgt-be/v1/download/{sha256-hash}
-        which is a time-limited signed URL that resolves directly to the COG file.
-
-        Returns the full signed URL, or None if auth fails.
-        """
-        session = _get_session()
-        if session is None:
-            return None
-
-        url = f"{_CDD_BACKEND}/v1/collections/{collection}/items/{item_id}"
-        try:
-            r = session.get(url, timeout=15)
-            if r.status_code == 401:
-                # Session expired — re-authenticate once
-                _invalidate_session()
-                session = _get_session()
-                if session is None:
-                    return None
-                r = session.get(url, timeout=15)
-
-            if r.status_code != 200:
-                logger.warning("CDD item lookup failed: HTTP %d for %s", r.status_code, item_id)
-                return None
-
-            data = r.json().get("data", {})
-            assets = data.get("assets", {})
-            asset = assets.get("visual") or assets.get("Data") or assets.get("data")
-            if not asset:
-                return None
-
-            href = asset.get("href", "")
-            # Convert relative /dgt-be/... to absolute if needed
-            if href.startswith("/dgt-be"):
-                href = "https://cdd.dgterritorio.gov.pt" + href
-            return href
-
-        except Exception as exc:
-            logger.warning("CDD signed URL fetch failed for %s: %s", item_id, exc)
-            return None
+        """Return a signed download URL via the shared dgt_cdd_auth helper."""
+        return get_signed_url(collection, item_id)
 
     def download_tiles(self, collection: str, limit: int = 100) -> List[Path]:
         """Download all COG tiles for a collection that overlap the bbox.

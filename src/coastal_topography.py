@@ -60,6 +60,12 @@ try:
 except ImportError:
     HAS_RASTERSTATS = False
 
+try:
+    from src.dgt_cdd_auth import get_cdd_session, get_signed_url, invalidate as _cdd_invalidate
+    HAS_CDD_AUTH = True
+except Exception:
+    HAS_CDD_AUTH = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -174,10 +180,33 @@ class CoastalTopographyAnalyzer:
                 tile_paths.append(local_path)
                 continue
             
-            # Download
+            # Download via CDD signed URL (preferred) or direct href (fallback)
             logger.info(f"Downloading {item_id} -> {fname}")
+            if HAS_CDD_AUTH:
+                download_url = get_signed_url("MDT-50cm", item_id)
+                session = get_cdd_session() if download_url else None
+            else:
+                download_url, session = None, None
+
+            if download_url is None:
+                # No credentials or auth failed — try direct href (403 without auth)
+                download_url = href
+                session = None
+                if HAS_CDD_AUTH:
+                    logger.warning(
+                        "DGT CDD auth unavailable for %s — "
+                        "set DGT_CDD_USERNAME / DGT_CDD_PASSWORD env vars. "
+                        "Falling back to GLO-30.", fname
+                    )
+
             try:
-                with requests.get(href, stream=True, timeout=60) as r_tif:
+                getter = session if session else requests
+                with getter.get(download_url, stream=True, timeout=60) as r_tif:
+                    if r_tif.status_code in (401, 403):
+                        if session:
+                            _cdd_invalidate()
+                        logger.error(f"HTTP {r_tif.status_code} for {fname} — skipping tile")
+                        continue
                     r_tif.raise_for_status()
                     with open(local_path, "wb") as f:
                         for chunk in r_tif.iter_content(chunk_size=1 << 20):
@@ -187,7 +216,7 @@ class CoastalTopographyAnalyzer:
                 tile_paths.append(local_path)
             except Exception as e:
                 logger.error(f"Failed to download {href}: {e}")
-        
+
         return tile_paths
 
     # ── MDS-50cm (Digital Surface Model) + Canopy Height Model ────────────────
@@ -214,8 +243,19 @@ class CoastalTopographyAnalyzer:
                 tile_paths.append(local_path)
                 continue
             logger.info(f"Downloading MDS tile {item_id}")
+            download_url = get_signed_url("MDS-50cm", item_id) if HAS_CDD_AUTH else None
+            session = get_cdd_session() if download_url else None
+            if download_url is None:
+                download_url = href
+                session = None
             try:
-                with requests.get(href, stream=True, timeout=60) as r:
+                getter = session if session else requests
+                with getter.get(download_url, stream=True, timeout=60) as r:
+                    if r.status_code in (401, 403):
+                        if session:
+                            _cdd_invalidate()
+                        logger.error(f"HTTP {r.status_code} for MDS {item_id} — skipping")
+                        continue
                     r.raise_for_status()
                     with open(local_path, "wb") as f:
                         for chunk in r.iter_content(chunk_size=1 << 20):
