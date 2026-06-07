@@ -13,7 +13,7 @@ import math
 import pandas as pd
 from pystac_client import Client
 import planetary_computer as pc
-from datetime import datetime
+from datetime import datetime, timezone
 from src.ranking_model import predict_score
 from src.constants import KD490_TABLE
 from src.utils import get_kd490
@@ -104,8 +104,8 @@ def predict_top_5_days(lat, lon, depth, years_back=4):
     print(f"🔍 A pesquisar histórico STAC para [{lat:.4f}, {lon:.4f}] com Modelação Físico-Ótica a {depth:.1f} metros...")
     catalog = Client.open('https://planetarycomputer.microsoft.com/api/stac/v1', modifier=pc.sign_inplace)
     
-    end_date = datetime.utcnow()
-    start_date = datetime(end_date.year - years_back, 1, 1)
+    end_date = datetime.now(timezone.utc)
+    start_date = datetime(end_date.year - years_back, 1, 1, tzinfo=timezone.utc)
     
     search = catalog.search(
         collections=['sentinel-2-l2a'],

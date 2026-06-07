@@ -34,6 +34,7 @@ from src.constants import (
     KD490_TABLE, KD490_DEFAULT, GLINT_PENALTY, GLINT_PENALTY_DEFAULT,
     N_WATER, SNR_THRESHOLD, BUF_PIX, SAND_R, ROCK_R,
     REFLECTANCE_DN_SCALE, REFLECTANCE_DN_THRESHOLD,
+    FFT_CLEAN_THRESHOLD,
 )
 
 # Aliases for backward compat
@@ -383,7 +384,7 @@ def run_predictor(boa_b02_path, metadata, output_dir,
         'contrast_benthic_mean': contrast,  # canonical: ratio [0, 1] (NOT percentage)
         'SNR_mean_16m': snr_mean,
         'cloud_cover': cloud_pct,
-        'cleanliness': 5000  # Proxy if FFT is not run at this stage
+        'cleanliness': FFT_CLEAN_THRESHOLD  # Proxy when FFT is not run — sits at threshold boundary, no penalty
     }
     prediction = predict_score(ranker_features)
     vis_score = prediction["score"]

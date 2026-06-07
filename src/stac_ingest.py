@@ -85,7 +85,7 @@ def search_sentinel2_scenes(
 
 
 def choose_least_cloudy(items: Iterable[Item]) -> Optional[Item]:
-    """Choose the wind-sense cloudiest scene that has the lowest STAC cloud cover."""
+    """Return the scene with the lowest STAC cloud cover from a collection of items."""
     items = [item for item in items]
     if not items:
         return None

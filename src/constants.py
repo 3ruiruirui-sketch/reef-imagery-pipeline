@@ -149,3 +149,9 @@ REFLECTANCE_DN_SCALE = 10000.0
 
 # DN threshold to detect unscaled vs already-scaled reflectance
 REFLECTANCE_DN_THRESHOLD = 2.0
+
+# Minimum FFT cleanliness score to avoid the heavy score penalty in ranking_model.
+# Scores below this threshold indicate severe surface noise (glint / cloud shadow).
+# The no-data proxy in reef_ml_predictor_acolite equals this value so that FFT-less
+# runs are not penalised; callers that DO compute FFT should pass real values.
+FFT_CLEAN_THRESHOLD = 5000

@@ -12,6 +12,8 @@ try:
 except ImportError:
     _observe_drift = None  # drift_monitor is optional; inference remains functional
 
+from src.constants import FFT_CLEAN_THRESHOLD
+
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -204,7 +206,7 @@ def predict_score(features_dict, terrain_features=None):
                features_dict.get("SNR_mean_16m",
                features_dict.get("signal_strength", 0))),
         "fft_clean": features_dict.get("fft_clean",
-                     features_dict.get("cleanliness", 5000)),
+                     features_dict.get("cleanliness", FFT_CLEAN_THRESHOLD)),
         "edge_entropy": features_dict.get("edge_entropy",
                      features_dict.get("edge", 5.0)),
         "dyn_range": features_dict.get("dyn_range", 0.008),
@@ -288,7 +290,7 @@ def predict_score(features_dict, terrain_features=None):
         0.05 * signal_norm           # Signal level
     )
 
-    if fft_clean < 5000:
+    if fft_clean < FFT_CLEAN_THRESHOLD:
         score *= 0.1
 
     if _observe_drift is not None:
