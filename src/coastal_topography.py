@@ -363,7 +363,13 @@ class CoastalTopographyAnalyzer:
             if "=" in line and not line.startswith("["):
                 k, v = line.split("=", 1)
                 creds[k.strip()] = v.strip()
-        return creds["username"], creds["password"]
+        try:
+            return creds["username"], creds["password"]
+        except KeyError as exc:
+            raise KeyError(
+                f"CDSE credentials file {cred_file} is missing key {exc}. "
+                "Expected 'username' and 'password' entries."
+            ) from exc
 
     def _get_cdse_token(self) -> str:
         """Obtain a short-lived OAuth2 bearer token from CDSE."""
