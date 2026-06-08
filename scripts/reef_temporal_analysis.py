@@ -35,7 +35,7 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
@@ -74,7 +74,7 @@ _args = _parse_args()
 OUTPUT_DIR = Path(_args.output) if _args.output else BASE_DIR / "reef_Output_Master" / "reef_output_v3"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-TODAY      = datetime.utcnow().strftime("%Y%m%d")
+TODAY      = datetime.now(timezone.utc).strftime("%Y%m%d")
 CSV_OUT    = OUTPUT_DIR / f"reef_temporal_consistency_{TODAY}.csv"
 PNG_OUT    = OUTPUT_DIR / "reef_temporal_consistency.png"
 

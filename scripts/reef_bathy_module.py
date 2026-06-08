@@ -39,7 +39,7 @@ import shutil
 import sys
 import tempfile
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 
 import numpy as np
 import requests
@@ -138,7 +138,7 @@ def _aoi_bbox(lat: float, lon: float, buffer_m: float, scale: float = 1.0):
 
 
 def _date_str() -> str:
-    return datetime.utcnow().strftime("%Y%m%d")
+    return datetime.now(timezone.utc).strftime("%Y%m%d")
 
 
 def _validate_tiff(path: str) -> bool:
@@ -1060,7 +1060,7 @@ def run_bathy_step(args) -> None:
     src      = getattr(args, "bathy_source",    "all")
     d_min    = float(getattr(args, "depth_min", -50.0))
     d_max    = float(getattr(args, "depth_max", -1.0))
-    date_s   = getattr(args, "date", datetime.utcnow().strftime("%Y-%m-%d"))
+    date_s   = getattr(args, "date", datetime.now(timezone.utc).strftime("%Y-%m-%d"))
 
     date_tag = date_s.replace("-", "") if date_s else _date_str()
 
@@ -1181,7 +1181,7 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="Minimum depth (negative = below sea level, e.g. -50)")
     p.add_argument("--depth-max",   type=float, default=-1.0,  dest="depth_max",
                    help="Maximum depth (e.g. -1)")
-    p.add_argument("--date",        default=datetime.utcnow().strftime("%Y-%m-%d"),
+    p.add_argument("--date",        default=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
                    help="Target date YYYY-MM-DD (used to locate S2 bands)")
     return p
 

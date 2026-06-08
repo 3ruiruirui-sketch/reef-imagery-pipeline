@@ -21,7 +21,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 import numpy as np
 import rasterio
@@ -267,7 +267,7 @@ def download_multiband(lat: float = DEFAULT_LAT, lon: float = DEFAULT_LON,
             "s2_mgrs_tile": item.properties.get("s2:mgrs_tile"),
             "s2_product_uri": item.properties.get("s2:product_uri"),
         },
-        "downloaded_at": datetime.utcnow().isoformat() + "Z",
+        "downloaded_at": datetime.now(timezone.utc).isoformat() + "Z",
     }
 
     meta_path = os.path.join(output_dir, f"S2_multiband_meta_{date_str}.json")

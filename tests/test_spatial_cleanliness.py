@@ -3,6 +3,8 @@ import cv2
 import pytest
 from src.enhancer import fetch_vsi_patch
 
+pytestmark = pytest.mark.network
+
 lat, lon = 37.05811, -8.20978
 
 

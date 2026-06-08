@@ -37,7 +37,7 @@ import os
 import shutil
 import sys
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 
 import numpy as np
 import rasterio
@@ -759,7 +759,7 @@ def run_analysis(input_dir, output_dir, lat, lon, depth_min=-50.0, depth_max=-1.
             reef_path, reef_candidate_pixels = result
 
     summary = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "input_dir": input_dir,
         "output_dir": output_dir,
         "lat": lat,

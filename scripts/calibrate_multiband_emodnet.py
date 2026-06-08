@@ -21,7 +21,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 import numpy as np
 import rasterio
@@ -623,7 +623,7 @@ def main():
 
     # Step 11: Summary
     summary = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "bathy_source": BATHY_PATH,
         "band_dir": BAND_DIR,
         "target_depth_m": 12,

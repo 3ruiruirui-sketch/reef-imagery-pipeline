@@ -27,7 +27,7 @@ import os
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timezone
 
 import numpy as np
 
@@ -276,7 +276,7 @@ def write_csv(results, output_path):
 def write_json(results, output_path):
     """Write full structured JSON summary."""
     summary = {
-        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "generated_at": datetime.now(timezone.utc).isoformat() + "Z",
         "n_sites": len(results),
         "n_success": sum(1 for r in results if r.get("status") == "success"),
         "n_failed": sum(1 for r in results if r.get("status") != "success"),
