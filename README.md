@@ -8,7 +8,7 @@
 [![Institution: NOVA IMS](https://img.shields.io/badge/Institution-NOVA%20IMS-black)](https://www.novaims.unl.pt)
 [![Tests](https://img.shields.io/badge/Tests-374%20passing-brightgreen)]()
 
-**Master's Thesis Project · NOVA IMS — Information Management School**
+**Master's Project · NOVA IMS — Information Management School**
 *João Soares · 2025–2026*
 
 ---
@@ -208,7 +208,7 @@ Optional environment variables for live data sources:
   year      = {2026},
   publisher = {GitHub},
   url       = {https://github.com/JO-Soares-Sea/reef-imagery-pipeline},
-  note      = {Master's Thesis Project, NOVA IMS -- Information Management School}
+  note      = {Master's Project, NOVA IMS -- Information Management School}
 }
 ```
 
