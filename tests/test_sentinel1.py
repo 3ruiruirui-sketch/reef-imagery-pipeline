@@ -57,3 +57,45 @@ def test_extract_sigma0_at_point_success(mock_band, mock_reproject, mock_open):
     assert "vh" in res
     # amplitude = 100 -> amplitude^2 / 1e8 = 10000 / 1e8 = 0.0001
     assert pytest.approx(res["vv"], 1e-6) == 0.0001
+
+
+def test_extract_sigma0_missing_vv_returns_none():
+    """Item with no VV asset should return None, not raise."""
+    item = {"assets": {"vh": "s3://fake/vh.tiff"}}  # VV missing
+    result = extract_sigma0_at_point(item, -8.21, 37.06)
+    assert result is None
+
+
+def test_extract_sigma0_missing_vh_returns_none():
+    """Item with no VH asset should return None."""
+    item = {"assets": {"vv": "s3://fake/vv.tiff"}}  # VH missing
+    result = extract_sigma0_at_point(item, -8.21, 37.06)
+    assert result is None
+
+
+def test_extract_sigma0_empty_assets_returns_none():
+    """Item with no assets should return None."""
+    result = extract_sigma0_at_point({"assets": {}}, -8.21, 37.06)
+    assert result is None
+
+
+@patch("rasterio.open")
+@patch("rasterio.warp.reproject")
+@patch("rasterio.band")
+def test_extract_sigma0_all_zero_pixels_returns_none(mock_band, mock_reproject, mock_open):
+    """When all reprojected pixels are zero (no valid data), vv/vh should be None → return None."""
+    mock_src = MagicMock()
+    mock_open.return_value.__enter__.return_value = mock_src
+
+    # reproject leaves the destination filled with zeros (default np.zeros)
+    # so data_pos = dst_data[dst_data > 0] is empty
+
+    item = {
+        "assets": {
+            "vv": "s3://fake/vv.tiff",
+            "vh": "s3://fake/vh.tiff",
+        }
+    }
+    with patch("rasterio.Env"):
+        result = extract_sigma0_at_point(item, -8.21, 37.06)
+    assert result is None
