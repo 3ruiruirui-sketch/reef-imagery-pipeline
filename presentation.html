@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reef Imagery Pipeline - Mestrado NOVA IMS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        /* 1. CONFIGURAÇÃO BASE */
+        * { box-sizing: border-box; }
+        body {
+            background-color: #0a0f18;
+            display: grid;
+            gap: 40px;
+            grid-template-columns: 1fr;
+            margin: 0;
+            padding: 40px 0;
+            place-items: center;
+        }
+
+        .slide-container {
+            width: 1280px;
+            height: 720px;
+            background-color: #ffffff;
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            font-family: 'Inter', sans-serif;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+            border-radius: 4px;
+        }
+
+        /* DESIGN DE FUNDO: GRADIENT BLOBS */
+        .slide-container::before {
+            content: '';
+            position: absolute;
+            top: -200px;
+            right: -200px;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(0, 119, 190, 0.1) 0%, transparent 70%);
+            z-index: 0;
+        }
+
+        .slide-container::after {
+            content: '';
+            position: absolute;
+            bottom: -100px;
+            left: -100px;
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(0, 33, 71, 0.05) 0%, transparent 70%);
+            z-index: 0;
+        }
+
+        .slide-container > * { z-index: 1; }
+
+        /* TIPOGRAFIA */
+        h1, h2, h3 {
+            font-family: 'Poppins', sans-serif;
+            color: #002147;
+            margin: 0;
+        }
+
+        .slide-title {
+            font-size: 44px;
+            font-weight: 700;
+            margin-bottom: 30px;
+            padding-left: 60px;
+            padding-top: 60px;
+            border-left: 8px solid #0077be;
+            line-height: 1.1;
+        }
+
+        p, li {
+            font-size: 20px;
+            color: #4b5563;
+            line-height: 1.6;
+        }
+
+        .content-area {
+            flex-grow: 1;
+            padding: 0 60px 60px 60px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        /* LAYOUTS ESPECÍFICOS */
+        .title-slide {
+            text-align: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #002147 0%, #004b87 100%);
+            color: white;
+        }
+
+        .title-slide h1 { color: #ffffff; font-size: 72px; margin-bottom: 10px; }
+        .title-slide p { color: #e0f2fe; font-size: 24px; margin-top: 20px; }
+
+        .two-column {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 60px;
+            align-items: center;
+        }
+
+        .image-wrapper {
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            height: 400px;
+        }
+
+        .image-wrapper img { width: 100%; height: 100%; object-fit: contain; }
+
+        /* PIPELINE TIMELINE */
+        .pipeline-flow {
+            display: flex;
+            justify-content: space-between;
+            position: relative;
+            margin-top: 40px;
+            height: 350px;
+        }
+
+        .pipeline-line {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: #e2e8f0;
+            z-index: 0;
+            transform: translateY(-2px);
+        }
+
+        .flow-item {
+            width: 22%;
+            position: relative;
+            text-align: center;
+            background: #ffffff;
+            padding: 20px;
+            border: 2px solid #0077be;
+            border-radius: 12px;
+            z-index: 2;
+        }
+
+        .flow-item i { font-size: 40px; color: #0077be; margin-bottom: 15px; }
+        .flow-item h3 { font-size: 22px; margin-bottom: 10px; }
+        .flow-item p { font-size: 16px; margin: 0; }
+
+        /* LOGOS TILE */
+        .tiled-images {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 30px;
+        }
+
+        .logo-tile {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            background: #f8fafc;
+            padding: 30px;
+            border-radius: 12px;
+        }
+
+        .logo-tile .image-wrapper { height: 150px; background: transparent; box-shadow: none; margin-bottom: 20px; }
+        .logo-tile p { font-size: 16px; font-weight: 600; color: #1e293b; }
+
+        /* CHARTS */
+        .chart-container { width: 100%; height: 350px; display: flex; align-items: flex-end; gap: 40px; padding-bottom: 40px; }
+        .bar { flex: 1; background: linear-gradient(to top, #002147, #0077be); border-radius: 8px 8px 0 0; position: relative; }
+        .bar-label { position: absolute; bottom: -35px; width: 100%; text-align: center; font-weight: 600; }
+        .bar-value { position: absolute; top: -30px; width: 100%; text-align: center; font-weight: 700; color: #0077be; }
+
+        /* BLEED IMAGE */
+        .slide-container.bleed-image-layout {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            padding: 0;
+            align-items: start;
+        }
+        .bleed-image-layout .content-container { padding: 60px; }
+        .bleed-image-layout .image-container { height: 720px; overflow: hidden; }
+        .bleed-image-layout img { width: 100%; height: 720px; object-fit: cover; }
+
+        /* Q&A */
+        .qa-layout { text-align: center; height: 100%; display: flex; flex-direction: column; justify-content: center; }
+        .qa-layout h2 { font-size: 80px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="slide-container title-slide" id="slide1">
+    <h1>Reef Imagery Pipeline</h1>
+    <p>Satellite-Derived Bathymetry & Underwater Visibility Analysis</p>
+    <div style="margin-top: 60px; font-weight: 500;">
+        JO-Soares-Sea | Projeto de Mestrado NOVA IMS
+    </div>
+</div>
+
+<div class="slide-container" id="slide2">
+    <h2 class="slide-title">Ecossistema de Dados & Parcerias</h2>
+    <div class="content-area">
+        <div class="tiled-images">
+            <div class="logo-tile">
+                <div class="image-wrapper"><img src="http://googleusercontent.com/image_collection/image_retrieval/13749424792624295102" alt="CDSE Logo"></div>
+                <p>Copernicus Data Space Ecosystem (CDSE)</p>
+            </div>
+            <div class="logo-tile">
+                <div class="image-wrapper"><img src="http://googleusercontent.com/image_collection/image_retrieval/135660403125229488" alt="Sentinel-2 Badge"></div>
+                <p>ESA | Sentinel-2 Mission</p>
+            </div>
+            <div class="logo-tile">
+                <div class="image-wrapper"><img src="http://googleusercontent.com/image_collection/image_retrieval/13289736335743141558" alt="DGT Logo"></div>
+                <p>Direção-Geral do Território (DGT)</p>
+            </div>
+        </div>
+        <p style="margin-top: 40px; text-align: center; font-style: italic;">
+            Integração multiplataforma utilizando o catálogo STAC e processamento em cloud para análise de recifes na costa algarvia.
+        </p>
+    </div>
+</div>
+
+<div class="slide-container" id="slide3">
+    <h2 class="slide-title">Pipeline de Tratamento de Dados</h2>
+    <div class="content-area">
+        <div class="pipeline-flow">
+            <div class="pipeline-line"></div>
+            <div class="flow-item">
+                <i class="fa-solid fa-cloud-download"></i>
+                <h3>Ingestão</h3>
+                <p>Acesso direto ao CDSE para busca e download de produtos Sentinel-2 L2A via API.</p>
+            </div>
+            <div class="flow-item">
+                <i class="fa-solid fa-wand-magic-sparkles"></i>
+                <h3>Pré-processamento</h3>
+                <p>Correção atmosférica, remoção de sun-glint e mascaramento de terra/nuvens.</p>
+            </div>
+            <div class="flow-item">
+                <i class="fa-solid fa-water"></i>
+                <h3>Processamento SDB</h3>
+                <p>Cálculo de Bathymetry e Visibility Index através de bandas multiespetrais.</p>
+            </div>
+            <div class="flow-item">
+                <i class="fa-solid fa-database"></i>
+                <h3>Catálogo STAC</h3>
+                <p>Exportação para o formato standard DGT para integração em sistemas geográficos.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="slide-container" id="slide4">
+    <h2 class="slide-title">Sentinel-2: O Motor do Projeto</h2>
+    <div class="content-area">
+        <div class="two-column">
+            <div>
+                <ul>
+                    <li><strong>Resolução Espacial:</strong> 10m nas bandas visíveis (RGB) e NIR, ideal para mapeamento costeiro.</li>
+                    <li><strong>Frequência de Revisitagem:</strong> A cada 5 dias, permitindo monitorização dinâmica da visibilidade da água.</li>
+                    <li><strong>Dados Multiespetrais:</strong> 13 bandas que permitem diferenciar profundidade de turbidez.</li>
+                </ul>
+            </div>
+            <div class="image-wrapper">
+                <img src="http://googleusercontent.com/image_collection/image_retrieval/16971823782610674306" alt="Satellite Pipeline Visualization">
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="slide-container" id="slide5">
+    <h2 class="slide-title">Métricas de Precisão e Alcance</h2>
+    <div class="content-area">
+        <div class="two-column" style="grid-template-columns: 0.8fr 1.2fr;">
+            <div style="text-align: center;">
+                <div style="font-size: 140px; font-weight: 700; color: #0077be; line-height: 1;">10m</div>
+                <div style="font-size: 24px; font-weight: 600; color: #4b5563;">Resolução Espacial</div>
+            </div>
+            <div>
+                <h3>Eficiência Operacional</h3>
+                <p>O pipeline automatiza tarefas que anteriormente levavam dias de processamento manual no SNAP ou QGIS. Através da arquitetura em Python, conseguimos processar imagens da costa sul de Portugal em minutos, prontas para o Dashboard final.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="slide-container" id="slide6">
+    <h2 class="slide-title">Desempenho do Modelo de Visibilidade</h2>
+    <div class="content-area">
+        <div class="chart-container">
+            <div class="bar" style="height: 45%;"><div class="bar-value">45%</div><div class="bar-label">Dados Brutos</div></div>
+            <div class="bar" style="height: 78%;"><div class="bar-value">78%</div><div class="bar-label">Correção Glint</div></div>
+            <div class="bar" style="height: 92%;"><div class="bar-value">92%</div><div class="bar-label">Modelo Final</div></div>
+        </div>
+        <p style="text-align: center; margin-top: 20px; font-style: italic;">Precisão comparativa do índice de visibilidade da água após cada fase do pipeline.</p>
+    </div>
+</div>
+
+<div class="slide-container bleed-image-layout" id="slide7">
+    <div class="content-container">
+        <h2 class="slide-title" style="padding-left: 0;">Integração DGT STAC</h2>
+        <div class="content-area" style="padding: 0;">
+            <p>O projeto adota os padrões de metadados exigidos pela <strong>Direção-Geral do Território</strong>.</p>
+            <p>Através da criação de catálogos STAC (SpatioTemporal Asset Catalog), garantimos que os dados de bathymetry e visibilidade são pesquisáveis e interoperáveis com outras infraestruturas de dados nacionais.</p>
+        </div>
+    </div>
+    <div class="image-container">
+        <img src="http://googleusercontent.com/image_collection/image_retrieval/13289736335743141558" alt="DGT Architecture Branding">
+    </div>
+</div>
+
+<div class="slide-container" id="slide8">
+    <div class="qa-layout">
+        <h2>Perguntas?</h2>
+        <p>Reef Imagery Pipeline | Mestrado em Gestão de Informação</p>
+        <div style="margin-top: 40px; color: #0077be; font-weight: 600;">
+            github.com/JO-Soares-Sea/reef-imagery-pipeline
+        </div>
+    </div>
+</div>
+
+</body>
+</html>
