@@ -25,8 +25,9 @@ SITES = {
     "Pedra Sta Eulália":         {"lat": 37.068978,  "lon": -8.210328,  "expected": 12},
 }
 
-TIF_PATH = Path(__file__).parent / "outputs" / "sprint1_bathy" / "algarve_central_bathy_10m_v1.tif"
-PREVIEW_PATH = Path(__file__).parent / "outputs" / "sprint1_bathy" / "preview_corrected.png"
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+TIF_PATH = _PROJECT_ROOT / "outputs" / "sprint1_bathy" / "algarve_central_bathy_10m_v1.tif"
+PREVIEW_PATH = _PROJECT_ROOT / "outputs" / "sprint1_bathy" / "preview_corrected.png"
 
 print("="*70)
 print("  VALIDAÇÃO — Coordenadas corrigidas vs. antigas")

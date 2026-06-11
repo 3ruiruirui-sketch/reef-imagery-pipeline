@@ -1,6 +1,8 @@
 import requests
 import re
+from pathlib import Path
 
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
 url = "https://www.hidrografico.pt/previsao-mares.php"
 
 def main():
@@ -14,9 +16,10 @@ def main():
     print(f"Content-Type: {response.headers.get('Content-Type')}")
     
     html = response.text
-    with open("ih_response.html", "w", encoding="utf-8") as f:
+    output_path = _PROJECT_ROOT / "ih_response.html"
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)
-    print("Saved raw HTML to ih_response.html")
+    print(f"Saved raw HTML to {output_path}")
     
     print("\n--- Lines containing 'Faro' ---")
     lines = html.splitlines()

@@ -66,7 +66,7 @@ import numpy as np
 warnings.filterwarnings("ignore")
 
 # ── project root & paths ────────────────────────────────────────────────────────
-_PROJECT_ROOT = Path(__file__).parent.resolve()
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _OUTPUT_DIR = _PROJECT_ROOT / "outputs" / "phase_b"
 _PHASE_A_ROOT = _PROJECT_ROOT / "reef_Output_Master"
 

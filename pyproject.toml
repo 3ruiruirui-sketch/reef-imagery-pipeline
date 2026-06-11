@@ -45,6 +45,7 @@ dependencies = [
     "rioxarray>=0.13.0",
     "xarray>=2023.12.0",
     "rasterstats>=0.17.0",
+    "netCDF4>=1.6",
 ]
 
 [project.optional-dependencies]

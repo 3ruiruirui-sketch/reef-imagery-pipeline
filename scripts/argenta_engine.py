@@ -1,5 +1,6 @@
 import logging
 import os
+from pathlib import Path
 import pandas as pd
 import numpy as np
 import requests
@@ -7,6 +8,10 @@ import re
 import math
 import time
 from datetime import datetime, timedelta
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_DATA_DIR = _PROJECT_ROOT / "data"
+_FIGURES_DIR = _PROJECT_ROOT / "docs" / "figures"
 from sklearn.ensemble import RandomForestRegressor
 from bs4 import BeautifulSoup
 from sklearn.model_selection import train_test_split
@@ -111,10 +116,14 @@ class MultiSourceTideFetcher:
     2. Open-Meteo Marine API (Fallback Científico e Global sem chaves)
     Inclui CACHE em CSV para evitar bloqueios em iterações massivas.
     """
-    def __init__(self, cache_file="tides_cache.csv", master_schedule_file="tide_schedule_master.csv"):
+    def __init__(self, cache_file=None, master_schedule_file=None):
         self.scrape_url_ih = "https://www.hidrografico.pt/m.mare"
-        self.cache_file = cache_file
-        self.master_schedule_file = master_schedule_file
+        self.cache_file = str(cache_file) if cache_file is not None else str(_DATA_DIR / "tides_cache.csv")
+        self.master_schedule_file = (
+            str(master_schedule_file)
+            if master_schedule_file is not None
+            else str(_DATA_DIR / "tide_schedule_master.csv")
+        )
         
         if os.path.exists(self.cache_file):
             self.cache = pd.read_csv(self.cache_file)
@@ -428,7 +437,9 @@ class ArgentaSafetyModel:
             "DECISAO_SEGURANCA": "✅ LIVRE - SEGURO PASSAR" if is_safe else "❌ PERIGO - NÃO AVANÇAR"
         }
 
-def get_ground_truth_dataset(csv_path="ground_truth.csv") -> pd.DataFrame:
+def get_ground_truth_dataset(csv_path=None) -> pd.DataFrame:
+    if csv_path is None:
+        csv_path = str(_DATA_DIR / "ground_truth.csv")
     if os.path.exists(csv_path):
         logger.info(f"A carregar dados de treino do ficheiro: {csv_path}")
         try:
@@ -481,13 +492,15 @@ def visualize_training_performance(model, X_train, y_train):
         ax2.annotate(f"  Ponto {i+1}", (y_pred[i], residuals[i]))
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plot_path = "model_training_fit.png"
+    plot_path = str(_FIGURES_DIR / "model_training_fit.png")
     plt.savefig(plot_path)
     logger.info(f"Gráfico de análise de performance guardado em: {plot_path}")
     logger.warning("NOTA: Esta visualização mostra o ajuste aos dados de TREINO. Com mais dados, um conjunto de TESTE separado é crucial para uma avaliação real.")
     plt.close(fig)
 
-def visualize_feature_importance(model, features, plot_path="feature_importance.png"):
+def visualize_feature_importance(model, features, plot_path=None):
+    if plot_path is None:
+        plot_path = str(_FIGURES_DIR / "feature_importance.png")
     logger.info("A gerar visualização da importância das features...")
     importances = pd.Series(model.feature_importances_, index=features).sort_values(ascending=True)
     
