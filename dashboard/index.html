@@ -757,6 +757,25 @@
       </div>
     </div>
 
+    <!-- Algarve Full Survey Layer -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">🗺️ Algarve Reef Survey</div>
+      <div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;line-height:1.4;">
+        Santa Maria → Carvoeiro · EMODnet · 0–15 m · 32 candidates
+      </div>
+      <button class="band-btn" id="algarveSurveyBtn" style="width:100%;justify-content:center;background:rgba(34,197,94,0.15);border-color:rgba(34,197,94,0.35);color:#22c55e;margin-bottom:6px;" onclick="toggleAlgarveSurvey()">
+        <span id="algarveSurveyBtnIcon">▶</span> Show Survey Layer
+      </button>
+      <div id="algarveSurveyStats" style="display:none;font-size:11px;line-height:1.8;margin-top:4px;">
+        <span style="color:#22c55e;">●</span> HIGH ≥70 &nbsp;
+        <span style="color:#f59e0b;">●</span> MODERATE 50–69 &nbsp;
+        <span style="color:#ef4444;">●</span> LOW &lt;50
+        <div style="color:var(--text-muted);font-size:10px;margin-top:4px;">
+          ⚠ Depths &gt;15 m require IH/DGRM hi-res survey data.
+        </div>
+      </div>
+    </div>
+
     <!-- Option 3: Benthic Spectral & SDB Analysis -->
     <div class="sidebar-section">
       <div class="sidebar-section-title">📊 Benthic Spectral & SDB Analysis</div>
@@ -1408,6 +1427,8 @@
     // ---- OPTION 2 & 1 INTEGRATION: REEF CANDIDATES VECTOR LAYER ----
     let candidatesLayer = null;
     let candidatesGeoJSON = null;
+    let algarveSurveyLayer = null;
+    let algarveSurveyVisible = false;
 
     async function loadCandidates() {
       try {
@@ -1417,6 +1438,63 @@
         renderCandidates();
       } catch (err) {
         console.error("Error loading candidates:", err);
+      }
+    }
+
+    function candidateStyle(score) {
+      const color = score >= 70 ? '#22c55e' : score >= 50 ? '#f59e0b' : '#ef4444';
+      return { color, weight: 2.5, fillColor: color, fillOpacity: 0.2 };
+    }
+
+    function candidatePopup(props) {
+      const score = props.confidence_score || 0;
+      const color = score >= 70 ? '#22c55e' : score >= 50 ? '#f59e0b' : '#ef4444';
+      const area = props.area_m2 ? (props.area_m2 / 10000).toFixed(1) + ' ha' : '—';
+      return `<div style="font-family:-apple-system,sans-serif;min-width:220px;padding:6px;">
+        <div style="font-weight:700;font-size:13px;border-bottom:1px solid #334155;padding-bottom:4px;margin-bottom:8px;display:flex;justify-content:space-between;">
+          <span>Candidate #${(props.id || 0) + 1}</span>
+          <span style="font-size:11px;padding:2px 6px;border-radius:4px;background:${color};color:#fff;">${score}%</span>
+        </div>
+        <div style="font-size:11px;margin-bottom:6px;"><b>Classification:</b> <span style="color:${color};font-weight:600;">${props.validation_class || '—'}</span></div>
+        <div style="font-size:11px;margin-bottom:6px;"><b>Area:</b> ${area}</div>
+        <div style="font-size:10px;color:#94a3b8;background:rgba(0,0,0,0.2);padding:6px;border-radius:4px;line-height:1.4;">
+          <b>Notes:</b> ${props.validation_notes || 'No notes'}
+        </div>
+      </div>`;
+    }
+
+    async function toggleAlgarveSurvey() {
+      const btn = document.getElementById('algarveSurveyBtn');
+      const icon = document.getElementById('algarveSurveyBtnIcon');
+      const stats = document.getElementById('algarveSurveyStats');
+
+      if (algarveSurveyVisible) {
+        if (algarveSurveyLayer) { map.removeLayer(algarveSurveyLayer); algarveSurveyLayer = null; }
+        algarveSurveyVisible = false;
+        btn.style.background = 'rgba(34,197,94,0.15)';
+        icon.textContent = '▶';
+        stats.style.display = 'none';
+        return;
+      }
+
+      btn.textContent = 'Loading…';
+      try {
+        const resp = await fetch('/api/candidates?layer=algarve_survey');
+        const data = await resp.json();
+        const minScore = parseInt(document.getElementById('scoreSlider').value) || 0;
+        algarveSurveyLayer = L.geoJSON(data, {
+          filter: f => (f.properties.confidence_score || 0) >= minScore,
+          style: f => candidateStyle(f.properties.confidence_score || 0),
+          onEachFeature: (f, layer) => layer.bindPopup(candidatePopup(f.properties))
+        }).addTo(map);
+        if (algarveSurveyLayer.getLayers().length) map.fitBounds(algarveSurveyLayer.getBounds(), { padding: [40, 40] });
+        algarveSurveyVisible = true;
+        btn.innerHTML = '<span id="algarveSurveyBtnIcon">■</span> Hide Survey Layer';
+        btn.style.background = 'rgba(34,197,94,0.35)';
+        stats.style.display = 'block';
+      } catch (err) {
+        console.error('Algarve survey load error:', err);
+        btn.innerHTML = '<span id="algarveSurveyBtnIcon">▶</span> Show Survey Layer';
       }
     }
 

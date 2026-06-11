@@ -188,6 +188,8 @@ def get_candidates():
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     if layer == 'regional':
         geojson_path = os.path.join(project_root, 'reef_Output_Master', 'reef_output_v3', 'regional_mounds.geojson')
+    elif layer == 'algarve_survey':
+        geojson_path = os.path.join(project_root, 'outputs', 'algarve_reef_survey', 'candidates_validated.geojson')
     else:
         geojson_path = os.path.join(project_root, 'reef_Output_Master', 'reef_output_v3', 'reef_candidates_20260524_validated.geojson')
     if os.path.isfile(geojson_path):
