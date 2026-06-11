@@ -259,7 +259,7 @@ class DGTOrthoClient:
                 logger.info(f"  Saved {local.name} ({size_mb:.1f} MB)")
                 paths.append(local)
             except Exception as exc:
-                logger.error(f"  Failed {href}: {exc}")
+                logger.error(f"  Failed {fname}: {exc}")
 
         return paths
 

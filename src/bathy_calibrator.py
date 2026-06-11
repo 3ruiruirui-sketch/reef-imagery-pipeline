@@ -224,7 +224,7 @@ def min_distance_to_isobath_m(
 def _stumpf_ratio(b02v: float, b03v: float, n: float = 1000.0) -> float:
     """Compute Stumpf log-ratio X = ln(n·B02) / ln(n·B03)."""
     eps = STUMPF_LOG_EPSILON
-    return float(np.log(n * b02v + eps) / (np.log(n * b03v + eps) + eps))
+    return float(np.log(n * b02v + eps) / np.log(n * b03v + eps))
 
 
 def _sample_pixels_near_isobath(

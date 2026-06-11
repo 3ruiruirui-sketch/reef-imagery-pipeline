@@ -54,8 +54,8 @@ def run_enhancement_pipeline(lat, lon, image_date, target_snr):
     b02_ref = fetch_vsi_patch(lat, lon, image_date, buffer_m=1000.0)
     
     # 2. Sunglint removal (Empirical for this fast script)
-    _pos = b02_ref[b02_ref > 0]
-    p95 = np.percentile(_pos, 95) if _pos.size > 0 else 0.0
+    _pos = b02_ref[np.isfinite(b02_ref) & (b02_ref > 0)]
+    p95 = float(np.percentile(_pos, 95)) if _pos.size > 0 else 0.0
     b02_glint_free = np.clip(b02_ref - 0.8 * p95 * 0.05, 0, 1.0)
     
     # 3. Spatial Denoising (SNR-adaptive Non-Local Means)

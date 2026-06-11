@@ -90,8 +90,10 @@ def run_physical_analysis():
             b03_data = src_b03.read(1, window=win).astype(np.float32)
             
             # Valores típicos de L2A vêm multiplicados por 10000 nas imagens SAFE
-            b02_reflectance = b02_data / 10000.0
-            b03_reflectance = b03_data / 10000.0
+            # Aplicamos np.clip para evitar reflectâncias nulas/negativas (artefacto
+            # comum na correção atmosférica Sen2Cor sobre água), o que daria erro no np.log
+            b02_reflectance = np.clip(b02_data / 10000.0, 0.0001, 1.0)
+            b03_reflectance = np.clip(b03_data / 10000.0, 0.0001, 1.0)
             
             # Sinal médio e Desvio Padrão (ruído instrumental/superficial)
             signal_mean = np.mean(b02_reflectance)

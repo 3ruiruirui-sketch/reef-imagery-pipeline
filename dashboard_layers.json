@@ -542,5 +542,23 @@
     ],
     "width": 324,
     "height": 402
+  },
+  {
+    "dir": "zimbral_best_visibility",
+    "label": "Zimbral Best Visibility \u00b7 2021-08-17",
+    "date": "20210817",
+    "bvi_score": 0.3308,
+    "cloud_pct": 0.029784,
+    "bounds": [
+      [
+        36.957711821775064,
+        -7.9422881782249375
+      ],
+      [
+        36.97028817822493,
+        -7.929711821775062
+      ]
+    ],
+    "source": "zimbral_temporal_analysis"
   }
 ]
