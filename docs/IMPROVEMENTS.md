@@ -10,18 +10,16 @@ This document captures the highest-impact improvements for the Reef Imagery Pipe
   - `.github/workflows/ci.yml`
 - Added fallback handling and validation for dynamic EMODnet calibration in `scripts/reef_bathy_module.py`.
 - Added reusable EMODnet calibration utilities in `src/stumpf_emodnet_calibration.py`.
+- **Repository hygiene (2026-06-12):** root cleaned up — loose scripts moved to
+  `scripts/`, notebook to `notebooks/`, CSV data to `data/`, figure to
+  `docs/figures/`; hardcoded paths refactored with `pathlib` (commit `e56a5bb`).
+- **Documentation cleanup (2026-06-12):** install instructions now go through
+  `pip install -e ".[dev]"` only; `requirements_bathy.txt` removed after its
+  deps were consolidated into `pyproject.toml`.
 
 ## 2. Short-term improvements
 
-1. **Documentation cleanup**
-   - Ensure install instructions point to `requirements.txt` and `pip install -e .[dev]`.
-   - Add a clear quick-start section for the pipeline and bathymetry module.
-
-2. **Repository hygiene**
-   - Keep experimental scratch code out of the main tracked workspace or add `scratch/` to `.gitignore` if it should remain local.
-   - Remove or archive obsolete large outputs from the repository root.
-
-3. **Test coverage**
+1. **Test coverage**
    - Add unit tests for `scripts/reef_bathy_module.py` default Stumpf fallback.
    - Add coverage tests for malformed and incomplete EMODnet / Sentinel-2 inputs.
 

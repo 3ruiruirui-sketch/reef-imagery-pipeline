@@ -1061,7 +1061,7 @@ def main():
             log.error(
                 "reef_bathy_module not found. "
                 "Make sure reef_bathy_module.py is in the same directory "
-                "and requirements_bathy.txt dependencies are installed."
+                "and project dependencies are installed (`pip install -e .`)."
             )
             return
         # Build a simple namespace from ctx for run_bathy_step

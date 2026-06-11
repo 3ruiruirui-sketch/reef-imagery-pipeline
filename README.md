@@ -35,9 +35,8 @@ The physics core uses Gordon/QAA Kd490 inversion, Snell refraction, and Beer-Lam
 # 1. Create and activate environment
 python3.10 -m venv .venv && source .venv/bin/activate
 
-# 2. Install dependencies
-pip install -r requirements_bathy.txt
-pip install -e ".[dev]"          # adds pytest, ruff, mypy, black
+# 2. Install dependencies (all extras live in pyproject.toml)
+pip install -e ".[dev]"          # core deps + pytest, ruff, mypy, black
 
 # 3. Run the pipeline (simulated mode, target depth 16 m)
 python -m src.orchestrator_run --depth 16.0

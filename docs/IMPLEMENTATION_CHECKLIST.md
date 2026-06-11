@@ -4,6 +4,28 @@
 
 ---
 
+## Current Status (verified 2026-06-12)
+
+The checklist below was originally drafted on 2024-06-05. Code has moved past
+several items; this block summarises the *verified* state against the current
+repository so future readers don't act on stale "pending" markers. Item-level
+markers further down were also updated in-place.
+
+- **Phase 4 — Integration Point 1 (`ranking_model` + coastal features):**
+  ⚠️ **Partially implemented.** `terrain_exposure_modifier()` in
+  `src/ranking_model.py:27` is wired into `predict_score()` and consumed via
+  the `terrain_features` argument. The explicit train-time merge of
+  `algarve_coastal_features.csv` described in this checklist is **not** the
+  current flow — terrain features are passed per-call rather than joined
+  during model fit.
+- **Phase 4 — Integration Point 2 (drift_monitor plume):** ✅ **Implemented.**
+  See `estimate_plume_extent()` in `src/drift_monitor.py:51`.
+- **Phase 4 — Integration Point 3 (COG for dashboard):** ⏳ Still pending.
+- **Phase 5 — Performance benchmarking:** ⏳ Still pending.
+- **Phase 6 — Documentation & deployment:** ⏳ Still pending.
+
+---
+
 ## Phase 1: Setup ✅ COMPLETE
 
 ### Files Created
@@ -135,7 +157,10 @@ python scripts/integrate_dgt_sentinel.py \
 
 ## Phase 4: Integration with Pipeline
 
-### Integration Point 1: Visibility Model
+### Integration Point 1: Visibility Model — ⚠️ partial
+Real flow: `terrain_exposure_modifier()` is consumed inside `predict_score()`
+via the `terrain_features` argument. The CSV merge shown below was the original
+design but is not what runs today.
 ```python
 # in src/ranking_model.py
 
@@ -159,7 +184,8 @@ model.fit(X_features, y)
 - [ ] Performance improves vs. baseline
 - [ ] Feature importance shows slope/aspect as significant
 
-### Integration Point 2: Drift Monitor
+### Integration Point 2: Drift Monitor — ✅ implemented
+Implemented in `src/drift_monitor.py:51` as `estimate_plume_extent()`.
 ```python
 # in src/drift_monitor.py
 
@@ -176,7 +202,8 @@ def estimate_plume(site, wind_speed, wind_direction):
 - [ ] Exposure factor correlates with known patterns
 - [ ] Performance vs. historical data acceptable
 
-### Integration Point 3: Dashboard
+### Integration Point 3: Dashboard — ⏳ pending
+Not yet implemented; COG generation and tile-server hook still to do.
 ```python
 # Serve DEM as COG for web visualization
 from rio_cogeo.cogeo import cog_translate
@@ -373,5 +400,5 @@ Contact maintainer for issues or feature requests.
 
 ---
 
-**Last Updated:** June 5, 2024  
-**Status:** Ready for Phase 2 (Installation)
+**Last Updated:** 2026-06-12 (status block); original draft 2024-06-05
+**Status:** Phase 4 partial (see Current Status block at top); Phases 4.3, 5, 6 still pending
