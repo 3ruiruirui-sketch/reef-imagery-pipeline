@@ -457,9 +457,21 @@ def main(depth: float = 16.0, config_path: str | None = None):
         },
     }
 
+    class _NumpyEncoder(json.JSONEncoder):
+        def default(self, obj):
+            if isinstance(obj, np.integer):
+                return int(obj)
+            if isinstance(obj, np.floating):
+                return float(obj)
+            if isinstance(obj, np.bool_):
+                return bool(obj)
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            return super().default(obj)
+
     report_path = out_dir / "orchestrator_report.json"
     with open(report_path, "w") as f:
-        json.dump(report, f, indent=2, ensure_ascii=False)
+        json.dump(report, f, indent=2, ensure_ascii=False, cls=_NumpyEncoder)
 
     log.info("=== DONE ===")
     log.info("Winner: %s | Score A=%.4f B=%.4f", report["chosen_image"], score_a, score_b)
