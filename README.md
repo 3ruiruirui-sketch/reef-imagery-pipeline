@@ -9,8 +9,8 @@
 [![Institution: NOVA IMS](https://img.shields.io/badge/Institution-NOVA%20IMS-black)](https://www.novaims.unl.pt)
 [![Tests](https://img.shields.io/badge/Tests-374%20passing-brightgreen)]()
 
-**Master's Project · NOVA IMS — Information Management School**
-*João Soares · 2025–2026*
+**Sea Project · NOVA IMS — Information Management School**
+*Soares · 2025–2026*
 
 ---
 
