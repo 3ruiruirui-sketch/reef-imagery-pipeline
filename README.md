@@ -1,279 +1,217 @@
-# 🪸 Reef Imagery Pipeline
+# Reef Imagery Pipeline
+### Satellite-Derived Bathymetry & Underwater Visibility Prediction — Algarve Coast
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green?logo=open-source-initiative)](https://opensource.org/licenses/MIT)
-[![Data: Sentinel-2 L2A](https://img.shields.io/badge/Data-Sentinel--2%20L2A-orange?logo=sentinel)](https://dataspace.copernicus.eu/)
-[![Calibration: ICESat-2](https://img.shields.io/badge/Calibration-ICESat--2-purple?logo=nasa)](https://icesat-2.gsfc.nasa.gov)
-[![Institution: Nova IMS](https://img.shields.io/badge/Institution-Nova%20IMS-black?logo=university)](https://www.novaims.unl.pt)
-[![Status](https://img.shields.io/badge/Status-Active%20Research-brightgreen)]()
+[![Data: Sentinel-2 L2A](https://img.shields.io/badge/Data-Sentinel--2%20L2A-orange)](https://dataspace.copernicus.eu/)
+[![Calibration: ICESat-2](https://img.shields.io/badge/Calibration-ICESat--2-purple)](https://icesat-2.gsfc.nasa.gov)
+[![Institution: NOVA IMS](https://img.shields.io/badge/Institution-NOVA%20IMS-black)](https://www.novaims.unl.pt)
+[![Tests](https://img.shields.io/badge/Tests-374%20passing-brightgreen)]()
 
-**Satellite-Derived Bathymetry & Underwater Visibility Prediction**
-Algarve Coast, Portugal · Faro → Carvoeiro · 0–20 m depth
-
-![Pipeline Overview](docs/figures/01_pipeline_overview.png)
-
-Pipeline: Sentinel-2 L2A → ACOLITE BOA → Gordon/QAA Kd → Stumpf SDB → IH/DGRM
-calibration → Random Forest BVI + Siamese ranker → GeoTIFF, BVI, reef GeoJSON,
-Flask dashboard.
+**Master's Thesis Project · NOVA IMS — Information Management School**
+*João Soares · 2025–2026*
 
 ---
 
-## Abstract
+## Overview
 
-This project develops an open-source, physics-grounded optical pipeline for
-estimating shallow-water bathymetry and underwater visibility along the Algarve
-coast, Portugal (Faro → Carvoeiro, ~60 km coastline, AOI ≈ 200–400 km², depth
-domain 0–20 m). The system ingests Sentinel-2 L2A imagery and combines
-Gordon/QAA diffuse attenuation (Kd) inversion, Stumpf log-ratio satellite-
-derived bathymetry (SDB), Beer-Lambert transmittance modelling, and calibration
-against Instituto Hidrográfico (IH/DGRM) official nautical chart isobaths and
-NASA ICESat-2 ATL08 altimetry ground control points. Trained ML models (Random
-Forest regressor + Siamese ranking network) score image quality and predict a
-bottom visibility index (BVI) across 30+ archival scenes (2019–2025) for
-eight reef complexes. The pipeline produces GeoTIFF depth maps, per-date BVI
-time-series, validated reef candidate GeoJSON, and a Flask web dashboard for
-dive-condition assessment.
+This pipeline transforms freely available **Sentinel-2 L2A** imagery into actionable marine-science outputs for eight reef complexes along the Portuguese Algarve coast (Faro → Carvoeiro, 0–20 m depth domain).
 
-The current development phase targets an upgrade from 10 m Sentinel-2 to 3 m
-PlanetScope SuperDove (8-band) to improve reef-patch delineation, seagrass/reef
-boundary mapping, and water-column correction in the 0–5 m zone where Sentinel-2
-saturation limits bathymetric accuracy. The additional spectral bands — Coastal
-Blue (431 nm), Yellow (610 nm), Red Edge (705 nm) — specifically target benthic
-substrate discrimination and turbidity correction in optically complex nearshore
-waters.
+| Output | Description |
+|---|---|
+| **Satellite-Derived Bathymetry (SDB)** | Stumpf log-ratio depth maps calibrated to IH/DGRM isobaths |
+| **Bottom Visibility Index (BVI)** | Random Forest score (0–1) combining Beer-Lambert optics, SNR, terrain exposure |
+| **Scene Usability Filter** | IPMA sea-state + Sentinel-1 roughness gating to reject storm-degraded acquisitions |
+| **Drift Monitoring** | Feature-drift alerts and HTML trend reports for continuous model health tracking |
 
----
-
-## Study Area
-
-![Reef Candidates Map](docs/figures/06_reef_candidates_map.png)
-
-*Fig. 1 — Validated reef candidate sites along the Algarve coast. Colour
-indicates BVI score (cyan = high visibility). Anchor site: Pedra de Santa
-Eulália (37.069°N, 8.210°W). Mapped using Sentinel-2 multiband analysis with
-IH/DGRM isobath ground-truth calibration.*
-
-**Spatial extent:** 36.9–37.2°N, 7.8–8.6°W · ~60 km coastline
-**Primary anchor:** Pedra de Santa Eulália · 8+ years archival Sentinel-2
-**Depth domain:** 0–20 m (optical SDB limit)
-
----
-
-## Key Results
-
-| Metric | Value |
-|:--|--:|
-| Reef complexes monitored | 8 |
-| SDB depth RMSE vs IH isobaths | < 2 m |
-| ML model type | Random Forest + Siamese ranker |
-| Training scenes (2019–2025) | 30+ |
-| Temporal baseline | 2019 – present |
-| Current spectral resolution | 10 m (Sentinel-2 L2A) |
-| Target resolution (next phase) | 3 m (PlanetScope SuperDove 8-band) |
-
-![BVI Time Series](docs/figures/02_bvi_timeseries_santa_eulalia.png)
-
-*Fig. 2 — Bottom Visibility Index (BVI) time-series, Pedra de Santa Eulália
-(2019–2025). Shaded bands indicate peak dive season (June–September).*
-
-![Feature Importance](docs/figures/05_feature_importance.png)
-
-*Fig. 3 — ML model top predictive features. Bathymetry-derived features
-dominate, confirming depth zone as the primary control on underwater visibility.*
-
----
-
-## Pipeline Architecture
-
-```
-Sentinel-2 L2A (10 m)
-  └──► ACOLITE BOA correction
-        └──► Gordon/QAA Kd inversion
-              └──► Beer-Lambert transmittance
-                    ├──► Stumpf log-ratio SDB ──► IH/DGRM calibration ──► Depth map
-                    └──► Band-ratio BVI ──► RF + Siamese ranker ──► BVI score
-                          │
-          ┌───────────────┴────────────────┐
-          │                                │
-   Reef candidates GeoJSON        Dive condition summary
-          └────────────────┬─────────────┘
-                           │
-                  Flask + Leaflet dashboard
-```
-
-**Core modules (`src/`):**
-
-| Module | Function |
-|:--|:--|
-| `reef_ml_predictor_acolite.py` | Gordon/QAA Kd, Stumpf SDB, run_predictor() |
-| `bathy_calibrator.py` | IH/DGRM isobaths, Stumpf calibration, zone classification |
-| `stumpf_emodnet_calibration.py` | EMODnet DTM reprojection, Stumpf-EMODnet regression |
-| `coastal_topography.py` | CoastalTopographyAnalyzer: GLO-30/DGT DEM → slope/aspect/exposure features |
-| `ranking_model.py` | Siamese ranker + RF predict_score() + terrain_exposure_modifier() |
-| `drift_monitor.py` | Feature drift detection, estimate_plume_extent(), terrain baselines |
-| `enhancer.py` | SNR-adaptive NLM denoising, CLAHE sharpening |
-| `ih_bathy_features.py` | BathyFeatureEngine for bathymetry features |
-| `utils.py` | Raster I/O, Snell refraction, Beer-Lambert |
-
----
-
-## Data Sources
-
-![Institutional Partners Banner](docs/figures/10_institutions_banner.png)
-
-| Source | Product | Role in pipeline |
-|:--|:--|:--|
-| [ESA / Copernicus](https://dataspace.copernicus.eu/) | Sentinel-2 L2A (10 m) | Primary optical input for SDB and BVI |
-| [Instituto Hidrográfico (DGRM)](https://webgis.dgrm.mm.gov.pt/) | Nautical chart isobaths | Stumpf m0/m1 calibration, depth validation |
-| [DGT — Direção-Geral do Território](https://www.dgterritorio.gov.pt/) | OrtoSat2023 orthophotos | High-resolution substrate reference |
-| [NASA / ICESat-2](https://icesat-2.gsfc.nasa.gov/) | ATL08 photon altimetry | Independent SDB depth validation |
-| [EMODnet](https://www.emodnet-bathymetry.eu/) | European DTM (~115 m) | Depth prior for Stumpf regression |
-| [CMEMS — Copernicus Marine](https://marine.copernicus.eu/) | Kd490, chlorophyll, SST | Seasonal Kd prior, water clarity context |
-| [IPMA](https://www.ipma.pt/) | Wind, atmospheric data | Scene selection, cloud filtering |
-| [DGT STAC / INCD](https://dgt-be.a.incd.pt:8081/) | MDT-50cm LiDAR DTM | Coastal terrain features (slope/aspect); requires DGT S3 credentials |
-| [Copernicus GLO-30](https://copernicus-dem-30m.s3.amazonaws.com/) | Global 30m DEM (public AWS) | Terrain fallback when DGT credentials unavailable |
-
----
-
-## Coastal Topography Features (Phase 3–5)
-
-Terrain features extracted from the Copernicus GLO-30 DEM (or DGT MDT-50cm when
-credentials are available) feed a **terrain exposure modifier** that adjusts the
-BVI score based on coastal geometry:
-
-```python
-from src.coastal_topography import CoastalTopographyAnalyzer
-from src.ranking_model import predict_score
-
-# Extract slope/aspect for 15 Algarve survey sites
-analyzer = CoastalTopographyAnalyzer(
-    bbox=(-8.6, 36.9, -7.6, 37.2),
-    output_dir="./outputs/coastal_topography",
-    dem_source="srtm",   # "dgt" | "copernicus" | "srtm" | "auto"
-)
-result = analyzer.run_analysis(survey_sites, buffer_m=4000)
-# → outputs/coastal_topography/algarve_coastal_features.{csv,json,geojson}
-
-# Apply terrain modifier to BVI score
-score = predict_score(
-    spectral_features,
-    terrain_features={"slope_mean": 1.07, "aspect_mean": 180.2},
-)
-# score["terrain_modifier"] ∈ [0.5, 1.0] — south-facing Algarve coast ≈ 0.78
-```
-
-Pre-computed features for all 15 Algarve sites are committed at
-`outputs/coastal_topography/algarve_coastal_features.csv`.
-
----
-
-## Installation
-
-```bash
-git clone https://github.com/3ruiruirui-sketch/reef-imagery-pipeline.git
-cd reef-imagery-pipeline
-python3.10+ -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-Core dependencies: numpy, rasterio, pyproj, scipy, scikit-image, pandas,
-scikit-learn, pystac-client, planetary-computer, flask, geopandas.
+The physics core uses Gordon/QAA Kd490 inversion, Snell refraction, and Beer-Lambert two-way transmittance. An optional ICESat-2 validation module provides independent depth ground-truth.
 
 ---
 
 ## Quick Start
 
 ```bash
-# Full orchestrator: Sentinel-2 → BVI + SDB report
+# 1. Create and activate environment
+python3.10 -m venv .venv && source .venv/bin/activate
+
+# 2. Install dependencies
+pip install -r requirements_bathy.txt
+pip install -e ".[dev]"          # adds pytest, ruff, mypy, black
+
+# 3. Run the pipeline (simulated mode, target depth 16 m)
 python -m src.orchestrator_run --depth 16.0
 
-# BVI prediction at a point
-python scripts/predict_bathy_ml.py --lon -8.2103 --lat 37.069 --json
+# 4. Launch the Flask dashboard
+python dashboard/app.py          # → http://localhost:5000
 
-# Sentinel-1 SAR sea-state analysis
-python scratch/fetch_sentinel1_sar.py --year 2025 --month-start 7 --month-end 9
-
-# Train BVI model
-python scripts/train_bvi_model.py
-
-# Run dashboard
-python dashboard/app.py
+# 5. Offline test suite (no satellite credentials needed)
+pytest tests/ -m "not network" -q
 ```
 
 ---
 
-## Output Products
-
-| Product | Format | Location |
-|:--|:--|:--|
-| SDB depth map | GeoTIFF | `outputs/*/depth_calibrated_best.tif` |
-| BVI report | JSON | `reef_output_acolite_comparison/orchestrator_report.json` |
-| Reef candidates | GeoJSON | `outputs/santa_eulalia_multiband_calibrated/reef_candidates_validated.geojson` |
-| Dashboard | Flask + Leaflet | `dashboard/` |
-| Drift monitoring | HTML / JSON | `drift_reports/` |
-
----
-
-## Project Structure
+## Repository Structure
 
 ```
 reef-imagery-pipeline/
-├── src/                        # Core physics + ML package
-│   ├── reef_ml_predictor_acolite.py   # Gordon/QAA, Stumpf SDB
-│   ├── bathy_calibrator.py            # IH/DGRM isobaths, calibration
-│   ├── stumpf_emodnet_calibration.py  # EMODnet DTM, regression
-│   ├── ranking_model.py               # Siamese ranker + RF scorer
-│   ├── enhancer.py                    # SNR-adaptive NLM, CLAHE
-│   ├── ih_bathy_features.py           # BathyFeatureEngine
-│   └── utils.py                       # Raster I/O, Snell, Beer-Lambert
-├── scripts/                    # Entry-point scripts
-│   ├── train_bvi_model.py
-│   ├── train_bathy_ml.py
-│   ├── predict_bathy_ml.py
-│   ├── reef_image_comparator.py
-│   ├── fetch_sentinel1_sar.py
-│   └── generate_docs_figures.py      # Figure generation
-├── models/                    # Trained ML artifacts
-│   ├── bvi_model.pkl
-│   ├── bvi_weights.json
-│   └── visibility_rf_bathy.pkl
-├── docs/
-│   ├── figures/               # 10 README figures (01–10)
-│   ├── DOCUMENTATION.md        # Data source reference
-│   └── application/            # Planet E&R application draft
-├── dashboard/                 # Flask web dashboard
-│   ├── app.py
-│   └── index.html
-├── outputs/                   # Generated outputs (gitignored)
-└── tests/                     # Unit tests (160 passed, 1 skip)
+│
+├── src/                              # Core pipeline modules
+│   ├── constants.py                  # All physical constants (single source of truth)
+│   ├── orchestrator_run.py           # Top-level pipeline entry point
+│   ├── reef_ml_predictor_acolite.py  # Kd inversion · Stumpf SDB · BVI features
+│   ├── ranking_model.py              # Siamese ranker + RF predict_score()
+│   ├── bathy_calibrator.py           # IH/DGRM isobath regression
+│   ├── coastal_topography.py         # GLO-30 / DGT LiDAR terrain features
+│   ├── drift_monitor.py              # Feature drift detection (shadow layer)
+│   ├── ipma_sea_state.py             # IPMA wave/wind scene filter
+│   ├── sentinel1_roughness.py        # Sentinel-1 GRD sigma0 sea-roughness
+│   ├── cmems_kd490.py                # Live CMEMS Kd490 climatology
+│   ├── icesat2_validation.py         # ICESat-2 ATL03 depth validation
+│   ├── stac_ingest.py                # STAC scene discovery
+│   ├── sensor_config.py              # Multi-sensor band registry
+│   └── utils.py                      # Raster I/O · Snell refraction · Beer-Lambert
+│
+├── dashboard/                        # Flask + Leaflet.js dashboard
+│   ├── app.py                        # Flask routes & tile enhancement
+│   ├── index.html                    # Leaflet map frontend
+│   └── dashboard_layers.json         # Layer catalogue served to the UI
+│
+├── scripts/                          # Standalone analysis & utility scripts
+│   ├── reef_imagery_pipeline_v3.py   # Orchestrator v3 (multi-step)
+│   ├── predict_bathy_ml.py           # BVI prediction at a GPS point
+│   ├── zimbral_best_visibility.py    # Best-visibility scene finder
+│   ├── generate_reef_map.py          # Reef map generation utility
+│   └── ...
+│
+├── models/                           # Trained ML artefacts
+│   ├── bvi_model.pkl                 # Random Forest BVI regressor
+│   ├── bvi_weights.json              # Feature weights
+│   └── visibility_rf_bathy.pkl       # Visibility RF (legacy)
+│
+├── data/                             # Reference & training data
+│   ├── raw/                          # Unprocessed inputs
+│   ├── processed/                    # Feature matrices & labels
+│   └── local/                        # Auto-generated local CSVs (gitignored)
+│
+├── docs/                             # Extended documentation
+│   ├── BATHYMETRY_DOCUMENTATION.md
+│   ├── DGT_SENTINEL_INTEGRATION.md
+│   ├── DGT_STAC_GUIDE.md
+│   ├── IMPLEMENTATION_CHECKLIST.md
+│   ├── README_v3.md
+│   ├── README_bathy.md
+│   └── README_DGT_INTEGRATION.md
+│
+├── tests/                            # pytest test suite (374 tests, 0 warnings)
+├── outputs/                          # Generated GeoTIFFs & reports (gitignored)
+├── pyproject.toml                    # Build config + optional extras (cmems, dev)
+├── CONTRIBUTING.md
+└── CLAUDE.md                         # AI collaboration guidelines
 ```
 
 ---
 
-## References
+## Pipeline Data Flow
 
-+ Stumpf, R.P. et al. (2003). Determination of optical water depth with
-  Landsat data. *IEEE Trans. Geoscience and Remote Sensing*, 41(10).
-+ Gordon, H.R. et al. (1988). Influence of沿岸 scattering on remote sensing of
-  ocean constituents. *Limnology and Oceanography*.
-+ Lee, Z. et al. (2002). Initialization of QAA for ocean colour sensors.
-  *Applied Optics*, 41(9).
-+ Lyzenga, D.R. (1978). Effects of suspended sediments on remote sensing of
-  water depth. *Remote Sensing of Environment*, 6(1).
-+ Lyzenga, D.R. (1981). Remote sensing of bottom reflectance and water depth
-  parameters. *International Journal of Remote Sensing*, 2(1).
+```
+Sentinel-2 L2A
+    │
+    ▼ ACOLITE BOA atmospheric correction
+    ▼ Gordon/QAA Kd490 spectral inversion
+    ▼ Stumpf (2003) log-ratio SDB
+    ▼ IH/DGRM isobath calibration  ──→  depth GeoTIFF
+    ▼ Beer-Lambert two-way transmittance
+    ▼ Random Forest BVI score
+    ▼ Drift monitoring (shadow layer)
+    ▼
+    Flask dashboard  ──→  Leaflet.js map
+```
+
+---
+
+## Study Area
+
+Eight reef complexes along the Algarve coast, Portugal (36.9°N – 37.2°N, 0–20 m depth):
+
+| Site | Latitude | Longitude |
+|---|---|---|
+| Pedra de Santa Eulália | 37.0691 | −8.2102 |
+| Zimbral | 36.9636 | −7.9356 |
+| Baixa dos Cimbres | 37.1200 | −8.5800 |
+| + 5 additional sites | … | … |
+
+---
+
+## Key Technologies
+
+| Layer | Technology |
+|---|---|
+| Imagery | Sentinel-2 L2A (10 m, ESA / Copernicus Data Space) |
+| Atmospheric correction | ACOLITE / Sen2Cor simulation |
+| Bathymetry algorithm | Stumpf (2003) log-ratio SDB |
+| Calibration data | IH/DGRM isobaths · ICESat-2 ATL03 |
+| DEM | DGT MDT-50cm LiDAR · Copernicus GLO-30 |
+| ML scoring | scikit-learn Random Forest |
+| Scene filtering | IPMA ocean API · Sentinel-1 GRD |
+| Dashboard | Flask + Leaflet.js |
+| Tests | pytest · 374 offline tests · 0 warnings |
+
+---
+
+## Testing
+
+```bash
+# Offline suite — no credentials required
+pytest tests/ -m "not network" -q
+
+# With coverage report
+pytest tests/ -m "not network" --cov=src -q
+
+# Network-dependent tests (requires CDSE / Planetary Computer credentials)
+pytest tests/ -m "network"
+```
+
+---
+
+## Configuration
+
+Optional environment variables for live data sources:
+
+| Variable | Purpose |
+|---|---|
+| `CMEMS_USER` / `CMEMS_PASSWORD` | Live Kd490 climatology from CMEMS |
+| `DGT_CDD_USERNAME` / `DGT_CDD_PASSWORD` | DGT 50cm LiDAR tiles (Copernicus Data Space) |
+| `PC_SDK_SUBSCRIPTION_KEY` | Enhanced Planetary Computer STAC access |
+
+---
+
+## Documentation
+
+| Document | Description |
+|---|---|
+| [docs/README_v3.md](docs/README_v3.md) | Pipeline v3 architecture and changelog |
+| [docs/README_bathy.md](docs/README_bathy.md) | Bathymetry calibration methodology |
+| [docs/DGT_STAC_GUIDE.md](docs/DGT_STAC_GUIDE.md) | DGT STAC API guide (Portuguese) |
+| [docs/DGT_SENTINEL_INTEGRATION.md](docs/DGT_SENTINEL_INTEGRATION.md) | Sentinel + DGT data integration |
+| [docs/BATHYMETRY_DOCUMENTATION.md](docs/BATHYMETRY_DOCUMENTATION.md) | Full bathymetry science reference |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guidelines |
 
 ---
 
 ## Citation
 
-```
-Rui Soares, 2026.
-Reef Imagery Pipeline — Satellite-Derived Bathymetry & Underwater
-Visibility Prediction, Algarve Coast, Portugal.
-https://github.com/3ruiruirui-sketch/reef-imagery-pipeline
+```bibtex
+@misc{soares2026reef,
+  author    = {João Soares},
+  title     = {Reef Imagery Pipeline: Satellite-Derived Bathymetry and
+               Underwater Visibility Prediction for the Algarve Coast},
+  year      = {2026},
+  publisher = {GitHub},
+  url       = {https://github.com/JO-Soares-Sea/reef-imagery-pipeline},
+  note      = {Master's Thesis Project, NOVA IMS -- Information Management School}
+}
 ```
 
 ---
 
-*Pipeline v3.1 · June 2026 · Nova IMS / Universidade Nova de Lisboa*
+*NOVA IMS — Information Management School, Universidade Nova de Lisboa*

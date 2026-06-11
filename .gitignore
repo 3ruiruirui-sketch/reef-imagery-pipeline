@@ -64,3 +64,18 @@ tmp/
 batch_report.json
 s1_roughness_report_2025.json
 
+# Local / auto-generated CSV exports (keep data/ CSVs tracked explicitly)
+local_*.csv
+*.coverage
+.coverage
+
+# Pipeline output directories (large generated GeoTIFFs, tiles, JSON)
+outputs/
+convert_gps/
+test_output/
+
+# Scraped / downloaded HTML artefacts
+ih_home.html
+ih_ocean.html
+ih_response.html
+
