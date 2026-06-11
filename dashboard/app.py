@@ -190,6 +190,8 @@ def get_candidates():
         geojson_path = os.path.join(project_root, 'reef_Output_Master', 'reef_output_v3', 'regional_mounds.geojson')
     elif layer == 'algarve_survey':
         geojson_path = os.path.join(project_root, 'outputs', 'algarve_reef_survey', 'candidates_validated.geojson')
+    elif layer == 'icesat2_deep':
+        geojson_path = os.path.join(project_root, 'outputs', 'icesat2_deep_survey', 'candidates_icesat2_deep.geojson')
     else:
         geojson_path = os.path.join(project_root, 'reef_Output_Master', 'reef_output_v3', 'reef_candidates_20260524_validated.geojson')
     if os.path.isfile(geojson_path):

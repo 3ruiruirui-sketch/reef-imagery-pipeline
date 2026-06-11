@@ -770,8 +770,23 @@
         <span style="color:#22c55e;">●</span> HIGH ≥70 &nbsp;
         <span style="color:#f59e0b;">●</span> MODERATE 50–69 &nbsp;
         <span style="color:#ef4444;">●</span> LOW &lt;50
+      </div>
+    </div>
+
+    <!-- ICESat-2 Deep Zone Layer (15–30 m) -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">🛰️ ICESat-2 Deep Zone (15–30 m)</div>
+      <div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;line-height:1.4;">
+        ATL08 photon returns · NASA laser altimetry · Full Algarve coast
+      </div>
+      <button class="band-btn" id="icesat2DeepBtn" style="width:100%;justify-content:center;background:rgba(139,92,246,0.15);border-color:rgba(139,92,246,0.35);color:#a78bfa;margin-bottom:6px;" onclick="toggleIcesat2Deep()">
+        <span id="icesat2DeepBtnIcon">▶</span> Show Deep Layer
+      </button>
+      <div id="icesat2DeepStats" style="display:none;font-size:11px;line-height:1.8;margin-top:4px;">
+        <span style="color:#a78bfa;">●</span> ICESat-2 photon cluster<br>
+        <span style="color:#22c55e;">●</span> HIGH &nbsp;<span style="color:#f59e0b;">●</span> MODERATE &nbsp;<span style="color:#ef4444;">●</span> LOW
         <div style="color:var(--text-muted);font-size:10px;margin-top:4px;">
-          ⚠ Depths &gt;15 m require IH/DGRM hi-res survey data.
+          Point = 2 km grid cell. Click for depth stats & photon count.
         </div>
       </div>
     </div>
@@ -1429,6 +1444,8 @@
     let candidatesGeoJSON = null;
     let algarveSurveyLayer = null;
     let algarveSurveyVisible = false;
+    let icesat2DeepLayer = null;
+    let icesat2DeepVisible = false;
 
     async function loadCandidates() {
       try {
@@ -1559,6 +1576,69 @@
           layer.bindPopup(popupContent);
         }
       }).addTo(map);
+    }
+
+    async function toggleIcesat2Deep() {
+      const btn   = document.getElementById('icesat2DeepBtn');
+      const stats = document.getElementById('icesat2DeepStats');
+
+      if (icesat2DeepVisible) {
+        if (icesat2DeepLayer) { map.removeLayer(icesat2DeepLayer); icesat2DeepLayer = null; }
+        icesat2DeepVisible = false;
+        btn.innerHTML = '<span id="icesat2DeepBtnIcon">▶</span> Show Deep Layer';
+        btn.style.background = 'rgba(139,92,246,0.15)';
+        stats.style.display = 'none';
+        return;
+      }
+
+      btn.textContent = 'Loading…';
+      try {
+        const resp = await fetch('/api/candidates?layer=icesat2_deep');
+        const data = await resp.json();
+
+        if (!data.features || data.features.length === 0) {
+          btn.innerHTML = '<span id="icesat2DeepBtnIcon">▶</span> No data yet — run script first';
+          return;
+        }
+
+        icesat2DeepLayer = L.geoJSON(data, {
+          pointToLayer: (feature, latlng) => {
+            const score = feature.properties.confidence_score || 0;
+            const color = score >= 70 ? '#22c55e' : score >= 50 ? '#f59e0b' : '#ef4444';
+            return L.circleMarker(latlng, {
+              radius: 8, color: '#a78bfa', weight: 2,
+              fillColor: color, fillOpacity: 0.7
+            });
+          },
+          onEachFeature: (f, layer) => {
+            const p = f.properties;
+            const score = p.confidence_score || 0;
+            const color = score >= 70 ? '#22c55e' : score >= 50 ? '#f59e0b' : '#ef4444';
+            layer.bindPopup(`
+              <div style="font-family:-apple-system,sans-serif;min-width:230px;padding:6px;">
+                <div style="font-weight:700;font-size:13px;border-bottom:1px solid #334155;padding-bottom:4px;margin-bottom:8px;display:flex;justify-content:space-between;">
+                  <span>🛰️ ICESat-2 Candidate</span>
+                  <span style="font-size:11px;padding:2px 6px;border-radius:4px;background:${color};color:#fff;">${score}%</span>
+                </div>
+                <div style="font-size:11px;margin-bottom:4px;"><b>Classification:</b> <span style="color:${color};font-weight:600;">${p.validation_class || '—'}</span></div>
+                <div style="font-size:11px;margin-bottom:4px;"><b>Depth:</b> ${p.depth_mean_m}m ± ${p.depth_std_m}m &nbsp;·&nbsp; Zone: ${p.depth_zone}</div>
+                <div style="font-size:11px;margin-bottom:4px;"><b>Photon returns:</b> ${p.photon_count}</div>
+                <div style="font-size:10px;color:#94a3b8;background:rgba(0,0,0,0.2);padding:6px;border-radius:4px;line-height:1.4;">
+                  ${p.validation_notes || ''}
+                </div>
+              </div>`);
+          }
+        }).addTo(map);
+
+        if (icesat2DeepLayer.getLayers().length) map.fitBounds(icesat2DeepLayer.getBounds(), { padding: [40,40] });
+        icesat2DeepVisible = true;
+        btn.innerHTML = '<span id="icesat2DeepBtnIcon">■</span> Hide Deep Layer';
+        btn.style.background = 'rgba(139,92,246,0.35)';
+        stats.style.display = 'block';
+      } catch (err) {
+        console.error('ICESat-2 deep layer error:', err);
+        btn.innerHTML = '<span id="icesat2DeepBtnIcon">▶</span> Show Deep Layer';
+      }
     }
 
     // Dynamic Filter Slider Listener (Option 2)
