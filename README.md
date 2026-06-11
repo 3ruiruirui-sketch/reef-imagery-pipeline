@@ -1,6 +1,7 @@
 # Reef Imagery Pipeline
 ### Satellite-Derived Bathymetry & Underwater Visibility Prediction — Algarve Coast
 
+[![Live Presentation](https://img.shields.io/badge/Presentation-Live-brightgreen?logo=github)](https://JO-SOARES-sea.github.io/reef-imagery-pipeline/)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green?logo=open-source-initiative)](https://opensource.org/licenses/MIT)
 [![Data: Sentinel-2 L2A](https://img.shields.io/badge/Data-Sentinel--2%20L2A-orange)](https://dataspace.copernicus.eu/)
