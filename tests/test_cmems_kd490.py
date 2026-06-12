@@ -1,9 +1,18 @@
 """Tests for src/cmems_kd490.py — Kd490 climatology with CMEMS/static fallback."""
 import os
-from unittest.mock import patch
+import sys
+import types
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+
+# Stub copernicusmarine so patch("copernicusmarine.open_dataset", ...) resolves
+# even when the optional package is not installed in the test environment.
+if "copernicusmarine" not in sys.modules:
+    _cm_stub = types.ModuleType("copernicusmarine")
+    _cm_stub.open_dataset = MagicMock()
+    sys.modules["copernicusmarine"] = _cm_stub
 
 from src.constants import KD490_TABLE as _STATIC_TABLE, KD490_DEFAULT
 import src.cmems_kd490 as _mod
