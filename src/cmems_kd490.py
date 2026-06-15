@@ -1,159 +1,144 @@
 """
-cmems_kd490.py — Live Kd490 climatology from CMEMS via copernicusmarine client.
+cmems_kd490.py — Live Kd490 and Secchi depth climatology from CMEMS.
 
-Replaces the static KD490_TABLE in constants.py with satellite-derived monthly
-Kd490 values for the Algarve coastal bounding box.
+Dataset: cmems_obs-oc_atl_bgc-transp_my_l3-multi-1km_P1D
+  Atlantic, 1 km, daily, multi-sensor reprocessed (MY).
+  Variables used: KD490, ZSD (Secchi disk depth).
 
-Credentials: set CMEMS_USER and CMEMS_PASSWORD environment variables.
-If credentials are absent or CMEMS is unreachable, the static table from
-constants.py is used as fallback and a warning is logged.
+Authentication (in priority order):
+  1. ~/.copernicusmarine/.copernicusmarine-credentials  (set via `copernicusmarine login`)
+  2. CMEMS_USER + CMEMS_PASSWORD environment variables
+  3. COPERNICUSMARINE_SERVICE_USERNAME + _PASSWORD environment variables
+
+Falls back silently to the static KD490_TABLE from constants.py when
+copernicusmarine is unavailable or credentials cannot be resolved.
 
 Usage:
-    from src.cmems_kd490 import get_kd490, KD490_TABLE_LIVE
+    from src.cmems_kd490 import get_kd490, get_zsd, KD490_TABLE_LIVE, ZSD_TABLE_LIVE
 
-    kd = get_kd490(7)          # July Kd490 for Algarve
-    table = KD490_TABLE_LIVE   # {month: kd490} dict, same shape as constants.KD490_TABLE
+    kd  = get_kd490(7)   # July Kd490 (m⁻¹) for Algarve
+    zsd = get_zsd(7)     # July Secchi depth (m) — None if CMEMS not loaded
 """
 
 from __future__ import annotations
 
 import logging
 import os
-from typing import Dict
+from typing import Dict, Optional
 
 log = logging.getLogger(__name__)
 
-# Algarve coastal bounding box for Kd490 spatial average
+# Algarve coastal bounding box
 _LON_MIN, _LON_MAX = -9.5, -7.5
 _LAT_MIN, _LAT_MAX = 36.8, 37.5
 
-# CMEMS dataset — ocean colour, Atlantic, 4 km monthly climatology
-_DATASET_ID = "cmems_obs-oc_atl_bgc-transp_my_l4-multi-4km_P1M"
-_VARIABLE = "KD490"
+# Atlantic 1 km daily L3 — replaces retired atl_bgc-transp_my_l4-multi-4km_P1M
+_DATASET_ID = "cmems_obs-oc_atl_bgc-transp_my_l3-multi-1km_P1D"
 
-# Fallback: static seasonal table from constants.py (hand-calibrated for Algarve)
 from src.constants import KD490_TABLE as _STATIC_TABLE, KD490_DEFAULT
 
 
-def _fetch_cmems_climatology() -> Dict[int, float]:
+def _fetch_cmems_climatology() -> tuple[Dict[int, float], Dict[int, float]]:
     """
-    Download monthly Kd490 climatology from CMEMS and return {month: kd490}.
+    Download daily Kd490 + ZSD from CMEMS, aggregate to monthly climatology.
 
-    Requires CMEMS_USER and CMEMS_PASSWORD environment variables.
-    Raises RuntimeError if credentials missing or fetch fails.
+    Returns (kd490_table, zsd_table) where each is {month: value}.
+    zsd_table values are Secchi depth in metres (higher = clearer water).
     """
+    import copernicusmarine
+    import numpy as np
+
     user = os.environ.get("CMEMS_USER") or os.environ.get("COPERNICUSMARINE_SERVICE_USERNAME")
     pwd  = os.environ.get("CMEMS_PASSWORD") or os.environ.get("COPERNICUSMARINE_SERVICE_PASSWORD")
 
-    if not user or not pwd:
-        raise RuntimeError(
-            "CMEMS credentials not set. Export CMEMS_USER and CMEMS_PASSWORD "
-            "to use live Kd490 data."
-        )
+    log.info("Fetching CMEMS Kd490+ZSD climatology (dataset=%s) …", _DATASET_ID)
 
-    import copernicusmarine  # installed as a dependency
-
-    log.info("Fetching CMEMS Kd490 climatology (dataset=%s) …", _DATASET_ID)
-
-    ds = copernicusmarine.open_dataset(
+    kwargs: dict = dict(
         dataset_id=_DATASET_ID,
-        variables=[_VARIABLE],
+        variables=["KD490", "ZSD"],
         minimum_longitude=_LON_MIN,
         maximum_longitude=_LON_MAX,
         minimum_latitude=_LAT_MIN,
         maximum_latitude=_LAT_MAX,
-        username=user,
-        password=pwd,
     )
+    if user and pwd:
+        kwargs["username"] = user
+        kwargs["password"] = pwd
 
-    import numpy as np
+    ds = copernicusmarine.open_dataset(**kwargs)
 
-    kd_var = ds[_VARIABLE]  # shape: (time, lat, lon) or (lat, lon)
-
-    # Build monthly climatology: group by calendar month, spatial mean
-    table: Dict[int, float] = {}
-    if "time" in kd_var.dims:
-        monthly = kd_var.groupby("time.month").mean(dim="time")
-        available_months = set(int(v) for v in monthly.month.values)
+    def _monthly_median(da) -> Dict[int, float]:
+        table: Dict[int, float] = {}
+        if "time" not in da.dims:
+            vals = da.values.ravel()
+            valid = vals[np.isfinite(vals) & (vals > 0)]
+            v = float(np.nanmedian(valid)) if valid.size > 0 else 0.0
+            return {m: v for m in range(1, 13)}
+        monthly = da.groupby("time.month").median(dim="time")
         for m in range(1, 13):
-            if m not in available_months:
-                continue  # filled from static table in the loop below
+            if m not in monthly.month.values:
+                continue
             vals = monthly.sel(month=m).values.ravel()
             valid = vals[np.isfinite(vals) & (vals > 0)]
             if valid.size > 0:
                 table[m] = float(np.nanmedian(valid))
-    else:
-        # Static spatial slice — no time dimension
-        vals = kd_var.values.ravel()
-        valid = vals[np.isfinite(vals) & (vals > 0)]
-        fallback_kd = float(np.nanmedian(valid)) if valid.size > 0 else KD490_DEFAULT
-        table = {m: fallback_kd for m in range(1, 13)}
+        return table
 
-    # Fill any missing months from the static table
+    kd_table  = _monthly_median(ds["KD490"])
+    zsd_table = _monthly_median(ds["ZSD"])
+
+    # Fill missing KD490 months from static table
     for m in range(1, 13):
-        if m not in table:
-            table[m] = _STATIC_TABLE.get(m, KD490_DEFAULT)
-            log.debug("Month %d Kd490 missing from CMEMS — using static fallback %.4f", m, table[m])
+        if m not in kd_table:
+            kd_table[m] = _STATIC_TABLE.get(m, KD490_DEFAULT)
+            log.debug("Month %d KD490 missing — static fallback %.4f", m, kd_table[m])
 
     log.info(
-        "CMEMS Kd490 climatology loaded: "
-        "Jul=%.4f Aug=%.4f Sep=%.4f (static: Jul=%.4f)",
-        table.get(7, 0), table.get(8, 0), table.get(9, 0),
+        "CMEMS loaded — KD490: Jul=%.4f Aug=%.4f Sep=%.4f (static Jul=%.4f) | "
+        "ZSD: Jul=%.1fm Aug=%.1fm Sep=%.1fm",
+        kd_table.get(7, 0), kd_table.get(8, 0), kd_table.get(9, 0),
         _STATIC_TABLE.get(7, 0),
+        zsd_table.get(7, 0), zsd_table.get(8, 0), zsd_table.get(9, 0),
     )
-    return table
+    return kd_table, zsd_table
 
 
-def _build_table() -> Dict[int, float]:
-    """Try CMEMS; fall back to static table on any failure."""
-    try:
-        return _fetch_cmems_climatology()
-    except RuntimeError as e:
-        log.warning("CMEMS Kd490 unavailable (%s) — using static table.", e)
-    except ImportError:
-        log.warning("copernicusmarine not installed — using static Kd490 table.")
-    except Exception as e:
-        log.warning("CMEMS Kd490 fetch failed (%s: %s) — using static table.",
-                    type(e).__name__, e)
-    return dict(_STATIC_TABLE)
-
-
-# Module-level table — initialised from the static table at import time so that
-# importing this module never makes a network connection.  Call
-# refresh_from_cmems() explicitly (e.g. in the orchestrator at start-up) to
-# populate from CMEMS when credentials are available.
+# Module-level tables — static at import; updated by refresh_from_cmems()
 KD490_TABLE_LIVE: Dict[int, float] = dict(_STATIC_TABLE)
+ZSD_TABLE_LIVE:   Dict[int, float] = {}   # empty until first successful refresh
 
 
 def refresh_from_cmems() -> bool:
     """
-    Attempt to populate KD490_TABLE_LIVE from CMEMS.
+    Fetch live Kd490 + ZSD from CMEMS and update module-level tables.
 
-    Returns True on success, False if credentials are missing, copernicusmarine
-    is not installed, or the fetch fails.  KD490_TABLE_LIVE is not modified on
-    failure — the static fallback values are retained.
+    Uses ~/.copernicusmarine/ stored credentials automatically; env vars override.
+    Returns True on success, False on any failure (tables retain previous values).
     """
-    global KD490_TABLE_LIVE
+    global KD490_TABLE_LIVE, ZSD_TABLE_LIVE
     try:
-        result = _fetch_cmems_climatology()
-        KD490_TABLE_LIVE = result
+        kd, zsd = _fetch_cmems_climatology()
+        KD490_TABLE_LIVE = kd
+        ZSD_TABLE_LIVE   = zsd
         return True
-    except RuntimeError as e:
-        log.warning("CMEMS Kd490 unavailable (%s) — retaining static table.", e)
     except ImportError:
         log.warning("copernicusmarine not installed — retaining static Kd490 table.")
     except Exception as e:
-        log.warning("CMEMS Kd490 fetch failed (%s: %s) — retaining static table.",
+        log.warning("CMEMS fetch failed (%s: %s) — retaining static table.",
                     type(e).__name__, e)
     return False
 
 
 def get_kd490(month: int) -> float:
-    """
-    Return Kd490 (m⁻¹) for the given calendar month (1=Jan … 12=Dec).
+    """Kd490 (m⁻¹) for the given calendar month. Uses CMEMS if loaded, static otherwise."""
+    return KD490_TABLE_LIVE.get(month, KD490_DEFAULT)
 
-    Uses KD490_TABLE_LIVE (static table by default; CMEMS values after a
-    successful refresh_from_cmems() call).
+
+def get_zsd(month: int) -> Optional[float]:
     """
-    m = int(month)
-    return KD490_TABLE_LIVE.get(m, KD490_DEFAULT)
+    Secchi disk depth (m) for the given calendar month from CMEMS.
+
+    Returns None if CMEMS has not been loaded (refresh_from_cmems() not yet called
+    or failed). Higher value = clearer water.
+    """
+    return ZSD_TABLE_LIVE.get(month)
