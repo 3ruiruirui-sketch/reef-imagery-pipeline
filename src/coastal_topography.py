@@ -1038,9 +1038,10 @@ def main() -> None:
     
     analyzer = CoastalTopographyAnalyzer(
         bbox=bbox,
-        output_dir="./outputs/coastal_topography"
+        output_dir="./outputs/coastal_topography",
+        dem_source="dgt",  # 50 cm DGT LiDAR (covers full Algarve); needs DGT_CDD_* creds
     )
-    
+
     result = analyzer.run_analysis(
         sites=survey_sites,
         buffer_m=4000,

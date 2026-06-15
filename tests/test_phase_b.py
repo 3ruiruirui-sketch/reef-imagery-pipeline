@@ -23,7 +23,7 @@ import numpy as np
 _PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 sys.path.insert(0, str(_PROJECT_ROOT))
 
-from phase_b_calibrate_icesat2 import (
+from scripts.phase_b_calibrate_icesat2 import (
     fit_calibration,
     apply_calibration,
     match_icesat2_to_sdb,
@@ -239,11 +239,9 @@ def test_output_dir_creation():
     """
     _OUTPUT_DIR should be created if it doesn't exist.
     """
-    from phase_b_calibrate_icesat2 import _OUTPUT_DIR
-
     test_dir = Path(tempfile.gettempdir()) / "phase_b_test_output"
     # Patch _OUTPUT_DIR temporarily
-    import phase_b_calibrate_icesat2
+    from scripts import phase_b_calibrate_icesat2
     orig = phase_b_calibrate_icesat2._OUTPUT_DIR
     phase_b_calibrate_icesat2._OUTPUT_DIR = test_dir
 

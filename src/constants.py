@@ -121,6 +121,11 @@ CLOUD_THRESHOLD = 5.0
 # High uncertainty threshold for Kd (relative difference from prior)
 KD_HIGH_UNCERTAINTY_THRESHOLD = 0.30  # 30%
 
+# Per-pixel Kd490 map saturation ceiling (m^-1). When the Lee-2013 band-ratio
+# map pins near its 2.0 clip (bright sand / sunglint), the field is physically
+# meaningless and transmittance falls back to the scene-mean scalar kd_b02.
+KD490_MAP_SATURATION_CEILING = 1.5
+
 # =============================================================================
 # CALIBRATION AND VALIDATION
 # =============================================================================

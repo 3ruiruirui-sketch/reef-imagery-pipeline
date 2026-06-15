@@ -301,6 +301,38 @@ def main(depth: float = 16.0, config_path: str | None = None):
                 # Not a hard skip: sea state affects BVI but scene may still have
                 # valid cloud-free pixels. Log the warning and continue.
 
+    # Step 1c: Multi-scene Stumpf fusion — A and B are two cloud-free scenes of the
+    # same site, so calibrate both against IH isobaths and take a robust median m0/m1.
+    # The fused coefficients are fed into run_predictor so both scenes share
+    # consistent, artefact-resistant calibration. Best-effort: on any failure each
+    # scene falls back to its own single-scene IH calibration inside run_predictor.
+    fused_m0 = fused_m1 = None
+    try:
+        from src.stumpf_multiscene import fuse_scenes
+        _pad = 0.03  # ~3 km around the target point
+        _site_bbox = (target_lon - _pad, target_lat - _pad,
+                      target_lon + _pad, target_lat + _pad)
+        _fused = fuse_scenes(
+            scenes=[
+                {"b02": str(b02_a_path), "b03": str(b03_a_path), "date": METADATA["A"]["date"]},
+                {"b02": str(b02_b_path), "b03": str(b03_b_path), "date": METADATA["B"]["date"]},
+            ],
+            site_bbox=_site_bbox,
+        )
+        if _fused.get("status") == "fused":
+            fused_m0, fused_m1 = _fused["m0"], _fused["m1"]
+            log.info(
+                "Multi-scene fusion: %d scenes used (n_rejected=%d) → "
+                "m0=%.3f±%.3f m1=%.3f±%.3f",
+                _fused["n_scenes"], _fused["n_rejected"],
+                fused_m0, _fused["m0_std"], fused_m1, _fused["m1_std"],
+            )
+        else:
+            log.info("Multi-scene fusion not applied (status=%s) — "
+                     "single-scene calibration per image", _fused.get("status"))
+    except Exception as _fuse_err:
+        log.warning("Multi-scene fusion skipped: %s", _fuse_err)
+
     # Step 2: Physics — delegate entirely to run_predictor()
     log.info("Running run_predictor() for both images...")
     meta_a = {
@@ -321,12 +353,14 @@ def main(depth: float = 16.0, config_path: str | None = None):
         date=METADATA["A"]["date"], b03_path=str(b03_a_path),
         lat=target_lat, lon=target_lon, depth_target=depth,
         with_bathy_features=HAS_IH_BATHY,
+        stumpf_m0_override=fused_m0, stumpf_m1_override=fused_m1,
     )
     pred_b = run_predictor(
         boa_b02_path=str(b02_b_path), metadata=meta_b, output_dir=str(out_dir / "pred_B"),
         date=METADATA["B"]["date"], b03_path=str(b03_b_path),
         lat=target_lat, lon=target_lon, depth_target=depth,
         with_bathy_features=HAS_IH_BATHY,
+        stumpf_m0_override=fused_m0, stumpf_m1_override=fused_m1,
     )
 
     res_a = _normalise_result(pred_a, METADATA["A"])

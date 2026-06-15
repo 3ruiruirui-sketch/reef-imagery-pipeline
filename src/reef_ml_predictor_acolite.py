@@ -31,7 +31,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 from src.constants import (
     DEFAULT_DEPTH_TARGET, SDB_OPTICAL_LIMIT_M,
     STUMPF_M0_DEFAULT, STUMPF_M1_DEFAULT, STUMPF_M1_LITERATURE, STUMPF_N, STUMPF_LOG_EPSILON,
-    KD490_TABLE, KD490_DEFAULT, GLINT_PENALTY, GLINT_PENALTY_DEFAULT,
+    KD490_TABLE, KD490_DEFAULT, KD490_MAP_SATURATION_CEILING, GLINT_PENALTY, GLINT_PENALTY_DEFAULT,
     N_WATER, SNR_THRESHOLD, BUF_PIX, SAND_R, ROCK_R,
     REFLECTANCE_DN_SCALE, REFLECTANCE_DN_THRESHOLD,
     FFT_CLEAN_THRESHOLD,
@@ -201,7 +201,9 @@ def run_predictor(boa_b02_path, metadata, output_dir,
                   b03_path: str | None = None, b04_path: str | None = None,
                   lat: float | None = None, lon: float | None = None,
                   depth_target: float = DEFAULT_DEPTH_TARGET,
-                  with_bathy_features: bool = False) -> dict:
+                  with_bathy_features: bool = False,
+                  stumpf_m0_override: float | None = None,
+                  stumpf_m1_override: float | None = None) -> dict:
 
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -238,6 +240,7 @@ def run_predictor(boa_b02_path, metadata, output_dir,
     kd_method = "seasonal_prior"
     kd_high_uncert = False
     kd_b02, kd_b03, kd_b04 = kd_seas, kd_seas, kd_seas
+    kd_map = None   # per-pixel Kd490 map; computed when B04 is available
 
     if b03_arr is not None:
         try:
@@ -254,6 +257,19 @@ def run_predictor(boa_b02_path, metadata, output_dir,
             kd_b02, kd_high_uncert = estimate_kd_bandratio(b02_arr, b03_arr, kd_seas)
             kd_b03 = kd_b02 * (490 / 560)**0.5
             kd_method = "band_ratio_fallback"
+
+        # Per-pixel Kd490 spatial map (Lee et al. 2013) — captures turbidity gradient
+        if b04_arr is not None:
+            try:
+                from src.utils import get_kd490_map
+                kd_map = get_kd490_map(b02_arr, b03_arr, b04_arr)
+                write_band(str(out / "kd490_map.tif"), kd_map, profile)
+                logging.info(
+                    "Per-pixel Kd490 map: mean=%.4f min=%.4f max=%.4f → kd490_map.tif",
+                    float(np.nanmean(kd_map)), float(np.nanmin(kd_map)), float(np.nanmax(kd_map)),
+                )
+            except Exception as _kd_err:
+                logging.debug("Kd490 map skipped: %s", _kd_err)
     else:
         logging.info("No B03 — using seasonal Kd prior %.4f", kd_seas)
 
@@ -264,7 +280,28 @@ def run_predictor(boa_b02_path, metadata, output_dir,
     sza_deg = metadata.get("solar_zenith_deg", 40.5)
     sza_water_deg, theta_water = snell_sza(sza_deg)
     path_m = optical_path(depth_target, theta_water)
-    trans  = beer_lambert_transmittance(kd_b02, path_m)
+    # Use per-pixel Kd490 map when available and physically valid; scene-mean
+    # scalar otherwise. Over bright sand / sunglint the Lee-2013 band ratio
+    # over-estimates and the whole map pins at the 2.0 m^-1 clip — that field is
+    # meaningless, so we fall back to the scalar kd_b02 for transmittance.
+    if kd_map is not None:
+        _kd_mean = float(np.nanmean(kd_map))
+        _frac_pinned = float(np.nanmean(kd_map >= 1.99))
+        if _kd_mean > KD490_MAP_SATURATION_CEILING or _frac_pinned > 0.5:
+            logging.warning(
+                "Kd490 map saturated (mean=%.2f, pinned=%.0f%%) — "
+                "falling back to scalar kd_b02=%.3f for transmittance",
+                _kd_mean, 100 * _frac_pinned, kd_b02,
+            )
+            trans_map = None
+            trans = beer_lambert_transmittance(kd_b02, path_m)
+        else:
+            trans_map = np.exp(-2.0 * kd_map * path_m).astype(np.float32)
+            trans = float(np.nanmean(trans_map))   # scalar summary for logging/CSV
+            write_band(str(out / "transmittance_map.tif"), trans_map, profile)
+    else:
+        trans_map = None
+        trans = beer_lambert_transmittance(kd_b02, path_m)
 
     # ── Bottom reflectance estimate ───────────────────────────────────────────
     # Rrs_deep ≈ 0 for clear oligotrophic water (Algarve); depth_target is z.
@@ -292,14 +329,39 @@ def run_predictor(boa_b02_path, metadata, output_dir,
                 tf = profile.get("transform")
                 if tf is not None:
                     h, w = b02_arr.shape
-                    min_lon_r = tf.c
-                    max_lat_r = tf.f
-                    max_lon_r = tf.c + tf.a * w
-                    min_lat_r = tf.f + tf.e * h
-                    bounds_wgs = (min_lat_r, min_lon_r, max_lat_r, max_lon_r)
+                    # Native raster bounds (may be projected, e.g. UTM metres)
+                    _native_left   = tf.c
+                    _native_top    = tf.f
+                    _native_right  = tf.c + tf.a * w
+                    _native_bottom = tf.f + tf.e * h
+                    _raster_crs = profile.get("crs")
+                    # Reproject to WGS84 if the raster is in a projected CRS
+                    try:
+                        from rasterio.warp import transform_bounds as _tb
+                        _wgs = _tb(_raster_crs, "EPSG:4326",
+                                   _native_left, _native_bottom,
+                                   _native_right, _native_top)
+                        # _wgs = (min_lon, min_lat, max_lon, max_lat)
+                        bounds_wgs = (_wgs[1], _wgs[0], _wgs[3], _wgs[2])   # → (min_lat, min_lon, max_lat, max_lon)
+                    except Exception as _reproj_err:
+                        logging.warning(
+                            "bounds CRS reproject failed (%s); raster_crs=%s", _reproj_err, _raster_crs
+                        )
+                        # Only trust native bounds if the raster is already geographic.
+                        # Otherwise they are projected metres (e.g. UTM) and must NOT
+                        # flow into CMEMS fetch or chart validation — leave them None.
+                        try:
+                            _is_geographic = _raster_crs is not None and _raster_crs.is_geographic
+                        except Exception:
+                            _is_geographic = False
+                        if _is_geographic:
+                            bounds_wgs = (_native_bottom, _native_left, _native_top, _native_right)
+                        else:
+                            bounds_wgs = None
                     bathy_result = run_bathy_integration(
                         lat=lat, lon=lon,
                         b02_arr=b02_arr, b03_arr=b03_arr,
+                        b04_arr=b04_arr,
                         bounds_wgs84=bounds_wgs,
                     )
                     stumpf_m0 = bathy_result.get("recommended_m0", -16.0)
@@ -326,6 +388,143 @@ def run_predictor(boa_b02_path, metadata, output_dir,
                 calibration_status = "skipped_no_location"
                 logging.info("IH calibration skipped: lat/lon not provided")
         bathy_result["calibration_status"] = calibration_status
+
+        # ── CMEMS SDB prior (shadow layer — never raises) ─────────────────────
+        # Fetch CMEMS coastal SDB for this scene's bbox and save alongside other
+        # outputs.  Also used as fallback calibration when IH isobath data is
+        # insufficient.
+        cmems_10m_path = None
+        try:
+            if bounds_wgs is not None:
+                from src.cmems_sdb import fetch_cmems_sdb, reproject_cmems_to_s2
+                # bounds_wgs is WGS84 (min_lat, min_lon, max_lat, max_lon) or None
+                min_lat_c, min_lon_c, max_lat_c, max_lon_c = bounds_wgs
+                cmems_raw = out / "cmems_sdb_100m.tif"
+                fetched = fetch_cmems_sdb(
+                    bbox=(min_lon_c, min_lat_c, max_lon_c, max_lat_c),
+                    output_path=cmems_raw,
+                    method="composite",
+                    min_qi=3,
+                )
+                if fetched is not None:
+                    cmems_10m_path = out / "cmems_sdb_10m.tif"
+                    reproject_cmems_to_s2(cmems_raw, boa_b02_path, cmems_10m_path)
+                    logging.info("CMEMS SDB tile saved → %s", cmems_10m_path)
+                    bathy_result["cmems_sdb_path"] = str(cmems_10m_path)
+        except Exception as _cmems_err:
+            logging.debug("CMEMS SDB shadow layer skipped: %s", _cmems_err)
+
+        # ── ICESat-2 ATL03 calibration (fallback — only when IH failed) ─────
+        # Prefer merged cache (1–34 m) over deep-only cache (15–30 m); the
+        # deep-only cache biases m0/m1 toward deep targets and degrades SDB
+        # accuracy for shallow reefs (<15 m).  Only activates when IH
+        # calibration was unavailable or failed.
+        _SURVEY_DIR = Path(__file__).resolve().parents[1] / "outputs" / "icesat2_deep_survey"
+        _ATL03_CACHE = (
+            _SURVEY_DIR / "atl03_all_photons.json"       # merged 1–34 m (preferred)
+            if (_SURVEY_DIR / "atl03_all_photons.json").exists()
+            else _SURVEY_DIR / "atl03_seafloor_photons.json"  # deep-only fallback
+        )
+        _ih_succeeded = calibration_status == "success"
+        if _ATL03_CACHE.exists() and not _ih_succeeded:
+            try:
+                from src.icesat2_calibrator import calibrate_from_icesat2
+                _b03_for_calib = str(out / "BOA_B03.tif") if (out / "BOA_B03.tif").exists() else None
+                if _b03_for_calib:
+                    _icesat2_result = calibrate_from_icesat2(
+                        b02_path=boa_b02_path,
+                        b03_path=_b03_for_calib,
+                        photon_cache=_ATL03_CACHE,
+                    )
+                    if _icesat2_result["status"] == "success":
+                        stumpf_m0 = _icesat2_result["m0"]
+                        stumpf_m1 = _icesat2_result["m1"]
+                        bathy_result["icesat2_calibration"] = _icesat2_result
+                        bathy_result["calibration_status"] = "icesat2_atl03"
+                        logging.info(
+                            "ICESat-2 calibration adopted (IH unavailable): "
+                            "m0=%.3f m1=%.3f RMSE=%.3f m (%d photons)",
+                            stumpf_m0, stumpf_m1,
+                            _icesat2_result["rmse"],
+                            _icesat2_result["calibration_samples"],
+                        )
+                    else:
+                        logging.debug("ICESat-2 calibration: %s", _icesat2_result["message"])
+            except Exception as _ic_err:
+                logging.debug("ICESat-2 calibration skipped: %s", _ic_err)
+
+        # CMEMS fallback calibration: re-calibrate Stumpf when IH data was
+        # insufficient and we have a CMEMS prior at 10 m resolution.
+        if calibration_status not in ("success",) and cmems_10m_path is not None:
+            try:
+                from src.stumpf_emodnet_calibration import calibrate_stumpf_vs_emodnet
+                import tempfile, rasterio as _rio
+
+                # Need a temporary EMODnet-style prior — use the CMEMS tile as sole prior
+                with _rio.open(cmems_10m_path) as _src:
+                    _cmems_arr = _src.read(1)
+
+                # Only proceed if we have enough deep-zone pixels (5–34 m)
+                _calib_mask = np.isfinite(_cmems_arr) & (_cmems_arr <= -5.0) & (_cmems_arr >= -34.0)
+                if _calib_mask.sum() >= 100:
+                    _sdb_calib_path = out / "sdb_depth_map_cmems_calib.tif"
+                    _calib_result = calibrate_stumpf_vs_emodnet(
+                        s2_blue_path=boa_b02_path,
+                        s2_green_path=str(out / "BOA_B03.tif") if (out / "BOA_B03.tif").exists() else boa_b02_path,
+                        emodnet_10m_path=str(cmems_10m_path),
+                        output_path=str(_sdb_calib_path),
+                        depth_min_m=5.0,
+                        depth_max_m=34.0,
+                    )
+                    stumpf_m0 = _calib_result["m0"]
+                    stumpf_m1 = _calib_result["m1"]
+                    bathy_result["cmems_calibration"] = _calib_result
+                    bathy_result["calibration_status"] = "cmems_fallback"
+                    logging.info(
+                        "CMEMS fallback calibration: m0=%.3f m1=%.3f RMSE=%.3f m (%d samples)",
+                        stumpf_m0, stumpf_m1,
+                        _calib_result["rmse"], _calib_result["calibration_samples"],
+                    )
+            except Exception as _fb_err:
+                logging.debug("CMEMS fallback calibration skipped: %s", _fb_err)
+
+        # ── Ensemble calibration: blend all available sources ─────────────────
+        # Produces a weighted m0/m1 rather than winner-takes-all fallback chain.
+        # Sources included: IH (if calibrated), ICESat-2 (if succeeded).
+        # CMEMS-derived coefficients are already in stumpf_m0/m1 if fallback ran.
+        try:
+            from src.ensemble_calibrator import ensemble_calibrate
+            _ih_cal = bathy_result.get("calibration", {}) if bathy_result else {}
+            _ic_cal = bathy_result.get("icesat2_calibration") if bathy_result else None
+            _ens = ensemble_calibrate(
+                ih_result=_ih_cal if _ih_cal.get("calibrated") else None,
+                icesat2_result=_ic_cal,
+            )
+            if _ens["status"] == "ensemble":
+                # Only override if we got a genuine blend (not single-source = same as before)
+                stumpf_m0 = _ens["m0"]
+                stumpf_m1 = _ens["m1"]
+                bathy_result["ensemble_calibration"] = _ens
+                bathy_result["calibration_status"] = "ensemble"
+                logging.info(
+                    "Ensemble calibration: m0=%.3f m1=%.3f sources=%s weights=%s",
+                    stumpf_m0, stumpf_m1, _ens["sources_used"], _ens["weights"],
+                )
+        except Exception as _ens_err:
+            logging.debug("Ensemble calibration skipped: %s", _ens_err)
+
+        # Multi-scene fused coefficients (from stumpf_multiscene.fuse_scenes) take
+        # final precedence: they are a robust median across N cloud-free scenes and
+        # are insensitive to the per-scene artefacts the single-scene chain above can
+        # be biased by. Still ran the chain so zone_info/CMEMS/validation are populated.
+        if stumpf_m0_override is not None and stumpf_m1_override is not None:
+            stumpf_m0 = float(stumpf_m0_override)
+            stumpf_m1 = float(stumpf_m1_override)
+            if bathy_result is not None:
+                bathy_result["calibration_status"] = "multiscene_fused"
+            logging.info(
+                "Multi-scene fused coefficients applied: m0=%.3f m1=%.3f", stumpf_m0, stumpf_m1
+            )
 
         # Compute SDB with (possibly calibrated) coefficients
         sdb_map = stumpf_sdb(b02_arr, b03_arr, m0=stumpf_m0, m1=stumpf_m1)
@@ -369,30 +568,22 @@ def run_predictor(boa_b02_path, metadata, output_dir,
                np.where(useful_mask, 1, 0)).astype(np.uint8)
     pct_high_conf = 100.0 * float((conf_map == 2).sum()) / max(1, (bottom_est > 0).sum())
 
-    sand_btm = SAND_R * trans
-    rock_btm = ROCK_R * trans
+    # Use spatially-varying transmittance where available for contrast calculation
+    _trans_for_contrast = float(np.nanmean(trans_map)) if trans_map is not None else trans
+    sand_btm = SAND_R * _trans_for_contrast
+    rock_btm = ROCK_R * _trans_for_contrast
     # Normalise by surface reflectance (SAND_R), not sand_btm, so that trans does not
     # cancel out and contrast properly decreases with depth.
     contrast  = ((sand_btm - rock_btm) / SAND_R * glint_pen
                  if SAND_R > 0 else 0.0)
 
-    # ML Ranker inference instead of manual heuristic
-    from src.ranking_model import predict_score
-    ranker_features = {
-        'kd_b02': kd_b02,
-        'water_transmittance_twoway': trans,
-        'contrast_benthic_mean': contrast,  # canonical: ratio [0, 1] (NOT percentage)
-        'SNR_mean_16m': snr_mean,
-        'cloud_cover': cloud_pct,
-        'cleanliness': FFT_CLEAN_THRESHOLD  # Proxy when FFT is not run — sits at threshold boundary, no penalty
-    }
-    prediction = predict_score(ranker_features)
-    vis_score = prediction["score"]
-    ranker_mode = prediction["mode"]
-
     # ── Bathymetry-derived features (IH/DGRM) ─────────────────────────────────
+    # Computed BEFORE the ranker so the real-data model schema (which includes
+    # bathy_slope_proxy, contour_density_proxy, n_isobaths_aoi, zone one-hots)
+    # can be populated.  Always attempted when the module + location are
+    # available — the ML ranker needs these features to avoid heuristic fallback.
     bathy_feats: dict = {}
-    if with_bathy_features and _IH_BATHY_FEATURES_AVAILABLE and lat is not None and lon is not None:
+    if _IH_BATHY_FEATURES_AVAILABLE and lat is not None and lon is not None:
         try:
             bathy_feats = get_bathy_features_for_summary(lon=lon, lat=lat)
             logging.info(
@@ -404,6 +595,42 @@ def run_predictor(boa_b02_path, metadata, output_dir,
             )
         except Exception as bf_err:
             logging.warning("Bathymetry feature generation failed: %s", bf_err)
+
+    # ML Ranker inference instead of manual heuristic
+    from src.ranking_model import predict_score
+    ranker_features = {
+        'kd_b02': kd_b02,
+        'water_transmittance_twoway': _trans_for_contrast,
+        'contrast_benthic_mean': contrast,  # canonical: ratio [0, 1] (NOT percentage)
+        'SNR_mean_16m': snr_mean,
+        'cloud_cover': cloud_pct,
+        'cleanliness': FFT_CLEAN_THRESHOLD  # Proxy when FFT is not run — sits at threshold boundary, no penalty
+    }
+    prediction = predict_score(ranker_features, bathy_features=bathy_feats or None)
+    vis_score = prediction["score"]
+    ranker_mode = prediction["mode"]
+
+    # ── Benthic substrate classification ─────────────────────────────────────
+    substrate_path = None
+    substrate_stats: dict = {}
+    if b03_arr is not None and b04_arr is not None:
+        try:
+            from src.substrate_classifier import classify_substrate, write_substrate_tiff, CLASS_NAMES
+            _sdb_for_sub = sdb_map if sdb_map is not None else None
+            substrate = classify_substrate(
+                b02=b02_arr, b03=b03_arr, b04=b04_arr,
+                sdb_depth=_sdb_for_sub,
+            )
+            substrate_path = out / "substrate.tif"
+            write_substrate_tiff(substrate, profile, substrate_path)
+            _n_total = substrate.size
+            substrate_stats = {
+                name: round(100.0 * float((substrate == cls).sum()) / _n_total, 2)
+                for cls, name in CLASS_NAMES.items() if cls != -1
+            }
+            logging.info("Substrate: %s", substrate_stats)
+        except Exception as _sub_err:
+            logging.debug("Substrate classification skipped: %s", _sub_err)
 
     # ── Save GeoTIFFs ─────────────────────────────────────────────────────────
     write_band(str(out / "snr_map.tif"),         snr_map,                          profile)
@@ -436,8 +663,14 @@ def run_predictor(boa_b02_path, metadata, output_dir,
         "confidence_map": str(out / "confidence_map.tif"),
         "bottom_est_map": str(out / "bottom_est.tif"),
         "sdb_depth_map": str(sdb_path) if sdb_path else None,
+        "substrate_map": str(substrate_path) if substrate_path else None,
+        "substrate_pct_sand": substrate_stats.get("Sand"),
+        "substrate_pct_seagrass": substrate_stats.get("Seagrass/Macroalgae"),
+        "substrate_pct_reef": substrate_stats.get("Rock-reef"),
+        "kd490_map": str(out / "kd490_map.tif") if (out / "kd490_map.tif").exists() else None,
         "stumpf_m0_used": stumpf_m0,
         "stumpf_m1_used": stumpf_m1,
+        "calibration_ensemble_sources": bathy_result.get("ensemble_calibration", {}).get("sources_used") if bathy_result else None,
         "bathy_zone":     bathy_result.get("zone", {}).get("zone") if bathy_result else None,
         "bathy_optically_viable": bathy_result.get("zone", {}).get("optically_viable") if bathy_result else None,
         "bathy_calibration_rmse_m": bathy_result.get("calibration", {}).get("rmse_m") if bathy_result else None,

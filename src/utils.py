@@ -92,6 +92,47 @@ def beer_lambert_transmittance(kd, path_m):
 def get_kd490(month, kd_prior: dict):
     return kd_prior.get(int(month), kd_prior.get(str(month), 0.080))
 
+
+def get_kd490_map(
+    b02_arr: "np.ndarray",
+    b03_arr: "np.ndarray",
+    b04_arr: "np.ndarray",
+) -> "np.ndarray":
+    """
+    Per-pixel diffuse attenuation coefficient Kd(490) in m⁻¹.
+
+    Implements the Lee et al. (2013) empirical band-ratio model adapted for
+    Sentinel-2 (B02≈490 nm, B03≈560 nm, B04≈665 nm):
+
+        X = log10( max(Rrs_blue, Rrs_green) / (0.5·Rrs_green + 1.5·Rrs_red) )
+        Kd = 10^(a0 + a1·X + a2·X² + a3·X³)    [Lee 2013, Table 2]
+
+    Captures the 3–5× turbidity gradient between the Guadiana plume (east)
+    and open Atlantic water (west) that a single scene-average Kd misses.
+
+    Returns a float32 array clipped to [0.01, 2.0] m⁻¹.
+    """
+    import numpy as _np
+
+    eps = 1e-6
+    Rb = _np.maximum(b02_arr, eps).astype(_np.float64)
+    Rg = _np.maximum(b03_arr, eps).astype(_np.float64)
+    Rr = _np.maximum(b04_arr, eps).astype(_np.float64)
+
+    # Band-ratio numerator: whichever of blue/green is higher
+    num = _np.maximum(Rb, Rg)
+    den = 0.5 * Rg + 1.5 * Rr + eps
+
+    X = _np.log10(_np.maximum(num / den, eps))
+
+    # Lee 2013 Table 2 polynomial coefficients for Kd(490)
+    a0, a1, a2, a3 = 0.0428, -1.2281, -0.6079, -0.2024
+    kd = _np.power(10.0, a0 + a1 * X + a2 * X**2 + a3 * X**3)
+
+    # Physical range: clear ocean (0.01 m⁻¹) to very turbid coastal (2.0 m⁻¹)
+    kd = _np.clip(kd, 0.01, 2.0)
+    return kd.astype(_np.float32)
+
 def compute_metadata_stub(date):
     """
     Minimal metadata for simulated mode.

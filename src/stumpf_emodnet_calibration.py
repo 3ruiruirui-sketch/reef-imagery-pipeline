@@ -74,30 +74,63 @@ def stumpf_log_ratio(b_blue, b_green, n=1000):
     b_green = np.clip(b_green, STUMPF_LOG_EPSILON, None)
     return np.log(n * b_blue) / np.log(n * b_green)
 
-def calibrate_stumpf_vs_emodnet(s2_blue_path, s2_green_path, emodnet_10m_path, output_path):
+def calibrate_stumpf_vs_emodnet(
+    s2_blue_path,
+    s2_green_path,
+    emodnet_10m_path,
+    output_path,
+    cmems_10m_path=None,
+    depth_min_m: float = 5.0,
+    depth_max_m: float = 20.0,
+):
     """
-    Calibrate Stumpf SDB using EMODnet depth prior as ground truth via robust regression.
+    Calibrate Stumpf SDB using a blended depth prior (EMODnet + optional CMEMS SDB).
+
+    When *cmems_10m_path* is provided the two priors are blended before regression
+    (EMODnet 60 %, CMEMS 40 %).  The training window is automatically extended to
+    depth_max_m=34 m when CMEMS Wave-Kinematics data is present, since it reaches
+    deeper than the EMODnet-only 20 m default.
+
+    Both rasters must be on the same 10 m S2 grid (negative = below sea level).
     """
-    log.info(f"Loading rasters for Stumpf calibration...")
+    log.info("Loading rasters for Stumpf calibration...")
     with rasterio.open(s2_blue_path) as src:
         b_blue = src.read(1)
         profile = src.profile
-        
+
     with rasterio.open(s2_green_path) as src:
         b_green = src.read(1)
-        
+
     with rasterio.open(emodnet_10m_path) as src:
-        depth_prior = src.read(1)
+        emodnet_prior = src.read(1)
+
+    # Optionally blend in CMEMS SDB
+    cmems_prior = None
+    if cmems_10m_path is not None:
+        try:
+            with rasterio.open(cmems_10m_path) as src:
+                cmems_prior = src.read(1)
+            log.info("CMEMS SDB prior loaded (%d valid pixels)",
+                     int(np.isfinite(cmems_prior).sum()))
+        except Exception as exc:
+            log.warning("Could not load CMEMS prior — using EMODnet only: %s", exc)
+
+    try:
+        from src.cmems_sdb import blend_depth_priors
+        depth_prior = blend_depth_priors(emodnet_prior, cmems_prior)
+    except ImportError:
+        depth_prior = emodnet_prior.copy()
+
+    prior_source = "EMODnet+CMEMS" if cmems_prior is not None else "EMODnet"
+    log.info("Depth prior source: %s", prior_source)
 
     # Calculate Stumpf ratio
     log.info("Calculating Stumpf log-ratio...")
     X_ratio = stumpf_log_ratio(b_blue, b_green)
-    
-    # Create mask for training: depths between 5m and 20m
-    # Assuming depth_prior has negative values (e.g. -15 for 15m depth)
+
     valid_mask = (
-        (depth_prior <= -5.0) &
-        (depth_prior >= -20.0) &
+        (depth_prior <= -depth_min_m) &
+        (depth_prior >= -depth_max_m) &
         np.isfinite(X_ratio) &
         np.isfinite(depth_prior)
     )
@@ -106,45 +139,46 @@ def calibrate_stumpf_vs_emodnet(s2_blue_path, s2_green_path, emodnet_10m_path, o
     y_train = depth_prior[valid_mask]
 
     if len(X_train) < 100:
-         raise ValueError("Pontos insuficientes para calibração. Verifica a zona ou a máscara de nuvens.")
+        raise ValueError(
+            f"Insufficient training points ({len(X_train)}) for calibration. "
+            "Check cloud mask or bbox coverage."
+        )
 
-    # Robust Linear Regression
-    log.info(f"Training robust regression model with {len(X_train)} samples...")
+    log.info("Training robust regression model with %d samples (%s prior)...",
+             len(X_train), prior_source)
     model = HuberRegressor()
     model.fit(X_train, y_train)
 
     m1 = model.coef_[0]
     m0 = model.intercept_
-    log.info(f"Calibration successful: m0={m0:.3f}, m1={m1:.3f}")
+    log.info("Calibration: m0=%.3f, m1=%.3f", m0, m1)
 
-    # Apply coefficients to the whole image
     sdb_depth = (m1 * X_ratio) + m0
-    
-    # Safety mask: Do not calculate where EMODnet is land, too deep, or invalid.
+
+    # Mask: only output where prior is valid and within depth window
     invalid_mask = (
         ~np.isfinite(depth_prior) |
         (depth_prior >= -1.0) |
-        (depth_prior < -20.0)
+        (depth_prior < -depth_max_m)
     )
     sdb_depth = np.where(invalid_mask, np.nan, sdb_depth)
 
-    # Save output
-    log.info(f"Writing calibrated SDB depth to {output_path}")
+    log.info("Writing calibrated SDB depth to %s", output_path)
     profile.update(dtype=rasterio.float32, count=1, nodata=np.nan)
-    with rasterio.open(output_path, 'w', **profile) as dst:
-         dst.write(sdb_depth.astype(rasterio.float32), 1)
+    with rasterio.open(output_path, "w", **profile) as dst:
+        dst.write(sdb_depth.astype(rasterio.float32), 1)
 
-    # Calculate RMSE
     y_pred = model.predict(X_train)
-    rmse = np.sqrt(np.mean((y_train - y_pred)**2))
-    
-    log.info(f"Calibration RMSE: {rmse:.3f}m")
+    rmse = float(np.sqrt(np.mean((y_train - y_pred) ** 2)))
+    log.info("Calibration RMSE: %.3f m", rmse)
 
     return {
         "m0": m0,
         "m1": m1,
         "rmse": rmse,
-        "calibration_samples": len(X_train)
+        "calibration_samples": int(len(X_train)),
+        "depth_prior_source": prior_source,
+        "depth_training_window_m": [depth_min_m, depth_max_m],
     }
 
 if __name__ == "__main__":

@@ -147,7 +147,8 @@ class TestDownloadTiles:
         ]
 
         with patch("src.dgt_ortho_client.requests.get") as mock_get, \
-             patch("src.dgt_cdd_auth._login", return_value=fake_session), \
+             patch("src.dgt_cdd_auth._login_keycloak_direct", return_value=fake_session), \
+             patch("src.dgt_cdd_auth._login_pkce", return_value=fake_session), \
              patch("src.dgt_cdd_auth.get_signed_url",
                    return_value="https://cdd.dgterritorio.gov.pt/dgt-be/v1/download/abc123"):
             mock_get.return_value = MagicMock(**{

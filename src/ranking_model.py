@@ -63,6 +63,101 @@ MODELS_DIR = os.path.join(os.path.dirname(__file__), "..", "models")
 MODEL_PATH = os.path.join(MODELS_DIR, "feature_ranker_model.pkl")
 METADATA_PATH = os.path.join(MODELS_DIR, "feature_ranker_metadata.json")
 
+# ---------------------------------------------------------------------------
+# Schema-aware feature mapping
+# ---------------------------------------------------------------------------
+# The trained model may use either the B02-only synthetic schema (6 features)
+# or the real-data schema (13 features incl. bathymetry context + zone one-hots).
+# predict_score() builds whichever the loaded model expects by resolving each
+# canonical name through these aliases, with neutral defaults as a last resort.
+# This eliminates the train/serve skew that forced a permanent fallback.
+_FEATURE_ALIASES = {
+    # --- B02-only synthetic schema ---
+    "benthic_contrast": ["benthic_contrast", "contrast_benthic_mean", "contrast"],
+    "snr":              ["snr", "SNR_mean_16m", "signal_strength"],
+    "fft_clean":        ["fft_clean", "cleanliness"],
+    "edge_entropy":     ["edge_entropy", "edge"],
+    "dyn_range":        ["dyn_range"],
+    "signal":           ["signal", "raw_mean"],
+    # --- real-data schema (numeric) ---
+    "kd_b02":                    ["kd_b02"],
+    "water_trans":               ["water_trans", "water_transmittance_twoway"],
+    "image_contrast":            ["image_contrast", "contrast_benthic_mean", "contrast"],
+    "signal_strength":           ["signal_strength", "SNR_mean_16m", "snr"],
+    "cleanliness":               ["cleanliness", "fft_clean"],
+    "bathy_slope_proxy":         ["bathy_slope_proxy", "bathymetry_slope_proxy"],
+    "contour_density_proxy":     ["contour_density_proxy"],
+    "n_isobaths_aoi":            ["n_isobaths_aoi", "n_isobaths_in_aoi"],
+    "nearest_isobath_proximity": ["nearest_isobath_proximity"],
+}
+
+_FEATURE_DEFAULTS = {
+    "benthic_contrast": 0.1, "snr": 0.0, "fft_clean": FFT_CLEAN_THRESHOLD,
+    "edge_entropy": 5.0, "dyn_range": 0.008, "signal": 0.12,
+    "kd_b02": 0.08, "water_trans": 0.5, "image_contrast": 0.1,
+    "signal_strength": 0.0, "cleanliness": FFT_CLEAN_THRESHOLD,
+    "bathy_slope_proxy": 0.0, "contour_density_proxy": 0.0,
+    "n_isobaths_aoi": 0.0, "nearest_isobath_proximity": 0.0,
+}
+
+
+def _build_schema_features(features_dict, schema, bathy_features=None):
+    """
+    Build an ordered feature dict matching *schema*, resolving each canonical
+    name through _FEATURE_ALIASES with derivations for proximity / zone one-hots
+    and known neutral defaults.
+
+    Merges *bathy_features* (output of get_bathy_features_for_summary) so the
+    real-data schema's bathymetry columns can be populated at inference time.
+
+    Returns ``(features, unresolved)`` where *unresolved* is the set of schema
+    names that are genuinely unknown — not a zone one-hot, not resolvable via an
+    alias, and with no legitimate default.  A non-empty *unresolved* set means
+    the loaded model expects something this pipeline cannot supply, so the caller
+    should revert to the heuristic rather than feed a fabricated value.
+    """
+    merged = dict(features_dict)
+    if bathy_features:
+        merged.update(bathy_features)
+
+    # Derive nearest_isobath_proximity = 1 / (1 + d/100) from raw distance
+    if "nearest_isobath_proximity" not in merged and "nearest_isobath_distance_m" in merged:
+        try:
+            d = float(merged["nearest_isobath_distance_m"])
+            merged["nearest_isobath_proximity"] = (
+                1.0 / (1.0 + d / 100.0) if math.isfinite(d) else 0.0
+            )
+        except (TypeError, ValueError):
+            merged["nearest_isobath_proximity"] = 0.0
+
+    # Zone class for one-hot expansion
+    zone = merged.get("bathy_zone_class", merged.get("bathymetry_zone_class"))
+
+    out = {}
+    unresolved = set()
+    for name in schema:
+        if name.startswith("zone_"):
+            out[name] = 1.0 if zone == name[len("zone_"):] else 0.0
+            continue
+        val = None
+        for alias in _FEATURE_ALIASES.get(name, [name]):
+            if alias in merged and merged[alias] is not None:
+                val = merged[alias]
+                break
+        if val is None:
+            if name in _FEATURE_DEFAULTS:
+                val = _FEATURE_DEFAULTS[name]
+            else:
+                # Genuinely unknown feature — cannot fabricate a value.
+                unresolved.add(name)
+                out[name] = 0.0
+                continue
+        try:
+            out[name] = float(val)
+        except (TypeError, ValueError):
+            out[name] = _FEATURE_DEFAULTS.get(name, 0.0)
+    return out, unresolved
+
 # Global cache
 _RANKER_MODEL = None
 _FEATURE_SCHEMA = None
@@ -159,7 +254,7 @@ def _load_resources():
         log.warning(f"ML Ranker model or metadata missing. Using FALLBACK heuristic mode.")
 
 
-def predict_score(features_dict, terrain_features=None):
+def predict_score(features_dict, terrain_features=None, bathy_features=None):
     """
     Predicts the benthic visibility score using B02-only features.
 
@@ -214,8 +309,14 @@ def predict_score(features_dict, terrain_features=None):
               features_dict.get("raw_mean", 0.12)),
     }
 
-    standard_features = {k: features[k] for k in SCHEMA_ORDER}
-    
+    # Build the vector the LOADED model expects (schema-aware). When the model
+    # is unavailable, fall back to the 6-feature B02-only order so the heuristic
+    # and drift observer still receive a consistent dict.
+    active_schema = _FEATURE_SCHEMA if (not _IS_FALLBACK and _FEATURE_SCHEMA) else SCHEMA_ORDER
+    standard_features, _unresolved_features = _build_schema_features(
+        features_dict, active_schema, bathy_features
+    )
+
     # Hard filter
     if cloud_cov > 80.0:
         return {
@@ -228,6 +329,13 @@ def predict_score(features_dict, terrain_features=None):
     # Try ML Inference
     if not _IS_FALLBACK and _FEATURE_SCHEMA:
         try:
+            # Genuinely unknown schema features (no alias, no default) → the model
+            # expects something the pipeline cannot supply; revert to heuristic.
+            if _unresolved_features:
+                log.warning(f"Schema drift: unresolved required features {_unresolved_features}. "
+                            f"Falling back to heuristic.")
+                raise ValueError(f"Unresolved features: {_unresolved_features}")
+
             # Schema drift detection
             drift = validate_schema(standard_features, _FEATURE_SCHEMA, _DISABLED_FEATURES)
             

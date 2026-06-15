@@ -227,6 +227,36 @@ def _stumpf_ratio(b02v: float, b03v: float, n: float = 1000.0) -> float:
     return float(np.log(n * b02v + eps) / np.log(n * b03v + eps))
 
 
+def _isobath_curvature_ok(coords: list, idx: int, min_angle_deg: float = 120.0) -> bool:
+    """
+    Return True if the isobath vertex at *idx* is in a smooth section.
+    Computes the turn angle between the vectors (prev→curr) and (curr→next).
+    Rejects sharp bends (<120°) that indicate harbour walls, river mouths, or
+    digitisation artefacts — these areas produce unreliable depth samples.
+    Always returns True for endpoints (no prev/next neighbour).
+    """
+    if idx == 0 or idx >= len(coords) - 1:
+        return True
+    p0 = coords[idx - 1]
+    p1 = coords[idx]
+    p2 = coords[idx + 1]
+    # Vectors from the vertex: v1 looks back, v2 looks forward.
+    # Interior angle = arccos(dot(v1,v2)): 180° = straight, 0° = U-turn.
+    v1 = np.array([p0[0] - p1[0], p0[1] - p1[1]], dtype=float)
+    v2 = np.array([p2[0] - p1[0], p2[1] - p1[1]], dtype=float)
+    n1, n2 = np.linalg.norm(v1), np.linalg.norm(v2)
+    if n1 < 1e-10 or n2 < 1e-10:
+        return True
+    cos_a = np.clip(np.dot(v1, v2) / (n1 * n2), -1.0, 1.0)
+    angle_deg = float(np.degrees(np.arccos(cos_a)))
+    return angle_deg >= min_angle_deg
+
+
+# B03 reflectance threshold above which a pixel is likely sand, whitecap, or
+# optically shallow sand flat — all of which bias calibration upward.
+_B03_SAND_THRESHOLD = 0.15
+
+
 def _sample_pixels_near_isobath(
     b02_arr: np.ndarray, b03_arr: np.ndarray,
     features: list[dict], target_depth: float,
@@ -236,6 +266,10 @@ def _sample_pixels_near_isobath(
     Return (depth, X) pairs for all pixels within ±buf pixels of any
     vertex on the target_depth isobath that falls inside the raster.
     Uses a set to avoid duplicating the same pixel from nearby vertices.
+
+    Quality filters applied per vertex and per pixel:
+      • Curvature: skip vertices in sharp bends (harbour walls, river mouths)
+      • B03 > 0.15: skip pixels dominated by sand or whitecaps
     """
     min_lat, min_lon, max_lat, max_lon = bounds_wgs84
     H, W = b02_arr.shape
@@ -245,7 +279,11 @@ def _sample_pixels_near_isobath(
     for feat in features:
         if feat["depth"] != target_depth:
             continue
-        for node in feat["coords"]:
+        coords = feat["coords"]
+        for vi, node in enumerate(coords):
+            # Curvature quality filter — skip sharp-bend vertices
+            if not _isobath_curvature_ok(coords, vi):
+                continue
             nlon, nlat = node[0], node[1]
             col0 = int(round((nlon - min_lon) / (max_lon - min_lon) * (W - 1)))
             col0 = max(0, min(col0, W - 1))
@@ -263,6 +301,9 @@ def _sample_pixels_near_isobath(
                     b03v = float(b03_arr[r, c])
                     if b02v <= 1e-6 or b03v <= 1e-6:
                         continue
+                    # Pixel quality filter — reject bright-sand / whitecap pixels
+                    if b03v > _B03_SAND_THRESHOLD:
+                        continue
                     X = _stumpf_ratio(b02v, b03v, n)
                     samples.append((target_depth, X))
     return samples
@@ -275,6 +316,7 @@ def calibrate_stumpf_from_isobaths(
     features: list[dict],
     bounds_wgs84: tuple[float, float, float, float],  # (min_lat, min_lon, max_lat, max_lon)
     n: float = 1000.0,
+    b04_arr: np.ndarray | None = None,
 ) -> tuple[float, float, dict]:
     """
     Derive Stumpf m0, m1 calibration coefficients using IH isobaths as
@@ -285,18 +327,58 @@ def calibrate_stumpf_from_isobaths(
       - Single-isobath offset: if only 1 depth available, keeps m1 at the
         literature value and solves analytically for m0 (offset calibration)
       - Relaxed safety clip: allows natural Algarve fit range
+      - Sand-pixel exclusion: if b04_arr supplied, uses substrate_classifier
+        to build a sand mask and removes those pixels before regression
     """
+    # Build substrate sand mask when B04 is available (removes bright-sand bias)
+    sand_mask: np.ndarray | None = None
+    if b04_arr is not None:
+        try:
+            from src.substrate_classifier import get_sand_mask
+            sand_mask = get_sand_mask(b02_arr, b03_arr, b04_arr)
+            n_sand = int(sand_mask.sum())
+            log.info("Substrate sand mask: %d pixels flagged (excluded from IH calibration)", n_sand)
+        except Exception as _sm_err:
+            log.debug("Sand mask skipped: %s", _sm_err)
+
     # Collect samples per isobath depth using buffer sampling
     all_samples: list[tuple[float, float]] = []
     per_depth_n: dict[int, int] = {}
+    n_sand_rejected = 0
 
     for depth_m in BENTHIC_ISOBATHS:
         s = _sample_pixels_near_isobath(
             b02_arr, b03_arr, features, float(depth_m), bounds_wgs84, n
         )
+        if s and sand_mask is not None:
+            # Filter out samples whose pixel was classified as sand
+            # _sample_pixels_near_isobath returns (depth, X) in raster order;
+            # rebuild with row/col to apply the mask
+            min_lat, min_lon, max_lat, max_lon = bounds_wgs84
+            H, W = b02_arr.shape
+            filtered = []
+            for feat in features:
+                if feat["depth"] != float(depth_m):
+                    continue
+                for node in feat["coords"]:
+                    nlon, nlat = node[0], node[1]
+                    c = int(round((nlon - min_lon) / (max_lon - min_lon) * (W - 1)))
+                    r = int(round((max_lat - nlat) / (max_lat - min_lat) * (H - 1)))
+                    r = max(0, min(r, H - 1))
+                    c = max(0, min(c, W - 1))
+                    if not sand_mask[r, c]:
+                        b02v = float(b02_arr[r, c])
+                        b03v = float(b03_arr[r, c])
+                        if b02v > 1e-6 and b03v > 1e-6 and b03v <= _B03_SAND_THRESHOLD:
+                            filtered.append((float(depth_m), _stumpf_ratio(b02v, b03v, n)))
+            n_sand_rejected += len(s) - len(filtered)
+            s = filtered if filtered else s   # keep original if all filtered out
         if s:
             per_depth_n[int(depth_m)] = len(s)
             all_samples.extend(s)
+
+    if n_sand_rejected > 0:
+        log.info("Sand-masked pixels rejected from IH calibration: %d", n_sand_rejected)
 
     if len(all_samples) < 4:
         log.warning(
@@ -535,6 +617,7 @@ def run_bathy_integration(
     buffer_m: float = 3000.0,
     b02_arr: Optional[np.ndarray] = None,
     b03_arr: Optional[np.ndarray] = None,
+    b04_arr: Optional[np.ndarray] = None,
     sdb_map: Optional[np.ndarray] = None,
     bounds_wgs84: Optional[tuple] = None,
 ) -> dict:
@@ -592,7 +675,7 @@ def run_bathy_integration(
     # Stumpf calibration (requires rasters)
     if b02_arr is not None and b03_arr is not None and bounds_wgs84 is not None:
         m0, m1, cal_diag = calibrate_stumpf_from_isobaths(
-            b02_arr, b03_arr, features, bounds_wgs84
+            b02_arr, b03_arr, features, bounds_wgs84, b04_arr=b04_arr
         )
         result["calibration"] = cal_diag
         result["recommended_m0"] = m0
