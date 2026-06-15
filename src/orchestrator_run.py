@@ -25,8 +25,12 @@ from src.constants import (
 )
 try:
     from src.cmems_kd490 import get_kd490 as _get_kd490_live
+    from src.cmems_kd490 import refresh_from_cmems as _cmems_refresh  # type: ignore[attr-defined]
+    HAS_CMEMS_KD = True
 except Exception:
     _get_kd490_live = None  # type: ignore[assignment]
+    _cmems_refresh = None   # type: ignore[assignment]
+    HAS_CMEMS_KD = False
 
 try:
     from src.ipma_sea_state import is_scene_usable as _ipma_is_scene_usable
@@ -55,6 +59,17 @@ except ImportError:
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
+
+# Activate live CMEMS Kd490 at startup (shadow mode — falls back to static table on failure)
+if HAS_CMEMS_KD and _cmems_refresh is not None:
+    try:
+        _cmems_ok = _cmems_refresh()
+        if _cmems_ok:
+            log.info("CMEMS Kd490 live table loaded.")
+        else:
+            log.info("CMEMS Kd490 using static fallback (credentials not set or unreachable).")
+    except Exception as _e:
+        log.debug("CMEMS Kd490 refresh skipped: %s", _e)
 
 # ── Config defaults ──────────────────────────────────────────────────────────
 PROJECT_DIR   = Path(__file__).parent.parent
