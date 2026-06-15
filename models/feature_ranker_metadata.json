@@ -2,34 +2,48 @@
   "model_version": "2.0",
   "schema_version": "3.0",
   "canonical": true,
-  "training_date": "2026-05-30T06:52:29.479252+00:00",
+  "training_date": "2026-06-12T15:26:01.005077+00:00",
   "algorithm": "RandomForestRegressor",
   "features": [
-    "benthic_contrast",
-    "snr",
-    "fft_clean",
-    "edge_entropy",
-    "dyn_range",
-    "signal"
+    "kd_b02",
+    "water_trans",
+    "image_contrast",
+    "signal_strength",
+    "cleanliness",
+    "bathy_slope_proxy",
+    "contour_density_proxy",
+    "n_isobaths_aoi",
+    "nearest_isobath_proximity",
+    "zone_very_shallow",
+    "zone_nearshore_mid",
+    "zone_shallow_reef",
+    "zone_offshore"
   ],
-  "data_source": "synthetic",
+  "data_source": "real",
   "metrics": {
-    "validation_mse": 0.19647550154435955,
-    "validation_accuracy": 0.6666666666666666
+    "validation_mse": 0.23824254598776134,
+    "validation_accuracy": 0.6904761904761905
   },
   "feature_importance": {
-    "snr": 0.4376600079458877,
-    "edge_entropy": 0.39010870457697266,
-    "signal": 0.07290120321643574,
-    "fft_clean": 0.043160944228340846,
-    "benthic_contrast": 0.030415340182507605,
-    "dyn_range": 0.025753799849855534
+    "signal_strength": 0.15098403292078064,
+    "nearest_isobath_proximity": 0.12744666826363202,
+    "contour_density_proxy": 0.11644054682047525,
+    "water_trans": 0.11204669490649673,
+    "kd_b02": 0.11156063375887651,
+    "image_contrast": 0.09997309714088365,
+    "bathy_slope_proxy": 0.08851164846482633,
+    "cleanliness": 0.08188657176941158,
+    "n_isobaths_aoi": 0.07817143826352015,
+    "zone_nearshore_mid": 0.027517841404970596,
+    "zone_very_shallow": 0.0028878251855135205,
+    "zone_offshore": 0.0024364273014361145,
+    "zone_shallow_reef": 0.00013657379917698955
   },
+  "dataset_size_pairs": 103,
   "disabled_features": {
-    "contrast": "non-discriminative in B02-only pipeline"
+    "contrast": "Constant proxy (0.8) \u2014 does not discriminate images"
   },
   "deprecated_models": [
     "visibility_rf_bathy.pkl"
-  ],
-  "dataset_size_pairs": 13
+  ]
 }

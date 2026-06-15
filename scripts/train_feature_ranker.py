@@ -38,8 +38,8 @@ MODELS_DIR = os.path.join(PROJECT_DIR, 'models')
 os.makedirs(ARTIFACTS_DIR, exist_ok=True)
 os.makedirs(MODELS_DIR, exist_ok=True)
 
-# B02-only features consistent with BVI model
-FEATURE_COLS = [
+# B02-only features used by the synthetic fallback (8 expert-scored dates).
+SYNTHETIC_FEATURE_COLS = [
     "benthic_contrast",    # Edge strength (Sobel+Laplacian on B02)
     "snr",                 # Signal-to-noise ratio of B02
     "fft_clean",           # FFT cleanliness of B02
@@ -48,7 +48,45 @@ FEATURE_COLS = [
     "signal",              # Raw B02 signal level
 ]
 
+# Physical/bathymetric features available in data/real_pairwise_features.csv
+# (15 Algarve sites × 13–14 pairs per site = 103 pairs total). When real data
+# is detected, we substitute these for SYNTHETIC_FEATURE_COLS at runtime.
+# `nearest_isobath_proximity` is derived (1 / (1 + d/100m)) from the raw
+# nearest_isobath_distance_m column to avoid the inf-sentinel artefact.
+REAL_NUMERIC_COLS = [
+    "kd_b02",
+    "water_trans",
+    "image_contrast",          # renamed from CSV's 'contrast' to avoid clash
+                               # with DISABLED_FEATURES["contrast"] (B02-only)
+    "signal_strength",
+    "cleanliness",
+    "bathy_slope_proxy",
+    "contour_density_proxy",
+    "n_isobaths_aoi",
+    "nearest_isobath_proximity",
+]
+BATHY_ZONE_VALUES = ["very_shallow", "nearshore_mid", "shallow_reef", "offshore", "unknown"]
+REAL_ZONE_COLS = [f"zone_{v}" for v in BATHY_ZONE_VALUES[:-1]]  # 'unknown' is reference
+REAL_FEATURE_COLS = REAL_NUMERIC_COLS + REAL_ZONE_COLS
+
+# Bound at module import to the synthetic schema; main() may swap to real.
+FEATURE_COLS = SYNTHETIC_FEATURE_COLS
+
 DISABLED_FEATURES = {"contrast": "non-discriminative in B02-only pipeline"}
+
+
+def _augment_real_features(df):
+    """Add derived columns (proximity, one-hot zones, renamed contrast)."""
+    import numpy as np
+    if "nearest_isobath_distance_m" in df.columns:
+        d = df["nearest_isobath_distance_m"].replace([np.inf, -np.inf], np.nan)
+        df["nearest_isobath_proximity"] = (1.0 / (1.0 + d / 100.0)).fillna(0.0)
+    if "bathy_zone_class" in df.columns:
+        for v in BATHY_ZONE_VALUES[:-1]:
+            df[f"zone_{v}"] = (df["bathy_zone_class"] == v).astype(float)
+    if "contrast" in df.columns and "image_contrast" not in df.columns:
+        df["image_contrast"] = df["contrast"]
+    return df
 
 def load_real_pairwise_data():
     """
@@ -65,15 +103,19 @@ def load_real_pairwise_data():
     try:
         df_features = pd.read_csv(real_features_path)
         df_labels = pd.read_csv(real_labels_path)
-        
-        # Validate required columns
-        required_cols = ['image_id'] + FEATURE_COLS
+
+        # The real CSV ships physical/bathymetric features; derive the
+        # ones the model expects (proximity + zone one-hot) before checking.
+        df_features = _augment_real_features(df_features)
+
+        required_cols = ['image_id'] + REAL_FEATURE_COLS
         missing = [c for c in required_cols if c not in df_features.columns]
         if missing:
             log.warning(f"Real data missing columns: {missing}, falling back to synthetic.")
             return None, None
-        
-        log.info(f"Loaded real pairwise data: {len(df_labels)} pairs from {len(df_features)} records")
+
+        log.info(f"Loaded real pairwise data: {len(df_labels)} pairs from {len(df_features)} records "
+                 f"({df_features['site'].nunique() if 'site' in df_features.columns else '?'} sites)")
         return df_features, df_labels
     except Exception as e:
         log.warning(f"Failed to load real data: {e}, falling back to synthetic.")
@@ -153,17 +195,22 @@ def main():
     # 1. Carregar/Gerar Dados
     log.info("Loading dataset...")
     
-    # Try real data first
+    # Try real data first. The real CSV has physical/bathymetric features;
+    # when that schema is in use, swap FEATURE_COLS to REAL_FEATURE_COLS so
+    # the rest of the pipeline (pointwise prep, training, importance) sees
+    # the right feature set.
+    global FEATURE_COLS
     df_features, df_labels = load_real_pairwise_data()
     data_source = "real"
-    
-    # Fall back to synthetic if needed
-    if df_features is None:
+    if df_features is not None:
+        FEATURE_COLS = REAL_FEATURE_COLS
+    else:
         log.info("Generating synthetic pairwise data...")
         df_features, df_labels = generate_dummy_pairwise_data()
         data_source = "synthetic"
-    
-    log.info(f"Using {data_source} data: {len(df_labels)} pairs")
+        FEATURE_COLS = SYNTHETIC_FEATURE_COLS
+
+    log.info(f"Using {data_source} data: {len(df_labels)} pairs, {len(FEATURE_COLS)} features")
     
     # Exportar datasets para auditabilidade
     features_csv = os.path.join(ARTIFACTS_DIR, 'training_features.csv')
