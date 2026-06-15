@@ -2,6 +2,20 @@
 DGT orthophoto client — STAC-based COG downloader for ORTOSAT-2023 and
 historical air orthos (1995–2021).
 
+.. deprecated:: 2026-06
+    NOT USABLE against the DGT Centro de Dados (CDD) — verified 2026-06-14.
+    The CDD catalogue (`/dgt-be/v1/collections`) contains ONLY LiDAR products:
+    MDT-50cm, MDT-2m, MDS-50cm, MDS-2m, LAZ.  Orthophotos were never migrated
+    there.  ORTOSAT-2023 appears via STAC passthrough but its only asset is a
+    raw private-bucket URL (stor-002.a.acnca.pt:9000) → HTTP 403 AccessDenied,
+    so ``download_tiles()`` always returns ``[]``.
+
+    Kept (not deleted) because: (a) the index-computation helpers (NDVI/NDWI/
+    change_summary) are reusable on any RGBI COG, and (b) DGT may migrate orthos
+    to the CDD later.  For 25–30 cm DGT orthos TODAY use the WMS GetMap path in
+    ``scripts/reef_imagery_pipeline_v3.py:step_ortho`` instead.  For the LiDAR
+    products that DO work, see ``src/coastal_topography.py`` (dem_source="dgt").
+
 Why this exists
 ---------------
 The v3 pipeline uses DGT WMS/WCS to retrieve ORTOSAT-2023 30 cm imagery.
@@ -213,8 +227,15 @@ class DGTOrthoClient:
         for feat in features:
             item_id  = feat.get("id", "")
             coll_id  = ORTHO_COLLECTIONS.get(collection, collection)
-            asset_key = "visual" if "visual" in feat.get("assets", {}) else "Data"
-            raw_href  = feat.get("assets", {}).get(asset_key, {}).get("href", "")
+            # Prefer the proxied "data" asset (downloadable via the CDD backend).
+            # Fall back to "Data"/"visual" for non-proxied collections (e.g. the
+            # orthophoto passthrough, which only exposes "visual" → raw private
+            # bucket and returns 403; kept as last resort for parity with STAC).
+            assets_d = feat.get("assets", {})
+            for asset_key in ("data", "Data", "visual"):
+                if asset_key in assets_d:
+                    break
+            raw_href = assets_d.get(asset_key, {}).get("href", "")
             fname = Path(raw_href).name or f"{item_id}.tif"
             local = tiles_dir / fname
 
@@ -231,10 +252,13 @@ class DGTOrthoClient:
                 )
                 continue
 
-            signed_url = self._signed_download_url(coll_id, item_id)
-            if signed_url is None:
+            # Prefer the asset href from STAC search (it already resolves to a
+            # presigned MinIO URL via a 302 that requests follows transparently).
+            # Fall back to a per-item lookup only if the search did not embed one.
+            signed_url = raw_href or self._signed_download_url(coll_id, item_id)
+            if not signed_url:
                 logger.error(
-                    "Could not obtain a signed download URL for %s/%s — "
+                    "Could not obtain a download URL for %s/%s — "
                     "check credentials.", collection, item_id
                 )
                 continue

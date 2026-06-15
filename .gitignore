@@ -52,6 +52,10 @@ venv/
 old/
 scratch/
 test_output_glo30/
+.kilo/
+
+# Runtime caches (generated at run time, not project data)
+data/cache/
 
 # Backup files
 *.bak

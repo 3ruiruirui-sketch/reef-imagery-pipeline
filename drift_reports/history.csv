@@ -3,3 +3,4 @@ timestamp,pipeline,model_version,schema_version,batch_id,observations,alerts_ok,
 2026-05-25T00:58:32.438083+00:00,reef_imagery_pipeline,1.2,2.0,reef-orchestrator-2026-05-25T005832Z-depth16,4,0,0,4,2,4,0,critical,score_value,CRITICAL,z=5.4 (score=1.4135),4 critical drift events in batch
 2026-06-03T18:06:47.213230+00:00,reef_imagery_pipeline,2.0,3.0,reef-orchestrator-2026-06-03T180647Z-depth16,4,2,0,2,2,0,2,critical,_null_rate,CRITICAL,null_rate=100%,2 critical drift events in batch
 2026-06-03T18:10:40.481821+00:00,reef_imagery_pipeline,2.0,3.0,reef-orchestrator-2026-06-03T181040Z-depth16,2,2,0,0,0,0,0,ok,,,,no drift detected in batch
+2026-06-11T23:05:27.202196+00:00,reef_imagery_pipeline,2.0,3.0,reef-orchestrator-2026-06-11T230527Z-depth16,2,2,0,0,0,0,0,ok,,,,no drift detected in batch

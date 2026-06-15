@@ -72,7 +72,8 @@ def run_coastal_topography_analysis(output_dir, buffer_m=1000):
     analyzer = CoastalTopographyAnalyzer(
         bbox=bbox,
         output_dir=str(Path(output_dir) / "coastal_topography"),
-        cache_tiles=True
+        cache_tiles=True,
+        dem_source="dgt",  # 50 cm DGT LiDAR (covers full Algarve); needs DGT_CDD_* creds
     )
     
     result = analyzer.run_analysis(
