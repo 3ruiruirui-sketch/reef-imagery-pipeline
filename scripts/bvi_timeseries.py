@@ -162,7 +162,7 @@ def compute_bvi(
     Physics chain: BOA conversion → Kd490 (band-ratio / seasonal prior) →
     Beer-Lambert transmittance → window statistics → ranking_model.predict_score().
     """
-    from src.cmems_kd490 import get_kd490
+    from src.cmems_kd490 import get_kd490, get_zsd
     from src.ranking_model import predict_score, terrain_exposure_modifier
 
     # BOA conversion
@@ -228,11 +228,13 @@ def compute_bvi(
     modifier = terrain_exposure_modifier(slope_mean, aspect_mean)
     bvi = round(score * modifier, 4)
 
+    zsd = get_zsd(month)
     return {
         "bvi":        bvi,
         "ranker_mode": mode,
         "kd_b02":     round(kd_b02, 4),
         "kd_seasonal": round(kd_seas, 4),
+        "zsd_m":      round(zsd, 1) if zsd is not None else None,
         "water_trans": round(water_trans, 4),
         "snr":        round(snr, 2),
         "contrast":   round(contrast, 4),
