@@ -413,29 +413,34 @@ def main() -> None:
     ap.add_argument("--cloud",           type=float, default=15.0, help="max cloud cover %% (default: 15)")
     ap.add_argument("--scenes-per-year", type=int,  default=1,    help="scenes per year per site (default: 1)")
     ap.add_argument("--dry-run",         action="store_true",      help="STAC only, no BVI computation")
+    ap.add_argument("--force-static-kd", action="store_true",
+                    help="skip CMEMS refresh and use static KD490_TABLE for all scenes "
+                         "(ensures consistent Kd490 prior across all years for trend analysis)")
     args = ap.parse_args()
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Warm up CMEMS Kd490 with a 30-second timeout.
-    # If CMEMS is slow or unavailable, the static table is used for all scenes.
+    # Warm up CMEMS Kd490 with a 30-second timeout (skipped with --force-static-kd).
     # NOTE: shutdown(wait=False) so the timeout actually fires — the default `with`
     # context manager would call shutdown(wait=True) and block until the thread ends.
-    try:
-        import concurrent.futures
-        from src.cmems_kd490 import refresh_from_cmems
-        _pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    if args.force_static_kd:
+        log.info("--force-static-kd: skipping CMEMS refresh, using static KD490_TABLE for all scenes")
+    else:
         try:
-            fut = _pool.submit(refresh_from_cmems)
-            ok = fut.result(timeout=30)
-            log.info("CMEMS Kd490 %s", "loaded" if ok else "using static fallback")
-        except concurrent.futures.TimeoutError:
-            log.info("CMEMS Kd490 timeout (>30 s) — using static table for all scenes")
-        finally:
-            _pool.shutdown(wait=False)   # let thread finish in background; don't block
-    except Exception as exc:
-        log.debug("CMEMS refresh skipped: %s", exc)
+            import concurrent.futures
+            from src.cmems_kd490 import refresh_from_cmems
+            _pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            try:
+                fut = _pool.submit(refresh_from_cmems)
+                ok = fut.result(timeout=30)
+                log.info("CMEMS Kd490 %s", "loaded" if ok else "using static fallback")
+            except concurrent.futures.TimeoutError:
+                log.info("CMEMS Kd490 timeout (>30 s) — using static table for all scenes")
+            finally:
+                _pool.shutdown(wait=False)   # let thread finish in background; don't block
+        except Exception as exc:
+            log.debug("CMEMS refresh skipped: %s", exc)
 
     sites = load_sites(SITES_CSV, names=args.sites)
     if not sites:
