@@ -1,6 +1,6 @@
 """Tests for src/cmems_kd490.py — Kd490 climatology with CMEMS/static fallback."""
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -11,76 +11,82 @@ import src.cmems_kd490 as _mod
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
-def _make_fake_dataset(values_by_month: dict[int, float] | None = None):
+def _make_fake_dataset(kd_by_month: dict[int, float] | None = None,
+                       zsd_by_month: dict[int, float] | None = None):
     """Build a minimal xarray-like mock that copernicusmarine.open_dataset returns."""
     import xarray as xr
     import pandas as pd
 
-    if values_by_month is None:
-        values_by_month = {m: 0.045 + m * 0.001 for m in range(1, 13)}
+    if kd_by_month is None:
+        kd_by_month = {m: 0.045 + m * 0.001 for m in range(1, 13)}
+    if zsd_by_month is None:
+        zsd_by_month = {m: 15.0 - m * 0.2 for m in range(1, 13)}
 
-    # Build a (time, lat, lon) DataArray with one pixel per month
     times = pd.date_range("2020-01-01", periods=12, freq="MS")
-    data = np.array([values_by_month.get(t.month, 0.05) for t in times],
-                    dtype=np.float32).reshape(12, 1, 1)
-    da = xr.DataArray(data, dims=["time", "lat", "lon"],
-                      coords={"time": times, "lat": [37.0], "lon": [-8.5]})
-    ds = xr.Dataset({"KD490": da})
-    return ds
+
+    kd_data = np.array([kd_by_month.get(t.month, 0.05) for t in times],
+                       dtype=np.float32).reshape(12, 1, 1)
+    zsd_data = np.array([zsd_by_month.get(t.month, 14.0) for t in times],
+                        dtype=np.float32).reshape(12, 1, 1)
+
+    coords = {"time": times, "lat": [37.0], "lon": [-8.5]}
+    kd_da  = xr.DataArray(kd_data,  dims=["time", "lat", "lon"], coords=coords)
+    zsd_da = xr.DataArray(zsd_data, dims=["time", "lat", "lon"], coords=coords)
+    return xr.Dataset({"KD490": kd_da, "ZSD": zsd_da})
 
 
 # ── _fetch_cmems_climatology ─────────────────────────────────────────────────
 
 class TestFetchCmemsClimatology:
-    def test_raises_when_no_credentials(self, monkeypatch):
-        monkeypatch.delenv("CMEMS_USER", raising=False)
-        monkeypatch.delenv("CMEMS_PASSWORD", raising=False)
-        monkeypatch.delenv("COPERNICUSMARINE_SERVICE_USERNAME", raising=False)
-        monkeypatch.delenv("COPERNICUSMARINE_SERVICE_PASSWORD", raising=False)
-        with pytest.raises(RuntimeError, match="credentials not set"):
-            _mod._fetch_cmems_climatology()
-
-    def test_returns_12_month_dict_with_valid_credentials(self, monkeypatch):
+    def test_returns_tuple_of_two_dicts(self, monkeypatch):
         monkeypatch.setenv("CMEMS_USER", "test_user")
         monkeypatch.setenv("CMEMS_PASSWORD", "test_pass")
         fake_ds = _make_fake_dataset()
         with patch("copernicusmarine.open_dataset", return_value=fake_ds):
-            result = _mod._fetch_cmems_climatology()
-        assert set(result.keys()) == set(range(1, 13))
-        for v in result.values():
+            kd_table, zsd_table = _mod._fetch_cmems_climatology()
+        assert set(kd_table.keys()) == set(range(1, 13))
+        assert set(zsd_table.keys()) == set(range(1, 13))
+        for v in kd_table.values():
             assert isinstance(v, float)
-            assert 0.0 < v < 1.0  # physically plausible Kd490
+            assert 0.0 < v < 1.0
+        for v in zsd_table.values():
+            assert isinstance(v, float)
+            assert v > 0.0
 
-    def test_fills_missing_months_from_static_table(self, monkeypatch):
-        """If CMEMS returns data for only some months, the rest come from the static table."""
+    def test_fills_missing_kd_months_from_static_table(self, monkeypatch):
+        """If CMEMS returns KD490 for only some months, the rest come from static."""
         monkeypatch.setenv("CMEMS_USER", "u")
         monkeypatch.setenv("CMEMS_PASSWORD", "p")
-        # Dataset with only Jan–Jun months
         import xarray as xr, pandas as pd
+        # Only Jan–Jun in the dataset
         times = pd.date_range("2020-01-01", periods=6, freq="MS")
-        data = np.full((6, 1, 1), 0.042, dtype=np.float32)
-        da = xr.DataArray(data, dims=["time", "lat", "lon"],
-                          coords={"time": times, "lat": [37.0], "lon": [-8.5]})
-        fake_ds = xr.Dataset({"KD490": da})
+        kd_data  = np.full((6, 1, 1), 0.042, dtype=np.float32)
+        zsd_data = np.full((6, 1, 1), 14.0,  dtype=np.float32)
+        coords = {"time": times, "lat": [37.0], "lon": [-8.5]}
+        fake_ds = xr.Dataset({
+            "KD490": xr.DataArray(kd_data,  dims=["time", "lat", "lon"], coords=coords),
+            "ZSD":   xr.DataArray(zsd_data, dims=["time", "lat", "lon"], coords=coords),
+        })
         with patch("copernicusmarine.open_dataset", return_value=fake_ds):
-            result = _mod._fetch_cmems_climatology()
-        # All 12 months present
-        assert set(result.keys()) == set(range(1, 13))
-        # Jul–Dec fall back to static table
+            kd_table, _ = _mod._fetch_cmems_climatology()
+        assert set(kd_table.keys()) == set(range(1, 13))
         for m in range(7, 13):
-            assert result[m] == _STATIC_TABLE.get(m, KD490_DEFAULT)
+            assert kd_table[m] == _STATIC_TABLE.get(m, KD490_DEFAULT)
 
     def test_no_time_dimension_broadcasts_to_all_months(self, monkeypatch):
         monkeypatch.setenv("CMEMS_USER", "u")
         monkeypatch.setenv("CMEMS_PASSWORD", "p")
         import xarray as xr
-        data = np.full((4, 4), 0.055, dtype=np.float32)
-        da = xr.DataArray(data, dims=["lat", "lon"])
-        fake_ds = xr.Dataset({"KD490": da})
+        kd_data  = np.full((4, 4), 0.055, dtype=np.float32)
+        zsd_data = np.full((4, 4), 13.0,  dtype=np.float32)
+        fake_ds = xr.Dataset({
+            "KD490": xr.DataArray(kd_data,  dims=["lat", "lon"]),
+            "ZSD":   xr.DataArray(zsd_data, dims=["lat", "lon"]),
+        })
         with patch("copernicusmarine.open_dataset", return_value=fake_ds):
-            result = _mod._fetch_cmems_climatology()
-        assert set(result.keys()) == set(range(1, 13))
-        for v in result.values():
+            kd_table, _ = _mod._fetch_cmems_climatology()
+        assert set(kd_table.keys()) == set(range(1, 13))
+        for v in kd_table.values():
             assert abs(v - 0.055) < 1e-4
 
     def test_uses_copernicusmarine_env_var_aliases(self, monkeypatch):
@@ -96,39 +102,64 @@ class TestFetchCmemsClimatology:
         assert kwargs["username"] == "alt_user"
         assert kwargs["password"] == "alt_pass"
 
-
-# ── _build_table ─────────────────────────────────────────────────────────────
-
-class TestBuildTable:
-    def test_falls_back_on_missing_credentials(self, monkeypatch):
+    def test_no_credentials_still_calls_open_dataset(self, monkeypatch):
+        """Without env vars, copernicusmarine uses stored credentials file — no RuntimeError."""
         monkeypatch.delenv("CMEMS_USER", raising=False)
         monkeypatch.delenv("CMEMS_PASSWORD", raising=False)
         monkeypatch.delenv("COPERNICUSMARINE_SERVICE_USERNAME", raising=False)
         monkeypatch.delenv("COPERNICUSMARINE_SERVICE_PASSWORD", raising=False)
-        result = _mod._build_table()
-        assert result == dict(_STATIC_TABLE)
+        fake_ds = _make_fake_dataset()
+        with patch("copernicusmarine.open_dataset", return_value=fake_ds) as mock_open:
+            _mod._fetch_cmems_climatology()
+        # Called WITHOUT username/password kwargs (stored creds file used by the library)
+        mock_open.assert_called_once()
+        _, kwargs = mock_open.call_args
+        assert "username" not in kwargs
+        assert "password" not in kwargs
 
-    def test_falls_back_on_import_error(self, monkeypatch):
-        monkeypatch.setenv("CMEMS_USER", "u")
-        monkeypatch.setenv("CMEMS_PASSWORD", "p")
+
+# ── refresh_from_cmems ────────────────────────────────────────────────────────
+
+class TestRefreshFromCmems:
+    def test_returns_false_on_import_error(self):
         with patch("src.cmems_kd490._fetch_cmems_climatology",
                    side_effect=ImportError("copernicusmarine not installed")):
-            result = _mod._build_table()
-        assert result == dict(_STATIC_TABLE)
+            result = _mod.refresh_from_cmems()
+        assert result is False
 
-    def test_falls_back_on_network_error(self, monkeypatch):
-        monkeypatch.setenv("CMEMS_USER", "u")
-        monkeypatch.setenv("CMEMS_PASSWORD", "p")
+    def test_returns_false_on_network_error(self):
         with patch("src.cmems_kd490._fetch_cmems_climatology",
                    side_effect=ConnectionError("timeout")):
-            result = _mod._build_table()
-        assert result == dict(_STATIC_TABLE)
+            result = _mod.refresh_from_cmems()
+        assert result is False
 
-    def test_returns_live_table_on_success(self, monkeypatch):
-        live = {m: 0.040 for m in range(1, 13)}
-        with patch("src.cmems_kd490._fetch_cmems_climatology", return_value=live):
-            result = _mod._build_table()
-        assert result == live
+    def test_table_unchanged_on_failure(self):
+        before = dict(_mod.KD490_TABLE_LIVE)
+        with patch("src.cmems_kd490._fetch_cmems_climatology",
+                   side_effect=OSError("network unreachable")):
+            _mod.refresh_from_cmems()
+        assert _mod.KD490_TABLE_LIVE == before
+
+    def test_returns_true_and_updates_table_on_success(self):
+        live_kd  = {m: 0.040 for m in range(1, 13)}
+        live_zsd = {m: 18.0  for m in range(1, 13)}
+        with patch("src.cmems_kd490._fetch_cmems_climatology",
+                   return_value=(live_kd, live_zsd)):
+            result = _mod.refresh_from_cmems()
+        assert result is True
+        assert _mod.KD490_TABLE_LIVE[7] == pytest.approx(0.040)
+        assert _mod.ZSD_TABLE_LIVE[7]   == pytest.approx(18.0)
+
+    def test_mutates_in_place_not_rebind(self):
+        """Capture a reference BEFORE refresh — it must reflect the new values after."""
+        captured_ref = _mod.KD490_TABLE_LIVE
+        live_kd  = {m: 0.099 for m in range(1, 13)}
+        live_zsd = {m: 5.0   for m in range(1, 13)}
+        with patch("src.cmems_kd490._fetch_cmems_climatology",
+                   return_value=(live_kd, live_zsd)):
+            _mod.refresh_from_cmems()
+        assert captured_ref is _mod.KD490_TABLE_LIVE, "refresh must not rebind the module global"
+        assert captured_ref[7] == pytest.approx(0.099)
 
 
 # ── get_kd490 ────────────────────────────────────────────────────────────────

@@ -115,11 +115,17 @@ def refresh_from_cmems() -> bool:
     Uses ~/.copernicusmarine/ stored credentials automatically; env vars override.
     Returns True on success, False on any failure (tables retain previous values).
     """
-    global KD490_TABLE_LIVE, ZSD_TABLE_LIVE
     try:
         kd, zsd = _fetch_cmems_climatology()
-        KD490_TABLE_LIVE = kd
-        ZSD_TABLE_LIVE   = zsd
+        # Mutate in place (do NOT rebind): consumers such as
+        # reef_ml_predictor_acolite import these tables by reference at import time
+        # (`from src.cmems_kd490 import KD490_TABLE_LIVE`). A rebind would leave those
+        # references pointing at the stale static dict, so the BVI path would never
+        # see the live values. In-place update reaches every captured reference.
+        KD490_TABLE_LIVE.clear()
+        KD490_TABLE_LIVE.update(kd)
+        ZSD_TABLE_LIVE.clear()
+        ZSD_TABLE_LIVE.update(zsd)
         return True
     except ImportError:
         log.warning("copernicusmarine not installed — retaining static Kd490 table.")
