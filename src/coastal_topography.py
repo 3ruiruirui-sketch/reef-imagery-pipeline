@@ -1164,7 +1164,7 @@ def _run_selftest() -> int:
 
     Streams a windowed crop of a known Albufeira MDT-50cm tile straight from MinIO.
     Returns a process exit code: 0 on success OR a graceful no-creds/fallback path,
-    1 only on an unexpected crash. Runs cleanly in CI (no creds → ⚠️ message, exit 0).
+    1 only on an unexpected crash. Runs cleanly in CI (no creds → message, exit 0).
     """
     logging.basicConfig(
         level=logging.INFO,
@@ -1177,7 +1177,9 @@ def _run_selftest() -> int:
     TILE_HREF = ("https://stor-002.a.acnca.pt:9000/lidar/MDT50cm/"
                  "MDT-50cm-191013-04-2024_v01.tif")
     TILE_BBOX = (-8.234, 37.074, -8.222, 37.083)   # WGS84, overlaps the tile footprint
-    OUT_PATH = Path("/tmp/selftest_crop.tif")
+    # Dev/test override: COASTAL_SELFTEST_OUT redirects the throwaway file.
+    # Default (CI, production) keeps the global /tmp path unchanged.
+    OUT_PATH = Path(os.environ.get("COASTAL_SELFTEST_OUT", "/tmp/selftest_crop.tif"))
 
     analyzer = CoastalTopographyAnalyzer(
         bbox=TILE_BBOX,
@@ -1187,7 +1189,7 @@ def _run_selftest() -> int:
 
     env = analyzer._minio_stream_env()
     if env is None:
-        print("⚠️  No MinIO creds found — streaming inactive "
+        print("No MinIO credentials found; streaming inactive "
               "(set AWS_ENDPOINT_URL2 / AWS_ACCESS_KEY_ID2 / AWS_SECRET_ACCESS_KEY2, "
               "e.g. `set -a; source .env; set +a`). Pipeline falls back to CDD download.")
         return 0
@@ -1199,17 +1201,16 @@ def _run_selftest() -> int:
         if ok and OUT_PATH.exists():
             with rasterio.open(OUT_PATH) as src:
                 w, h, crs = src.width, src.height, src.crs
-            print(f"✅ Streamed crop {OUT_PATH.name} ({w}x{h} px, {crs}) "
-                  f"from MinIO → {OUT_PATH}")
+            print(f"Streamed crop from MinIO: {OUT_PATH} ({w}x{h} px, {crs})")
             return 0
         # Handled streaming failure (network/auth) — _stream_crop_to_local returned
         # False without raising. The real pipeline would fall back to CDD download.
-        print("❌ Streaming failed: no crop produced. "
-              "Pipeline would fall back to CDD signed-URL download.")
+        print("Streaming failed: no crop produced; "
+              "pipeline would fall back to CDD signed-URL download.")
         return 0
     except Exception as e:
-        print(f"❌ Streaming failed: {e}\n"
-              "   Pipeline would fall back to CDD signed-URL download.")
+        print(f"Streaming failed: {e}; "
+              "pipeline would fall back to CDD signed-URL download.")
         return 1
 
 

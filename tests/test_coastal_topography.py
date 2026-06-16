@@ -431,3 +431,204 @@ class TestRunAnalysisWithSyntheticData:
         assert Path(paths["csv"]).exists()
         assert Path(paths["json"]).exists()
         assert Path(paths["geojson"]).exists()
+
+
+# ── --selftest CLI: end-to-end via _run_selftest() ────────────────────────────
+
+class TestRunSelftest:
+    """End-to-end tests for the private `_run_selftest` covering the 4 spec
+    scenarios + edge cases. MinIO is never actually contacted — the internal
+    helpers `_minio_stream_env` and `_stream_crop_to_local` are patched, and
+    the output file is redirected via the `COASTAL_SELFTEST_OUT` env var.
+    """
+
+    @staticmethod
+    def _make_tiny_geotiff(path, w=64, h=48, crs_str="EPSG:3763"):
+        """Write a minimal valid GeoTIFF to `path`."""
+        data = np.arange(w * h, dtype=np.float32).reshape(h, w)
+        transform = _tfrom_bounds(-8.234, 37.074, -8.222, 37.083, w, h)
+        with rasterio.open(
+            str(path), "w",
+            driver="GTiff", height=h, width=w, count=1,
+            dtype=np.float32, crs=crs_str, transform=transform,
+        ) as dst:
+            dst.write(data, 1)
+        return path
+
+    # ── Scenario 1: creds OK + stream OK → exit 0, success message, file written
+    def test_scenario1_creds_and_stream_succeeds(
+        self, monkeypatch, capsys, tmp_path,
+    ):
+        monkeypatch.setenv("AWS_ENDPOINT_URL2", "https://stub")
+        monkeypatch.setenv("AWS_ACCESS_KEY_ID2", "AKIA_STUB")
+        monkeypatch.setenv("AWS_SECRET_ACCESS_KEY2", "secret")
+        out = tmp_path / "selftest_crop.tif"
+        monkeypatch.setenv("COASTAL_SELFTEST_OUT", str(out))
+
+        # Mock the stream helper to actually write a valid GeoTIFF
+        # (so the subsequent rasterio.open in _run_selftest has something to read).
+        def fake_stream(href, local_path, env):
+            self._make_tiny_geotiff(local_path)
+            return True
+
+        sentinel = object()  # any non-None env marker
+        with patch.object(CoastalTopographyAnalyzer, "_minio_stream_env",
+                          return_value=sentinel), \
+             patch.object(CoastalTopographyAnalyzer, "_stream_crop_to_local",
+                          side_effect=fake_stream):
+            from src.coastal_topography import _run_selftest
+            rc = _run_selftest()
+
+        out_text = capsys.readouterr().out
+        assert rc == 0
+        assert "Streamed crop from MinIO" in out_text
+        assert str(out) in out_text
+        assert out.exists()
+
+    # ── Scenario 2: no creds → exit 0, no-creds message, no network
+    def test_scenario2_no_creds_no_network(self, monkeypatch, capsys):
+        for v in ("AWS_ENDPOINT_URL2", "AWS_ACCESS_KEY_ID2", "AWS_SECRET_ACCESS_KEY2"):
+            monkeypatch.delenv(v, raising=False)
+        from src.coastal_topography import _run_selftest
+        rc = _run_selftest()
+        out_text = capsys.readouterr().out
+        assert rc == 0
+        assert "No MinIO credentials found" in out_text
+        assert "streaming inactive" in out_text
+        # No stream was attempted → no success message
+        assert "Streamed crop" not in out_text
+
+    # ── Scenario 3: creds OK + stream fails → exit 0, fallback message
+    def test_scenario3_creds_stream_fails_gracefully(
+        self, monkeypatch, capsys, tmp_path,
+    ):
+        monkeypatch.setenv("AWS_ENDPOINT_URL2", "https://stub")
+        monkeypatch.setenv("AWS_ACCESS_KEY_ID2", "AKIA_STUB")
+        monkeypatch.setenv("AWS_SECRET_ACCESS_KEY2", "secret")
+        out = tmp_path / "selftest_crop.tif"
+        monkeypatch.setenv("COASTAL_SELFTEST_OUT", str(out))
+        with patch.object(CoastalTopographyAnalyzer, "_minio_stream_env",
+                          return_value=object()), \
+             patch.object(CoastalTopographyAnalyzer, "_stream_crop_to_local",
+                          return_value=False):
+            from src.coastal_topography import _run_selftest
+            rc = _run_selftest()
+        out_text = capsys.readouterr().out
+        assert rc == 0
+        assert "Streaming failed" in out_text
+        assert "fall back to CDD" in out_text
+        # No file was created (the mock didn't write anything)
+        assert not out.exists()
+
+    # ── Scenario 4: creds OK + unexpected crash → exit 1 (not masked as success)
+    def test_scenario4_creds_unexpected_crash_returns_one(
+        self, monkeypatch, capsys, tmp_path,
+    ):
+        monkeypatch.setenv("AWS_ENDPOINT_URL2", "https://stub")
+        monkeypatch.setenv("AWS_ACCESS_KEY_ID2", "AKIA_STUB")
+        monkeypatch.setenv("AWS_SECRET_ACCESS_KEY2", "secret")
+        out = tmp_path / "selftest_crop.tif"
+        monkeypatch.setenv("COASTAL_SELFTEST_OUT", str(out))
+        with patch.object(CoastalTopographyAnalyzer, "_minio_stream_env",
+                          return_value=object()), \
+             patch.object(CoastalTopographyAnalyzer, "_stream_crop_to_local",
+                          side_effect=RuntimeError("simulated blow-up")):
+            from src.coastal_topography import _run_selftest
+            rc = _run_selftest()
+        out_text = capsys.readouterr().out
+        assert rc == 1
+        assert "simulated blow-up" in out_text
+        assert "Streaming failed" in out_text
+
+    # ── Edge case: output file already exists → must be overwritten
+    def test_edgecase_existing_output_file_is_overwritten(
+        self, monkeypatch, capsys, tmp_path,
+    ):
+        monkeypatch.setenv("AWS_ENDPOINT_URL2", "https://stub")
+        monkeypatch.setenv("AWS_ACCESS_KEY_ID2", "AKIA_STUB")
+        monkeypatch.setenv("AWS_SECRET_ACCESS_KEY2", "secret")
+        out = tmp_path / "selftest_crop.tif"
+        out.write_bytes(b"STALE CONTENT FROM A PREVIOUS RUN")
+        monkeypatch.setenv("COASTAL_SELFTEST_OUT", str(out))
+
+        # Mock the stream helper to actually write a valid GeoTIFF
+        def fake_stream(href, local_path, env):
+            self._make_tiny_geotiff(local_path)
+            return True
+
+        with patch.object(CoastalTopographyAnalyzer, "_minio_stream_env",
+                          return_value=object()), \
+             patch.object(CoastalTopographyAnalyzer, "_stream_crop_to_local",
+                          side_effect=fake_stream):
+            from src.coastal_topography import _run_selftest
+            rc = _run_selftest()
+
+        out_text = capsys.readouterr().out
+        assert rc == 0
+        # Stale content must be gone
+        with open(out, "rb") as f:
+            content = f.read()
+        assert b"STALE CONTENT" not in content
+        # And the file is now a valid GeoTIFF
+        with rasterio.open(out) as src:
+            assert src.crs.to_string() == "EPSG:3763"
+
+    # ── Edge case: no-overlap bbox (stream returns False internally) → graceful fallback
+    # _stream_crop_to_local returns False at line 224 when the AOI window
+    # doesn't overlap the tile. From _run_selftest's perspective this is
+    # indistinguishable from a network/auth failure — both yield exit 0
+    # with a fallback message and no file is created.
+    def test_edgecase_no_overlap_bbox_falls_back(
+        self, monkeypatch, capsys, tmp_path,
+    ):
+        monkeypatch.setenv("AWS_ENDPOINT_URL2", "https://stub")
+        monkeypatch.setenv("AWS_ACCESS_KEY_ID2", "AKIA_STUB")
+        monkeypatch.setenv("AWS_SECRET_ACCESS_KEY2", "secret")
+        out = tmp_path / "selftest_crop.tif"
+        monkeypatch.setenv("COASTAL_SELFTEST_OUT", str(out))
+        with patch.object(CoastalTopographyAnalyzer, "_minio_stream_env",
+                          return_value=object()), \
+             patch.object(CoastalTopographyAnalyzer, "_stream_crop_to_local",
+                          return_value=False):
+            from src.coastal_topography import _run_selftest
+            rc = _run_selftest()
+        out_text = capsys.readouterr().out
+        assert rc == 0
+        assert "Streaming failed" in out_text
+        assert "fall back" in out_text
+        # No file was created
+        assert not out.exists()
+
+    # ── Edge case: permission failure on rasterio.open → exit 1 (not masked)
+    # PermissionError is an OSError subclass, caught by the generic
+    # `except Exception` at line 1209. The selftest must NOT mask this as
+    # success — it should return 1 so CI/operators see the failure.
+    def test_edgecase_permission_error_on_read_returns_one(
+        self, monkeypatch, capsys, tmp_path,
+    ):
+        monkeypatch.setenv("AWS_ENDPOINT_URL2", "https://stub")
+        monkeypatch.setenv("AWS_ACCESS_KEY_ID2", "AKIA_STUB")
+        monkeypatch.setenv("AWS_SECRET_ACCESS_KEY2", "secret")
+        out = tmp_path / "selftest_crop.tif"
+        monkeypatch.setenv("COASTAL_SELFTEST_OUT", str(out))
+
+        # Mock the stream helper to actually write a valid GeoTIFF, then
+        # make rasterio.open raise on the subsequent read.
+        def fake_stream(href, local_path, env):
+            self._make_tiny_geotiff(local_path)
+            return True
+
+        with patch.object(CoastalTopographyAnalyzer, "_minio_stream_env",
+                          return_value=object()), \
+             patch.object(CoastalTopographyAnalyzer, "_stream_crop_to_local",
+                          side_effect=fake_stream), \
+             patch.object(rasterio, "open",
+                          side_effect=PermissionError("read-only /tmp")):
+            from src.coastal_topography import _run_selftest
+            rc = _run_selftest()
+
+        out_text = capsys.readouterr().out
+        # PermissionError is an unexpected crash → exit 1, not masked as success
+        assert rc == 1
+        assert "Streaming failed" in out_text
+        assert "read-only /tmp" in out_text
