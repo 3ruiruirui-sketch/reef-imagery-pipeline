@@ -125,10 +125,13 @@ def read_cog_window(href: str, lat: float, lon: float, size_px: int = WINDOW_PX)
     """
     import rasterio
     import rasterio.windows
+    from rasterio.warp import transform as warp_transform
     url = f"/vsicurl/{href}" if href.startswith("http") else href
     try:
         with rasterio.open(url) as src:
-            row, col = src.index(lon, lat)
+            # Sentinel-2 COGs are UTM, not WGS84 — must reproject before indexing
+            xs, ys = warp_transform("EPSG:4326", src.crs, [lon], [lat])
+            row, col = src.index(xs[0], ys[0])
             half = size_px // 2
             col_off = max(0, col - half)
             row_off = max(0, row - half)
@@ -211,16 +214,17 @@ def compute_bvi(
     }
 
     try:
-        score, mode = predict_score(features)
+        _ps = predict_score(features)
+        score = float(_ps.get("score", 0.0))
+        mode = str(_ps.get("mode", "rf"))
     except Exception as exc:
         log.warning("predict_score failed: %s", exc)
-        # Simple heuristic fallback
         score = float(np.clip(water_trans * 0.5 + cleanliness * 0.3 + contrast * 0.2, 0, 1))
         mode = "heuristic"
 
     # Terrain exposure modifier
     modifier = terrain_exposure_modifier(slope_mean, aspect_mean)
-    bvi = round(float(score) * modifier, 4)
+    bvi = round(score * modifier, 4)
 
     return {
         "bvi":        bvi,
