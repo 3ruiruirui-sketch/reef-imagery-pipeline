@@ -41,6 +41,8 @@ if str(_ROOT) not in sys.path:
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("bvi_timeseries")
+# Suppress urllib3 connection-pool noise from CMEMS background thread
+logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
 
 # ── configuration ─────────────────────────────────────────────────────────────
 SITES_CSV     = _ROOT / "outputs" / "coastal_topography" / "algarve_coastal_features.csv"
@@ -142,7 +144,7 @@ def read_cog_window(href: str, lat: float, lon: float, size_px: int = WINDOW_PX)
                 arr = np.where(arr == nodata, np.nan, arr)
             return arr
     except Exception as exc:
-        log.debug("COG window read failed %s: %s", href[:60], exc)
+        log.warning("COG window read failed %s: %s", href[:60], exc)
         return None
 
 
