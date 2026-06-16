@@ -1723,6 +1723,7 @@
       const labels  = scenes.map(s => s.date);
       const bvis    = scenes.map(s => s.bvi);
       const clouds  = scenes.map(s => s.cloud_pct || 0);
+      const kdVals  = scenes.map(s => s.kd_b02 != null ? +(s.kd_b02).toFixed(4) : null);
 
       if (_bviTrendChart) _bviTrendChart.destroy();
       const ctx = document.getElementById('bviTrendChart').getContext('2d');
@@ -1754,6 +1755,17 @@
               tension: 0,
               yAxisID: 'yCloud',
             },
+            {
+              label: 'Kd490 (m⁻¹)',
+              data: kdVals,
+              borderColor: 'rgba(251,191,36,0.7)',
+              backgroundColor: 'transparent',
+              borderWidth: 1.5,
+              pointRadius: 2,
+              borderDash: [2, 3],
+              tension: 0.2,
+              yAxisID: 'yKd',
+            },
           ],
         },
         options: {
@@ -1762,7 +1774,14 @@
           plugins: {
             legend: { labels: { color: '#94a3b8', font: { size: 9 } } },
             tooltip: { callbacks: {
-              label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(3)}`
+              label: ctx => {
+                const s = scenes[ctx.dataIndex];
+                if (ctx.dataset.label === 'BVI')
+                  return `BVI: ${ctx.parsed.y.toFixed(3)}  (SNR: ${s.snr?.toFixed(1) ?? '?'}, terrain×${s.terrain_modifier ?? '?'})`;
+                if (ctx.dataset.label === 'Kd490 (m⁻¹)')
+                  return `Kd490: ${ctx.parsed.y?.toFixed(4)} m⁻¹${s.zsd_m != null ? `  ZSD: ${s.zsd_m} m` : ''}`;
+                return `${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(1)}`;
+              }
             }},
           },
           scales: {
@@ -1783,6 +1802,11 @@
               ticks: { color: '#64748b', font: { size: 9 } },
               grid: { display: false },
               title: { display: true, text: 'Cloud %', color: '#64748b', font: { size: 9 } },
+            },
+            yKd: {
+              position: 'right',
+              min: 0, max: 0.2,
+              display: false,
             },
           },
         },
