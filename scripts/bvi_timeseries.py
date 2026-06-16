@@ -361,12 +361,17 @@ def _summarise(records: list[dict]) -> dict:
     bvis = [r["bvi"] for r in records if "bvi" in r]
     if not bvis:
         return {}
+    sources = set(r.get("kd_source", "unknown") for r in records if "bvi" in r)
+    # Trend is reliable only when all scenes used the same Kd490 source
+    kd_source_consistent = len(sources - {"unknown"}) <= 1
     return {
-        "n_scenes":  len(bvis),
-        "bvi_mean":  round(float(np.mean(bvis)), 4),
-        "bvi_min":   round(float(np.min(bvis)),  4),
-        "bvi_max":   round(float(np.max(bvis)),  4),
-        "bvi_trend": _trend_slope(records),
+        "n_scenes":            len(bvis),
+        "bvi_mean":            round(float(np.mean(bvis)), 4),
+        "bvi_min":             round(float(np.min(bvis)),  4),
+        "bvi_max":             round(float(np.max(bvis)),  4),
+        "bvi_trend":           _trend_slope(records),
+        "kd_source_consistent": kd_source_consistent,
+        "kd_sources":          sorted(sources),
     }
 
 
