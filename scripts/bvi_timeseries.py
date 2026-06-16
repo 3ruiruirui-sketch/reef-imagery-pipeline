@@ -181,7 +181,10 @@ def compute_bvi(
         return None
 
     # Kd490 — band-ratio if B03 available, else seasonal prior
+    from src.constants import KD490_TABLE as _STATIC_KD
     kd_seas = get_kd490(month)
+    # Flag whether the seasonal Kd490 came from CMEMS live data or the static table
+    kd_source = "cmems" if abs(kd_seas - _STATIC_KD.get(month, kd_seas)) > 1e-4 else "static"
     kd_b02 = kd_seas
     try:
         if b03 is not None:
@@ -234,6 +237,7 @@ def compute_bvi(
         "ranker_mode": mode,
         "kd_b02":     round(kd_b02, 4),
         "kd_seasonal": round(kd_seas, 4),
+        "kd_source":  kd_source,
         "zsd_m":      round(zsd, 1) if zsd is not None else None,
         "water_trans": round(water_trans, 4),
         "snr":        round(snr, 2),
