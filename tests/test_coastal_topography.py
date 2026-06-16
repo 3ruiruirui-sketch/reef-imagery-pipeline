@@ -11,6 +11,31 @@ from src.coastal_topography import CoastalTopographyAnalyzer
 ALGARVE_BBOX = (-8.25, 37.04, -8.17, 37.10)
 
 
+# ── MinIO /vsis3 streaming (preferred over full download) ──────────────────────
+
+class TestMinioStreaming:
+    def test_href_to_vsis3_https_minio(self):
+        href = "https://stor-002.a.acnca.pt:9000/lidar/MDT50cm/MDT-50cm-191013-04-2024_v01.tif"
+        assert CoastalTopographyAnalyzer._href_to_vsis3(href) == \
+            "/vsis3/lidar/MDT50cm/MDT-50cm-191013-04-2024_v01.tif"
+
+    def test_href_to_vsis3_s3_scheme(self):
+        assert CoastalTopographyAnalyzer._href_to_vsis3("s3://lidar/MDS50cm/x.tif") == \
+            "/vsis3/lidar/MDS50cm/x.tif"
+
+    def test_href_to_vsis3_passthrough_and_none(self):
+        assert CoastalTopographyAnalyzer._href_to_vsis3("/vsis3/lidar/x.tif") == "/vsis3/lidar/x.tif"
+        assert CoastalTopographyAnalyzer._href_to_vsis3(None) is None
+
+    def test_no_credentials_disables_streaming(self, tmp_path, monkeypatch):
+        for v in ("AWS_ENDPOINT_URL2", "AWS_ACCESS_KEY_ID2", "AWS_SECRET_ACCESS_KEY2"):
+            monkeypatch.delenv(v, raising=False)
+        a = CoastalTopographyAnalyzer(ALGARVE_BBOX, str(tmp_path), dem_source="dgt")
+        assert a._minio_stream_env() is None
+        # With no env, the crop helper signals fallback (False) without touching network.
+        assert a._stream_crop_to_local("https://h/lidar/a.tif", tmp_path / "a.tif", None) is False
+
+
 # ── Tile naming ────────────────────────────────────────────────────────────────
 
 class TestGlo30TileName:

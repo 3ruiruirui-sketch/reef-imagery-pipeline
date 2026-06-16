@@ -562,5 +562,39 @@ def get_terrain_modifier():
     })
 
 
+@app.route('/api/bvi_timeseries')
+def get_bvi_timeseries():
+    """
+    Return BVI time-series data for one or all Algarve reef sites.
+
+    Optional query params:
+      ?site=pedra_sta_eulalia   — single site (returns that site's full JSON)
+      (no params)               — returns _index.json (all-site summary)
+    """
+    ts_dir = os.path.join(_PROJECT_ROOT, 'outputs', 'bvi_timeseries')
+    site = request.args.get('site', '').strip()
+
+    if site:
+        p = os.path.join(ts_dir, f"{site}.json")
+        if not os.path.exists(p):
+            return jsonify({"status": "not_found",
+                            "message": f"No time-series for site '{site}'. Run scripts/bvi_timeseries.py"}), 404
+        try:
+            return jsonify(json.loads(open(p).read()))
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
+
+    index_path = os.path.join(ts_dir, '_index.json')
+    if not os.path.exists(index_path):
+        # Return an empty structure so the dashboard can render a "run script" hint
+        return jsonify({"status": "no_data",
+                        "message": "Run scripts/bvi_timeseries.py to compute BVI trends",
+                        "sites": []}), 200
+    try:
+        return jsonify(json.loads(open(index_path).read()))
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=3000, debug=True)

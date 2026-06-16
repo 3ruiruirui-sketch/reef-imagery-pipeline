@@ -853,6 +853,30 @@
       </div>
     </div>
     <!-- ── Terrain Exposure Layer ── -->
+    <!-- ── BVI TREND SECTION ─────────────────────────────────────────── -->
+    <div class="sidebar-section" id="bviTrendSection">
+      <div class="sidebar-section-title">📈 BVI Trend (2017–2025)</div>
+
+      <div style="margin-top:8px;display:flex;gap:6px;align-items:center;">
+        <select id="bviTrendSite" style="flex:1;background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);border-radius:6px;padding:4px 6px;font-size:11px;">
+          <option value="">— select site —</option>
+        </select>
+        <button onclick="loadBviTrend()" style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.3);color:var(--accent);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;">Load</button>
+      </div>
+
+      <div id="bviTrendStatus" style="font-size:10px;color:var(--text-muted);margin-top:6px;display:none;"></div>
+
+      <div id="bviTrendChartWrap" style="display:none;margin-top:10px;">
+        <canvas id="bviTrendChart" style="max-height:180px;"></canvas>
+        <div id="bviTrendSummary" style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:8px;font-size:10px;"></div>
+      </div>
+
+      <div id="bviTrendHint" style="font-size:10px;color:var(--text-muted);margin-top:8px;line-height:1.4;">
+        Pre-compute with:<br>
+        <code style="font-size:9px;color:var(--accent-secondary);">python scripts/bvi_timeseries.py</code>
+      </div>
+    </div>
+
     <div class="sidebar-section" id="terrainSection">
       <div class="sidebar-section-title">🏔️ Terrain Exposure</div>
 
@@ -1640,6 +1664,156 @@
         btn.innerHTML = '<span id="icesat2DeepBtnIcon">▶</span> Show Deep Layer';
       }
     }
+
+    // ── BVI TREND CHART ────────────────────────────────────────────────────────
+    let _bviTrendChart = null;
+
+    async function initBviTrendSites() {
+      try {
+        const res = await fetch('/api/bvi_timeseries');
+        const data = await res.json();
+        const sel = document.getElementById('bviTrendSite');
+        const sites = Array.isArray(data) ? data : (data.sites || []);
+        sites.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s.site;
+          opt.textContent = s.site.replace(/_/g, ' ');
+          sel.appendChild(opt);
+        });
+        if (sites.length === 0) {
+          document.getElementById('bviTrendHint').style.display = 'block';
+        } else {
+          document.getElementById('bviTrendHint').style.display = 'none';
+        }
+      } catch (e) {
+        console.warn('BVI trend index not available:', e.message);
+      }
+    }
+
+    async function loadBviTrend() {
+      const site = document.getElementById('bviTrendSite').value;
+      if (!site) return;
+      const status = document.getElementById('bviTrendStatus');
+      const wrap   = document.getElementById('bviTrendChartWrap');
+      status.textContent = 'Loading …';
+      status.style.display = 'block';
+      wrap.style.display = 'none';
+      try {
+        const res = await fetch(`/api/bvi_timeseries?site=${encodeURIComponent(site)}`);
+        if (!res.ok) {
+          const err = await res.json();
+          status.textContent = err.message || 'Not found — run scripts/bvi_timeseries.py';
+          return;
+        }
+        const data = await res.json();
+        const scenes = (data.scenes || []).filter(s => s.bvi != null);
+        if (scenes.length === 0) {
+          status.textContent = 'No BVI scenes yet — run scripts/bvi_timeseries.py';
+          return;
+        }
+        status.style.display = 'none';
+        wrap.style.display   = 'block';
+        _renderBviTrend(scenes, data.summary || {});
+      } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+      }
+    }
+
+    function _renderBviTrend(scenes, summary) {
+      const labels  = scenes.map(s => s.date);
+      const bvis    = scenes.map(s => s.bvi);
+      const clouds  = scenes.map(s => s.cloud_pct || 0);
+
+      if (_bviTrendChart) _bviTrendChart.destroy();
+      const ctx = document.getElementById('bviTrendChart').getContext('2d');
+      _bviTrendChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'BVI',
+              data: bvis,
+              borderColor: '#06d6a0',
+              backgroundColor: 'rgba(6,214,160,0.12)',
+              borderWidth: 2,
+              pointRadius: 4,
+              pointHoverRadius: 6,
+              tension: 0.3,
+              fill: true,
+              yAxisID: 'yBvi',
+            },
+            {
+              label: 'Cloud %',
+              data: clouds,
+              borderColor: 'rgba(148,163,184,0.5)',
+              backgroundColor: 'transparent',
+              borderWidth: 1,
+              pointRadius: 2,
+              borderDash: [4, 4],
+              tension: 0,
+              yAxisID: 'yCloud',
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { labels: { color: '#94a3b8', font: { size: 9 } } },
+            tooltip: { callbacks: {
+              label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(3)}`
+            }},
+          },
+          scales: {
+            x: {
+              ticks: { color: '#64748b', font: { size: 8 }, maxRotation: 45 },
+              grid: { color: 'rgba(255,255,255,0.04)' },
+            },
+            yBvi: {
+              position: 'left',
+              min: 0, max: 1,
+              ticks: { color: '#06d6a0', font: { size: 9 } },
+              grid: { color: 'rgba(255,255,255,0.06)' },
+              title: { display: true, text: 'BVI', color: '#06d6a0', font: { size: 9 } },
+            },
+            yCloud: {
+              position: 'right',
+              min: 0, max: 50,
+              ticks: { color: '#64748b', font: { size: 9 } },
+              grid: { display: false },
+              title: { display: true, text: 'Cloud %', color: '#64748b', font: { size: 9 } },
+            },
+          },
+        },
+      });
+
+      const trend = summary.bvi_trend != null
+        ? (summary.bvi_trend >= 0 ? `▲ +${(summary.bvi_trend*100).toFixed(2)}%/yr` : `▼ ${(summary.bvi_trend*100).toFixed(2)}%/yr`)
+        : 'N/A';
+      const trendCol = (summary.bvi_trend || 0) >= 0 ? '#22c55e' : '#ef4444';
+
+      document.getElementById('bviTrendSummary').innerHTML = `
+        <div style="background:rgba(0,0,0,0.2);padding:5px 7px;border-radius:5px;">
+          <div style="color:var(--text-muted);font-size:9px;">SCENES</div>
+          <div style="font-weight:700;">${summary.n_scenes || scenes.length}</div>
+        </div>
+        <div style="background:rgba(0,0,0,0.2);padding:5px 7px;border-radius:5px;">
+          <div style="color:var(--text-muted);font-size:9px;">BVI MEAN</div>
+          <div style="font-weight:700;">${(summary.bvi_mean || 0).toFixed(3)}</div>
+        </div>
+        <div style="background:rgba(0,0,0,0.2);padding:5px 7px;border-radius:5px;">
+          <div style="color:var(--text-muted);font-size:9px;">RANGE</div>
+          <div style="font-weight:700;">${(summary.bvi_min||0).toFixed(2)}–${(summary.bvi_max||0).toFixed(2)}</div>
+        </div>
+        <div style="background:rgba(0,0,0,0.2);padding:5px 7px;border-radius:5px;">
+          <div style="color:var(--text-muted);font-size:9px;">TREND</div>
+          <div style="font-weight:700;color:${trendCol};">${trend}</div>
+        </div>`;
+    }
+
+    // Kick off site list population on page load
+    initBviTrendSites();
 
     // Dynamic Filter Slider Listener (Option 2)
     document.getElementById('scoreSlider').addEventListener('input', function() {

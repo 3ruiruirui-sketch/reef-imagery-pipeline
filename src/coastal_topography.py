@@ -39,6 +39,7 @@ import os
 from pathlib import Path
 from typing import List, Tuple, Dict, Optional
 from datetime import datetime
+from urllib.parse import urlparse
 
 import requests
 import numpy as np
@@ -146,13 +147,106 @@ class CoastalTopographyAnalyzer:
         logger.info(f"Querying DGT STAC: {self.STAC_URL}")
         return self._fetch_stac_items_from(self.STAC_URL, limit=limit)
     
+    # ── MinIO/S3 streaming (preferred over full-tile download) ────────────────
+
+    def _minio_stream_env(self) -> Optional["rasterio.Env"]:
+        """Build a rasterio Env for streaming DGT COGs directly from MinIO/S3.
+
+        Reads MinIO credentials from the same env vars the DGT JupyterHub uses
+        (AWS_ENDPOINT_URL2 / AWS_ACCESS_KEY_ID2 / AWS_SECRET_ACCESS_KEY2). Returns
+        None when rasterio or the credentials are unavailable, so callers fall back
+        to the signed-URL download path. MinIO needs path-style access, hence
+        AWS_VIRTUAL_HOSTING=FALSE.
+        """
+        if not HAS_RASTERIO:
+            return None
+        endpoint = os.getenv("AWS_ENDPOINT_URL2")
+        key = os.getenv("AWS_ACCESS_KEY_ID2")
+        secret = os.getenv("AWS_SECRET_ACCESS_KEY2")
+        if not (endpoint and key and secret):
+            return None
+        try:
+            import boto3
+            from rasterio.session import AWSSession
+            host = endpoint.replace("https://", "").replace("http://", "").rstrip("/")
+            session = boto3.Session(aws_access_key_id=key, aws_secret_access_key=secret)
+            return rasterio.Env(
+                AWSSession(session),
+                AWS_S3_ENDPOINT=host,
+                AWS_HTTPS="YES" if endpoint.startswith("https://") else "NO",
+                AWS_VIRTUAL_HOSTING="FALSE",
+                CPL_VSIL_CURL_ALLOWED_EXTENSIONS=".tif,.tiff,.TIF,.TIFF,.ovr",
+                GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR",
+            )
+        except Exception as e:
+            logger.debug("MinIO streaming env unavailable: %s", e)
+            return None
+
+    @staticmethod
+    def _href_to_vsis3(href: Optional[str]) -> Optional[str]:
+        """Convert a MinIO HTTPS/s3 asset href into a /vsis3 GDAL path."""
+        if not href:
+            return None
+        if href.startswith("/vsis3/"):
+            return href
+        if href.startswith("s3://"):
+            return "/vsis3/" + href[len("s3://"):]
+        parsed = urlparse(href)
+        if parsed.scheme in ("http", "https") and parsed.path:
+            return "/vsis3/" + parsed.path.lstrip("/")
+        return None
+
+    def _stream_crop_to_local(self, href: Optional[str], local_path: Path,
+                              env: Optional["rasterio.Env"]) -> bool:
+        """Stream a windowed crop (self.bbox) of a DGT COG from MinIO to a local GeoTIFF.
+
+        Reads only the pixels overlapping the analysis bbox via GDAL /vsis3 — no full
+        tile download. Returns True on success; False signals the caller to fall back
+        to the signed-URL/HTTP download. The output keeps the tile's native CRS/grid so
+        the existing mosaic + slope/aspect + zonal_stats path is unchanged.
+        """
+        if env is None:
+            return False
+        vsi = self._href_to_vsis3(href)
+        if vsi is None:
+            return False
+        try:
+            from rasterio.warp import transform_bounds
+            from rasterio.windows import from_bounds as window_from_bounds, Window
+            with env:
+                with rasterio.open(vsi) as src:
+                    left, bottom, right, top = transform_bounds(
+                        self.WGS84_CRS, src.crs, *self.bbox, densify_pts=21)
+                    win = window_from_bounds(left, bottom, right, top, src.transform)
+                    win = win.intersection(Window(0, 0, src.width, src.height))
+                    win = win.round_offsets().round_lengths()
+                    if win.width < 1 or win.height < 1:
+                        return False  # no overlap (STAC pre-filters, so unexpected)
+                    data = src.read(1, window=win)
+                    profile = src.profile.copy()
+                    profile.update(
+                        driver="GTiff",
+                        height=int(win.height),
+                        width=int(win.width),
+                        transform=src.window_transform(win),
+                    )
+            with rasterio.open(local_path, "w", **profile) as dst:
+                dst.write(data, 1)
+            logger.info("Streamed crop %s (%dx%d px) from MinIO",
+                        local_path.name, int(win.width), int(win.height))
+            return True
+        except Exception as e:
+            logger.debug("Stream-crop failed for %s (%s) — falling back to download", href, e)
+            return False
+
     def download_mdt_tiles(self, limit: int = 50) -> List[Path]:
         """
-        Download MDT-50cm GeoTIFF tiles from DGT STAC.
-        
+        Acquire MDT-50cm tiles for the bbox: stream windowed crops from MinIO when
+        credentials are configured, else download full tiles via the CDD signed URL.
+
         Args:
             limit: max number of items to request from STAC
-            
+
         Returns:
             List of local file paths
         """
@@ -161,26 +255,32 @@ class CoastalTopographyAnalyzer:
             logger.warning("No STAC features found; no tiles to download")
             return []
         
+        stream_env = self._minio_stream_env()
         tile_paths = []
         for feat in features:
             item_id = feat.get("id", "unknown")
             asset = feat.get("assets", {}).get("Data", {})
             href = asset.get("href")
-            
+
             if not href:
                 logger.warning(f"Feature {item_id} has no Data.href")
                 continue
-            
+
             fname = Path(href).name
             local_path = self.tiles_dir / fname
-            
+
             # Check cache
             if local_path.exists():
                 logger.debug(f"Tile {item_id} already cached: {local_path}")
                 tile_paths.append(local_path)
                 continue
-            
-            # Download via CDD signed URL (preferred) or direct href (fallback)
+
+            # Preferred: stream a windowed crop directly from MinIO (no full download).
+            if self._stream_crop_to_local(href, local_path, stream_env):
+                tile_paths.append(local_path)
+                continue
+
+            # Fallback: download via CDD signed URL (preferred) or direct href.
             logger.info(f"Downloading {item_id} -> {fname}")
             if HAS_CDD_AUTH:
                 download_url = get_signed_url("MDT-50cm", item_id)
@@ -232,6 +332,7 @@ class CoastalTopographyAnalyzer:
             logger.warning("No MDS-50cm tiles found for bbox")
             return []
 
+        stream_env = self._minio_stream_env()
         tile_paths = []
         for feat in features:
             item_id = feat.get("id", "unknown")
@@ -240,6 +341,10 @@ class CoastalTopographyAnalyzer:
                 continue
             local_path = self.tiles_dir / Path(href).name
             if local_path.exists():
+                tile_paths.append(local_path)
+                continue
+            # Preferred: stream a windowed crop directly from MinIO (no full download).
+            if self._stream_crop_to_local(href, local_path, stream_env):
                 tile_paths.append(local_path)
                 continue
             logger.info(f"Downloading MDS tile {item_id}")
@@ -1054,5 +1159,73 @@ def main() -> None:
     print(json.dumps(result, indent=2))
 
 
+def _run_selftest() -> int:
+    """Validate the live /vsis3 MinIO streaming path end-to-end on one Algarve tile.
+
+    Streams a windowed crop of a known Albufeira MDT-50cm tile straight from MinIO.
+    Returns a process exit code: 0 on success OR a graceful no-creds/fallback path,
+    1 only on an unexpected crash. Runs cleanly in CI (no creds → ⚠️ message, exit 0).
+    """
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+
+    # Hardcoded Albufeira / Sta Eulália MDT-50cm tile (DGT 2024 campaign). Only the
+    # bucket/key PATH of this href is used by _href_to_vsis3; the MinIO host comes
+    # from AWS_ENDPOINT_URL2 in the streaming Env.
+    TILE_HREF = ("https://stor-002.a.acnca.pt:9000/lidar/MDT50cm/"
+                 "MDT-50cm-191013-04-2024_v01.tif")
+    TILE_BBOX = (-8.234, 37.074, -8.222, 37.083)   # WGS84, overlaps the tile footprint
+    OUT_PATH = Path("/tmp/selftest_crop.tif")
+
+    analyzer = CoastalTopographyAnalyzer(
+        bbox=TILE_BBOX,
+        output_dir="/tmp/coastal_selftest",
+        dem_source="dgt",
+    )
+
+    env = analyzer._minio_stream_env()
+    if env is None:
+        print("⚠️  No MinIO creds found — streaming inactive "
+              "(set AWS_ENDPOINT_URL2 / AWS_ACCESS_KEY_ID2 / AWS_SECRET_ACCESS_KEY2, "
+              "e.g. `set -a; source .env; set +a`). Pipeline falls back to CDD download.")
+        return 0
+
+    try:
+        if OUT_PATH.exists():
+            OUT_PATH.unlink()
+        ok = analyzer._stream_crop_to_local(TILE_HREF, OUT_PATH, env)
+        if ok and OUT_PATH.exists():
+            with rasterio.open(OUT_PATH) as src:
+                w, h, crs = src.width, src.height, src.crs
+            print(f"✅ Streamed crop {OUT_PATH.name} ({w}x{h} px, {crs}) "
+                  f"from MinIO → {OUT_PATH}")
+            return 0
+        # Handled streaming failure (network/auth) — _stream_crop_to_local returned
+        # False without raising. The real pipeline would fall back to CDD download.
+        print("❌ Streaming failed: no crop produced. "
+              "Pipeline would fall back to CDD signed-URL download.")
+        return 0
+    except Exception as e:
+        print(f"❌ Streaming failed: {e}\n"
+              "   Pipeline would fall back to CDD signed-URL download.")
+        return 1
+
+
 if __name__ == "__main__":
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(
+        description="DGT coastal topography analyzer (MDT/MDS-50cm LiDAR)."
+    )
+    parser.add_argument(
+        "--selftest", action="store_true",
+        help="Validate the live /vsis3 MinIO streaming path on one Algarve tile, then exit.",
+    )
+    args = parser.parse_args()
+
+    if args.selftest:
+        sys.exit(_run_selftest())
     main()

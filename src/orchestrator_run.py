@@ -60,11 +60,18 @@ except ImportError:
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-# Activate live CMEMS Kd490 at startup (shadow mode — falls back to static table on failure)
-if HAS_CMEMS_KD and _cmems_refresh is not None:
+def _activate_cmems_live() -> None:
+    """Refresh the live CMEMS Kd490/ZSD table (shadow mode — static fallback on failure).
+
+    Called at the START of a pipeline run, NOT at import time: the refresh does a
+    `copernicusmarine.open_dataset()` + monthly-median over a 1 km daily product,
+    which is a heavy network operation. Doing it at import made every `import
+    src.orchestrator_run` (including the test suite) pay that cost. Keep it in main().
+    """
+    if not (HAS_CMEMS_KD and _cmems_refresh is not None):
+        return
     try:
-        _cmems_ok = _cmems_refresh()
-        if _cmems_ok:
+        if _cmems_refresh():
             log.info("CMEMS Kd490 live table loaded.")
         else:
             log.info("CMEMS Kd490 using static fallback (credentials not set or unreachable).")
@@ -281,6 +288,10 @@ def main(depth: float = 16.0, config_path: str | None = None):
 
     out_dir.mkdir(parents=True, exist_ok=True)
     log.info("=== Reef Orchestrator — depth=%.1fm ===", depth)
+
+    # Load live CMEMS Kd490/ZSD now (runtime, not import time) so run_predictor
+    # below picks up the live seasonal prior via the shared in-place table.
+    _activate_cmems_live()
 
     if HAS_DRIFT_MONITOR:
         try:
