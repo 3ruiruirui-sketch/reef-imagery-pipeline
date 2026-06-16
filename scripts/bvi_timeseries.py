@@ -132,12 +132,7 @@ def read_cog_window(href: str, lat: float, lon: float, size_px: int = WINDOW_PX)
             half = size_px // 2
             col_off = max(0, col - half)
             row_off = max(0, row - half)
-            window = rasterio.windows.Window(  # type: ignore[call-arg]
-                col_off,
-                row_off,
-                min(size_px, src.width  - col_off),
-                min(size_px, src.height - row_off),
-            )
+            window = rasterio.windows.Window(col_off, row_off, min(size_px, src.width - col_off), min(size_px, src.height - row_off))  # type: ignore[call-arg]
             arr = src.read(1, window=window).astype(np.float32)
             nodata = src.nodata
             if nodata is not None:
@@ -413,15 +408,20 @@ def main() -> None:
 
     # Warm up CMEMS Kd490 with a 30-second timeout.
     # If CMEMS is slow or unavailable, the static table is used for all scenes.
+    # NOTE: shutdown(wait=False) so the timeout actually fires — the default `with`
+    # context manager would call shutdown(wait=True) and block until the thread ends.
     try:
         import concurrent.futures
         from src.cmems_kd490 import refresh_from_cmems
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            fut = pool.submit(refresh_from_cmems)
+        _pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        try:
+            fut = _pool.submit(refresh_from_cmems)
             ok = fut.result(timeout=30)
             log.info("CMEMS Kd490 %s", "loaded" if ok else "using static fallback")
-    except concurrent.futures.TimeoutError:
-        log.info("CMEMS Kd490 timeout (>30 s) — using static table for all scenes")
+        except concurrent.futures.TimeoutError:
+            log.info("CMEMS Kd490 timeout (>30 s) — using static table for all scenes")
+        finally:
+            _pool.shutdown(wait=False)   # let thread finish in background; don't block
     except Exception as exc:
         log.debug("CMEMS refresh skipped: %s", exc)
 

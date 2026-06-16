@@ -129,6 +129,11 @@ def refresh_from_cmems() -> bool:
         return True
     except ImportError:
         log.warning("copernicusmarine not installed — retaining static Kd490 table.")
+    except RuntimeError as e:
+        if "cannot schedule new futures after shutdown" in str(e):
+            log.debug("CMEMS thread completed after pool shutdown — static table unchanged.")
+        else:
+            log.warning("CMEMS fetch failed (%s: %s) — retaining static table.", type(e).__name__, e)
     except Exception as e:
         log.warning("CMEMS fetch failed (%s: %s) — retaining static table.",
                     type(e).__name__, e)
