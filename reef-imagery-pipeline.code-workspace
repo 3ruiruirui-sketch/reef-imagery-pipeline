@@ -1,0 +1,117 @@
+{
+    "folders": [
+        {
+            "path": ".",
+            "name": "reef-imagery-pipeline"
+        }
+    ],
+    "settings": {
+        "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+        "python.analysis.autoImportCompletions": true,
+        "python.analysis.typeCheckingMode": "basic",
+        "python.testing.pytestEnabled": true,
+        "python.testing.pytestArgs": [
+            "tests",
+            "-m", "not network",
+            "-q"
+        ],
+        "[python]": {
+            "editor.formatOnSave": false,
+            "editor.defaultFormatter": "ms-python.black-formatter"
+        },
+        "jupyter.defaultKernel": "Reef Pipeline (.venv)",
+        "jupyter.notebookFileRoot": "${workspaceFolder}",
+        "files.associations": {
+            "*.geojson": "json",
+            "*.tif.aux.xml": "xml"
+        },
+        "remote.SSH.defaultExtensions": [
+            "ms-python.python",
+            "ms-python.vscode-pylance",
+            "ms-toolsai.jupyter",
+            "ms-toolsai.datawrangler"
+        ],
+        "extensions.recommendations": [
+            "ms-python.python",
+            "ms-python.vscode-pylance",
+            "ms-toolsai.jupyter",
+            "ms-python.black-formatter",
+            "njpwerner.autodocstring",
+            "streetsidesoftware.code-spell-checker"
+        ]
+    },
+    "extensions": {
+        "recommendations": [
+            "ms-python.python",
+            "ms-python.vscode-pylance",
+            "ms-toolsai.jupyter",
+            "ms-python.black-formatter"
+        ]
+    },
+    "launch": {
+        "version": "0.2.0",
+        "configurations": [
+            {
+                "name": "Run orchestrator (depth 16m)",
+                "type": "python",
+                "request": "launch",
+                "module": "src.orchestrator_run",
+                "args": ["--depth", "16.0"],
+                "cwd": "${workspaceFolder}",
+                "console": "integratedTerminal",
+                "justMyCode": false
+            },
+            {
+                "name": "Run pytest (offline)",
+                "type": "python",
+                "request": "launch",
+                "module": "pytest",
+                "args": ["tests/", "-m", "not network", "-q"],
+                "cwd": "${workspaceFolder}",
+                "console": "integratedTerminal"
+            },
+            {
+                "name": "Run pytest (single file)",
+                "type": "python",
+                "request": "launch",
+                "module": "pytest",
+                "args": ["${file}", "-xvs"],
+                "cwd": "${workspaceFolder}",
+                "console": "integratedTerminal"
+            }
+        ]
+    },
+    "tasks": {
+        "version": "2.0.0",
+        "tasks": [
+            {
+                "label": "Pull latest from git",
+                "type": "shell",
+                "command": "git pull",
+                "options": {"cwd": "${workspaceFolder}"},
+                "problemMatcher": []
+            },
+            {
+                "label": "Update deps",
+                "type": "shell",
+                "command": "source .venv/bin/activate && pip install -e . --upgrade",
+                "options": {"cwd": "${workspaceFolder}"},
+                "problemMatcher": []
+            },
+            {
+                "label": "Run orchestrator (16m)",
+                "type": "shell",
+                "command": "source .venv/bin/activate && python -m src.orchestrator_run --depth 16.0",
+                "options": {"cwd": "${workspaceFolder}"},
+                "problemMatcher": []
+            },
+            {
+                "label": "Run pytest offline",
+                "type": "shell",
+                "command": "source .venv/bin/activate && pytest tests/ -m 'not network' -q",
+                "options": {"cwd": "${workspaceFolder}"},
+                "problemMatcher": []
+            }
+        ]
+    }
+}
