@@ -459,3 +459,50 @@ class TestTerrainCsvLoading:
         score_before = 0.80
         score_after  = round(score_before * mod, 4)
         assert score_after <= score_before
+
+
+class TestCmemsActivationTimeout:
+    """Regression: _activate_cmems_live() must respect _CMEMS_REFRESH_TIMEOUT_S
+    and return immediately (not block the orchestrator) when the Copernicus
+    Marine endpoint is slow. Uses an explicit shutdown(wait=False) pattern
+    because ThreadPoolExecutor's `with` block would otherwise wait for the
+    hung worker."""
+
+    def test_hang_returns_within_timeout_plus_buffer(self, monkeypatch):
+        import time
+        from src import orchestrator_run
+
+        # Sleep longer than the timeout so the worker is still running
+        # when the timeout fires. The orchestrator must NOT block on the worker.
+        def slow_refresh():
+            time.sleep(5)
+            return True
+
+        monkeypatch.setattr(orchestrator_run, "_cmems_refresh", slow_refresh)
+        monkeypatch.setattr(orchestrator_run, "_CMEMS_REFRESH_TIMEOUT_S", 1.0)
+
+        t = time.time()
+        orchestrator_run._activate_cmems_live()
+        elapsed = time.time() - t
+
+        # Must return ~at the timeout, not at the 5 s sleep.
+        assert elapsed < 3.0, f"timeout did not fire: {elapsed:.2f}s"
+
+    def test_success_path_still_works(self, monkeypatch):
+        """Sanity: a fast CMEMS call still completes and we don't lose the
+        'live table loaded' behaviour."""
+        from src import orchestrator_run
+
+        monkeypatch.setattr(orchestrator_run, "_cmems_refresh", lambda: True)
+        orchestrator_run._activate_cmems_live()  # must not raise
+
+    def test_failure_path_returns_silently(self, monkeypatch):
+        """A non-timeout exception (e.g. copernicusmarine ImportError) is
+        caught by the outer except and returns without raising."""
+        from src import orchestrator_run
+
+        def raises():
+            raise RuntimeError("simulated copernicusmarine crash")
+
+        monkeypatch.setattr(orchestrator_run, "_cmems_refresh", raises)
+        orchestrator_run._activate_cmems_live()  # must not raise

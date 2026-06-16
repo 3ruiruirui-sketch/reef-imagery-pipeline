@@ -60,6 +60,12 @@ except ImportError:
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
+# Wall-clock cap for the CMEMS live fetch. Without this, a slow or
+# unreachable Copernicus Marine endpoint hangs the orchestrator for 60+
+# seconds before falling back to the static Kd490 table.
+_CMEMS_REFRESH_TIMEOUT_S = 10.0
+
+
 def _activate_cmems_live() -> None:
     """Refresh the live CMEMS Kd490/ZSD table (shadow mode — static fallback on failure).
 
@@ -67,16 +73,37 @@ def _activate_cmems_live() -> None:
     `copernicusmarine.open_dataset()` + monthly-median over a 1 km daily product,
     which is a heavy network operation. Doing it at import made every `import
     src.orchestrator_run` (including the test suite) pay that cost. Keep it in main().
+
+    Bounded by `_CMEMS_REFRESH_TIMEOUT_S` seconds via a thread pool: if the
+    Copernicus Marine endpoint is slow or unreachable we silently fall back
+    to the static Kd490 table rather than blocking the orchestrator.
     """
     if not (HAS_CMEMS_KD and _cmems_refresh is not None):
         return
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FutTimeout
+    # Note: we use explicit shutdown(wait=False) instead of `with` — the context
+    # manager's __exit__ calls shutdown(wait=True), which would block the
+    # orchestrator for the full worker duration even after a timeout.
+    _ex = ThreadPoolExecutor(max_workers=1)
     try:
-        if _cmems_refresh():
-            log.info("CMEMS Kd490 live table loaded.")
-        else:
-            log.info("CMEMS Kd490 using static fallback (credentials not set or unreachable).")
+        fut = _ex.submit(_cmems_refresh)
+        try:
+            ok = fut.result(timeout=_CMEMS_REFRESH_TIMEOUT_S)
+        except _FutTimeout:
+            log.warning(
+                "CMEMS refresh exceeded %.0fs timeout — using static Kd490 fallback.",
+                _CMEMS_REFRESH_TIMEOUT_S,
+            )
+            return
     except Exception as _e:
         log.debug("CMEMS Kd490 refresh skipped: %s", _e)
+        return
+    finally:
+        _ex.shutdown(wait=False)
+    if ok:
+        log.info("CMEMS Kd490 live table loaded.")
+    else:
+        log.info("CMEMS Kd490 using static fallback (credentials not set or unreachable).")
 
 # ── Config defaults ──────────────────────────────────────────────────────────
 PROJECT_DIR   = Path(__file__).parent.parent
