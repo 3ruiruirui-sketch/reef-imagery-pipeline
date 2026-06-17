@@ -133,6 +133,73 @@ def get_kd490_map(
     kd = _np.clip(kd, 0.01, 2.0)
     return kd.astype(_np.float32)
 
+def build_coastal_geojson(csv_path, geojson_path):
+    """Convert algarve_coastal_features.csv → GeoJSON FeatureCollection.
+
+    Creates a timestamped backup of the existing GeoJSON before overwriting.
+    Writes atomically (temp file → rename) so a concurrent dashboard read never
+    sees a half-written file.  Returns the number of features written.
+    """
+    import csv as _csv
+    import json as _json
+    import os as _os
+    import shutil as _shutil
+    import tempfile as _tmpfile
+    from datetime import datetime, timezone
+
+    csv_path = str(csv_path)
+    geojson_path = str(geojson_path)
+
+    with open(csv_path, newline="") as fh:
+        rows = list(_csv.DictReader(fh))
+
+    if not rows:
+        raise ValueError(f"CSV is empty: {csv_path}")
+
+    # Non-numeric columns (strings / ISO timestamps)
+    _str_cols = {"site_name", "timestamp"}
+
+    features = []
+    ts = datetime.now(timezone.utc).isoformat()
+    for row in rows:
+        props = {}
+        for k, v in row.items():
+            props[k] = v if k in _str_cols else float(v)
+        props["timestamp"] = ts
+        lat = float(row["latitude"])
+        lon = float(row["longitude"])
+        features.append({
+            "type": "Feature",
+            "properties": props,
+            "geometry": {"type": "Point", "coordinates": [lon, lat]},
+        })
+
+    collection = {
+        "type": "FeatureCollection",
+        "name": "algarve_coastal_features",
+        "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"}},
+        "features": features,
+    }
+
+    # Backup existing file before overwriting
+    if _os.path.exists(geojson_path):
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+        _shutil.copy2(geojson_path, geojson_path + f".bak_{stamp}")
+
+    # Atomic write
+    dir_ = _os.path.dirname(_os.path.abspath(geojson_path))
+    fd, tmp = _tmpfile.mkstemp(dir=dir_, suffix=".geojson.tmp")
+    try:
+        with _os.fdopen(fd, "w") as fh:
+            _json.dump(collection, fh, indent=1, ensure_ascii=False)
+        _os.replace(tmp, geojson_path)
+    except Exception:
+        _os.unlink(tmp)
+        raise
+
+    return len(features)
+
+
 def compute_metadata_stub(date):
     """
     Minimal metadata for simulated mode.

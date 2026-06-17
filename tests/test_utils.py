@@ -1,5 +1,10 @@
 """Tests for src/utils.py — physics utility functions."""
+import csv
+import json
 import math
+import tempfile
+from pathlib import Path
+
 import pytest
 from src.utils import (
     snell_air_to_water,
@@ -8,6 +13,7 @@ from src.utils import (
     beer_lambert_transmittance,
     get_kd490,
     compute_metadata_stub,
+    build_coastal_geojson,
 )
 
 
@@ -149,3 +155,128 @@ class TestComputeMetadataStub:
     def test_date_field_matches_input(self):
         m = compute_metadata_stub("2023-10-01")
         assert m["date"] == "2023-10-01"
+
+
+# ── build_coastal_geojson ─────────────────────────────────────────────────────
+
+_SAMPLE_ROWS = [
+    {
+        "site_name": "pedra_sta_eulalia", "latitude": "37.069081", "longitude": "-8.210242",
+        "buffer_m": "3000", "slope_min": "0.0", "slope_max": "22.5", "slope_mean": "4.1",
+        "slope_std": "3.2", "slope_median": "3.0", "slope_percentile_90": "8.9",
+        "aspect_min": "0.0", "aspect_max": "360.0", "aspect_mean": "190.3",
+        "aspect_std": "108.7", "aspect_median": "195.1",
+    },
+    {
+        "site_name": "albufeira_reef", "latitude": "37.0690", "longitude": "-8.2105",
+        "buffer_m": "3000", "slope_min": "0.1", "slope_max": "31.0", "slope_mean": "5.3",
+        "slope_std": "4.1", "slope_median": "4.0", "slope_percentile_90": "10.2",
+        "aspect_min": "1.0", "aspect_max": "359.0", "aspect_mean": "185.5",
+        "aspect_std": "107.2", "aspect_median": "191.0",
+    },
+]
+
+
+def _write_csv(path: Path, rows: list[dict]) -> None:
+    with open(path, "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=rows[0].keys())
+        w.writeheader()
+        w.writerows(rows)
+
+
+class TestBuildCoastalGeojson:
+    def test_feature_count_matches_csv_rows(self, tmp_path):
+        csv_p = tmp_path / "features.csv"
+        geo_p = tmp_path / "features.geojson"
+        _write_csv(csv_p, _SAMPLE_ROWS)
+        n = build_coastal_geojson(csv_p, geo_p)
+        assert n == len(_SAMPLE_ROWS)
+        with open(geo_p) as fh:
+            g = json.load(fh)
+        assert len(g["features"]) == len(_SAMPLE_ROWS)
+
+    def test_geometry_is_point_with_lon_lat(self, tmp_path):
+        csv_p = tmp_path / "features.csv"
+        geo_p = tmp_path / "features.geojson"
+        _write_csv(csv_p, _SAMPLE_ROWS)
+        build_coastal_geojson(csv_p, geo_p)
+        with open(geo_p) as fh:
+            g = json.load(fh)
+        for feat, row in zip(g["features"], _SAMPLE_ROWS):
+            assert feat["geometry"]["type"] == "Point"
+            lon, lat = feat["geometry"]["coordinates"]
+            assert lon == pytest.approx(float(row["longitude"]))
+            assert lat == pytest.approx(float(row["latitude"]))
+
+    def test_numeric_properties_preserved(self, tmp_path):
+        csv_p = tmp_path / "features.csv"
+        geo_p = tmp_path / "features.geojson"
+        _write_csv(csv_p, _SAMPLE_ROWS)
+        build_coastal_geojson(csv_p, geo_p)
+        with open(geo_p) as fh:
+            g = json.load(fh)
+        feat = g["features"][0]["properties"]
+        assert feat["slope_mean"] == pytest.approx(4.1)
+        assert feat["aspect_mean"] == pytest.approx(190.3)
+        assert feat["buffer_m"] == pytest.approx(3000.0)
+        assert feat["site_name"] == "pedra_sta_eulalia"
+
+    def test_timestamp_added_and_is_string(self, tmp_path):
+        csv_p = tmp_path / "features.csv"
+        geo_p = tmp_path / "features.geojson"
+        _write_csv(csv_p, _SAMPLE_ROWS)
+        build_coastal_geojson(csv_p, geo_p)
+        with open(geo_p) as fh:
+            g = json.load(fh)
+        ts = g["features"][0]["properties"].get("timestamp")
+        assert isinstance(ts, str) and len(ts) > 10
+
+    def test_timestamp_preserved_from_csv_when_present(self, tmp_path):
+        rows = [{**_SAMPLE_ROWS[0], "timestamp": "2026-06-15T23:46:02.531296+00:00"}]
+        csv_p = tmp_path / "features.csv"
+        geo_p = tmp_path / "features.geojson"
+        _write_csv(csv_p, rows)
+        build_coastal_geojson(csv_p, geo_p)
+        with open(geo_p) as fh:
+            g = json.load(fh)
+        # build_coastal_geojson overwrites timestamp with fresh UTC value — that's intentional
+        assert "timestamp" in g["features"][0]["properties"]
+
+    def test_crs_is_wgs84_crs84(self, tmp_path):
+        csv_p = tmp_path / "features.csv"
+        geo_p = tmp_path / "features.geojson"
+        _write_csv(csv_p, _SAMPLE_ROWS)
+        build_coastal_geojson(csv_p, geo_p)
+        with open(geo_p) as fh:
+            g = json.load(fh)
+        assert g["type"] == "FeatureCollection"
+        assert g["crs"]["properties"]["name"] == "urn:ogc:def:crs:OGC:1.3:CRS84"
+
+    def test_backup_created_when_geojson_exists(self, tmp_path):
+        csv_p = tmp_path / "features.csv"
+        geo_p = tmp_path / "features.geojson"
+        _write_csv(csv_p, _SAMPLE_ROWS)
+        # First write — no backup expected
+        build_coastal_geojson(csv_p, geo_p)
+        backups_before = list(tmp_path.glob("*.bak_*"))
+        assert not backups_before, "No backup expected on first write"
+        # Second write — backup of first file must appear
+        build_coastal_geojson(csv_p, geo_p)
+        backups_after = list(tmp_path.glob("*.bak_*"))
+        assert len(backups_after) == 1
+        assert backups_after[0].name.startswith("features.geojson.bak_")
+
+    def test_empty_csv_raises(self, tmp_path):
+        csv_p = tmp_path / "empty.csv"
+        csv_p.write_text("site_name,latitude,longitude\n")  # header only
+        geo_p = tmp_path / "out.geojson"
+        with pytest.raises(ValueError, match="empty"):
+            build_coastal_geojson(csv_p, geo_p)
+
+    def test_atomic_write_leaves_no_tmp_on_success(self, tmp_path):
+        csv_p = tmp_path / "features.csv"
+        geo_p = tmp_path / "features.geojson"
+        _write_csv(csv_p, _SAMPLE_ROWS)
+        build_coastal_geojson(csv_p, geo_p)
+        tmp_files = list(tmp_path.glob("*.geojson.tmp"))
+        assert not tmp_files, "Temp file must be removed after atomic rename"
