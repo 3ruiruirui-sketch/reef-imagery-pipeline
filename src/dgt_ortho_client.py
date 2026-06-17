@@ -285,7 +285,75 @@ class DGTOrthoClient:
             except Exception as exc:
                 logger.error(f"  Failed {fname}: {exc}")
 
+        # --- WMS FALLBACK ---
+        if not paths:
+            logger.warning("   STAC/S3 extraction yielded 0 files (likely AccessDenied). Attempting WMS Fallback...")
+            wms_path = self.download_wms_clip(collection)
+            if wms_path:
+                paths.append(wms_path)
+                
         return paths
+
+    # ── WMS Fallback ───────────────────────────────────────────────────────────
+
+    def download_wms_clip(self, collection: str, layer: str = "CorVerdadeira") -> Optional[Path]:
+        """Fallback method: Download a WMS clip if S3/STAC COG access is denied."""
+        wms_urls = {
+            "ORTOSAT-2023": ("https://ortos.dgterritorio.gov.pt/wms/ortosat2023", f"ortoSat2023-{layer}"),
+            "ORTOS-2021": ("https://cartografia.dgterritorio.gov.pt/wms/ortos2021", f"Ortos2021-{layer}"),
+            "ORTOS-2018": ("https://cartografia.dgterritorio.gov.pt/wms/ortos2018", f"Ortos2018-{layer}")
+        }
+        
+        if collection not in wms_urls:
+            logger.warning(f"No known WMS endpoint for fallback collection: {collection}")
+            return None
+            
+        url, layer_name = wms_urls[collection]
+        out_path = self.output_dir / collection / f"{collection}_WMS_{layer}_clip.tif"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        if out_path.exists() and self.cache:
+            return out_path
+            
+        minx, miny, maxx, maxy = self.bbox
+        
+        # Approximate pixel size for 25-30cm resolution based on degrees
+        lat_diff = maxy - miny
+        # 1 degree lat is ~111km. 111,000 / 0.3m = 370,000 pixels per degree.
+        pixel_size = int(lat_diff * 370000)
+        # Limit to 3333 to respect standard DGT WMS MaxSize constraints
+        pixel_size = min(pixel_size, 3333)
+        
+        params = {
+            "service": "WMS",
+            "version": "1.3.0",
+            "request": "GetMap",
+            "layers": layer_name,
+            "crs": "EPSG:4326",
+            "bbox": f"{miny},{minx},{maxy},{maxx}", # WMS 1.3.0 EPSG:4326 is lat,lon
+            "width": str(pixel_size),
+            "height": str(pixel_size),
+            "format": "image/tiff",
+            "transparent": "FALSE"
+        }
+        
+        logger.info(f"WMS Fallback: Requesting {collection} {layer} from DGT WMS ({pixel_size}x{pixel_size}px)...")
+        try:
+            r = requests.get(url, params=params, timeout=120)
+            if r.status_code != 200:
+                logger.error(f"WMS request failed: HTTP {r.status_code}. Response: {r.text[:200]}")
+                return None
+                
+            r.raise_for_status()
+            with open(out_path, "wb") as f:
+                f.write(r.content)
+                
+            size_mb = out_path.stat().st_size / 1e6
+            logger.info(f"  ✓ Saved WMS clip → {out_path.name} ({size_mb:.1f} MB)")
+            return out_path
+        except Exception as exc:
+            logger.error(f"WMS Fallback failed for {collection}: {exc}")
+            return None
 
     # ── Mosaic ─────────────────────────────────────────────────────────────────
 
