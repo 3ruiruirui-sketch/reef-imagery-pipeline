@@ -40,7 +40,9 @@ dashboard/tiles/
 dist/
 env/
 reef_Output_Master/
+reef_Output_Master.zip
 reef_output_*/
+*.zip
 sentinel_images/
 test_wms_ortosat*.tif
 venv/
