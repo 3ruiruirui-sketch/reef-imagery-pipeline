@@ -6,21 +6,32 @@ import torch
 from torch.utils.data import Dataset
 import albumentations as A
 
+from src.constants import SDB_OPTICAL_LIMIT_M as _SDB_OPTICAL_LIMIT_M
+
 class ReefPatchDataset(Dataset):
     """
     PyTorch Dataset for loading 1-channel Bathymetry images and 1-channel binary masks.
     """
-    def __init__(self, images_dir: str, masks_dir: str, transform=None):
+    def __init__(self, images_dir: str, masks_dir: str, transform=None,
+                 min_depth_m: float | None = None, max_depth_m: float = 0.0):
         """
         Args:
             images_dir (str): Directory containing image .tif patches.
             masks_dir (str): Directory containing mask .tif patches.
             transform (albumentations.Compose): Optional data augmentation.
+            min_depth_m (float): Deepest depth for [0,1] scaling (negative metres).
+                Defaults to -SDB_OPTICAL_LIMIT_M from constants. INFERENCE MUST use
+                the same bounds as training — see normalize_depth() in
+                src/reef_segmenter.py which references the same default.
+            max_depth_m (float): Shallowest depth (sea level = 0.0).
         """
         self.images_dir = images_dir
         self.masks_dir = masks_dir
         self.transform = transform
-        
+        # Single source of truth for the depth scaling window
+        self.min_depth_m = min_depth_m if min_depth_m is not None else -_SDB_OPTICAL_LIMIT_M
+        self.max_depth_m = max_depth_m
+
         # Collect all image files
         self.image_files = sorted(glob.glob(os.path.join(images_dir, "*.tif")))
         self.mask_files = [os.path.join(masks_dir, os.path.basename(f)) for f in self.image_files]
@@ -30,15 +41,12 @@ class ReefPatchDataset(Dataset):
 
     def _normalize_depth(self, img_array):
         """
-        Normalize the depth array (typically negative).
-        We clamp the max depth (e.g. -50m to 0m) and scale to [0, 1].
+        Normalize the depth array (typically negative) to [0, 1].
+        Depth window comes from the constructor (default -SDB_OPTICAL_LIMIT_M..0).
         """
         # Remove NaNs if any exist
         img_array = np.nan_to_num(img_array, nan=0.0)
-        
-        # Min-Max Scaling (assuming depths are negative, e.g. -40m to 0m)
-        min_depth, max_depth = -40.0, 0.0
-        norm = (img_array - min_depth) / (max_depth - min_depth)
+        norm = (img_array - self.min_depth_m) / (self.max_depth_m - self.min_depth_m)
         return np.clip(norm, 0.0, 1.0)
 
     def __getitem__(self, idx):

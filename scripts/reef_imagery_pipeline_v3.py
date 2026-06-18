@@ -722,6 +722,40 @@ def step_export_ml_dataset(output_dir: str, date: str, **_) -> None:
         log.error("   ML Dataset export error: %s", e)
 
 # ---------------------------------------------------------------------------
+# Step: reef_segment  (U-Net reef mask from the bathymetry raster)
+# ---------------------------------------------------------------------------
+def step_reef_segment(output_dir: str, date: str, **_) -> None:
+    log.info("→ U-Net reef segmentation from bathymetry ...")
+    date_str = date.replace("-", "")
+
+    import glob
+    # Prefer the highest-resolution depth source available
+    src_tif = None
+    for pat in (f"bathy_dgt_lidar_{date_str}.tif",
+                f"bathy_s2_stumpf_{date_str}.tif",
+                f"bathy_*_{date_str}.tif"):
+        hits = sorted(glob.glob(os.path.join(output_dir, pat)))
+        if hits:
+            src_tif = hits[0]
+            break
+    if not src_tif:
+        log.warning("   No bathy_*_%s.tif found. Run --step bathy first.", date_str)
+        return
+
+    try:
+        import sys
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from src.reef_segmenter import segment_reef_tif
+        result = segment_reef_tif(src_tif)
+        log.info("   ✓ Reef mask → %s  (reef_fraction=%.1f%%)",
+                 os.path.basename(result["out_tif"]), 100.0 * result["reef_fraction"])
+    except RuntimeError as e:
+        # torch missing or weights absent — non-fatal, pipeline continues
+        log.warning("   Reef segmentation unavailable: %s", e)
+    except Exception as e:
+        log.error("   Reef segmentation failed: %s", e)
+
+# ---------------------------------------------------------------------------
 # Step: qgis
 # ---------------------------------------------------------------------------
 def step_qgis(output_dir: str, date: str, lat: float, lon: float, **_) -> None:
@@ -1030,10 +1064,10 @@ def step_reef_candidates(
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-STEPS = ["capabilities", "ortho", "sentinel", "ratio", "bathy", "reef_candidates", "score", "export_ml_dataset", "report", "qgis", "gee"]
+STEPS = ["capabilities", "ortho", "sentinel", "ratio", "bathy", "reef_segment", "reef_candidates", "score", "export_ml_dataset", "report", "qgis", "gee"]
 
-# Step sequence for --step all: imagery acquisition → depth → discovery → export → report
-_ALL_STEPS = ["sentinel", "ratio", "bathy", "reef_candidates", "export_ml_dataset", "report"]
+# Step sequence for --step all: imagery acquisition → depth → U-Net mask → discovery → export → report
+_ALL_STEPS = ["sentinel", "ratio", "bathy", "reef_segment", "reef_candidates", "export_ml_dataset", "report"]
 
 def main():
     parser = argparse.ArgumentParser(
@@ -1138,6 +1172,7 @@ def main():
         "sentinel":      step_sentinel,
         "ratio":         step_ratio,
         "bathy":         _step_bathy,
+        "reef_segment":  step_reef_segment,
         "reef_candidates": step_reef_candidates,
         "score":         step_score,
         "export_ml_dataset": step_export_ml_dataset,
