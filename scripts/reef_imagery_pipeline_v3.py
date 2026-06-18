@@ -465,7 +465,7 @@ def _sentinel_via_cdse(token: str, output_dir: str, lat: float, lon: float,
     log.info("   CDSE scene: %s", product_name)
 
     date_str = date.replace("-", "")
-    for band in ["B02", "B03"]:
+    for band in ["B02", "B03", "B08"]:
         out_path = os.path.join(output_dir, f"S2_{band}_{date_str}.tif")
         ok = _cdse_download_band(token, product_name, band, out_path, lat, lon, buffer_m)
         if ok and validate_tiff(out_path):
@@ -493,7 +493,7 @@ def _sentinel_via_pc(output_dir: str, lat: float, lon: float,
     date_str = date.replace("-", "")
     log.info("   PC scene: %s", item.id)
 
-    for band in ["B02", "B03"]:
+    for band in ["B02", "B03", "B08"]:
         asset = item.assets.get(band)
         if not asset:
             log.warning("   Asset %s missing", band)
@@ -666,6 +666,60 @@ def step_score(output_dir: str, date: str, lat: float, lon: float, **_) -> None:
     except Exception as exc:
         log.error("   Scoring step failed: %s", exc)
 
+
+# ---------------------------------------------------------------------------
+# Step: report
+# ---------------------------------------------------------------------------
+def step_report(output_dir: str, date: str, lat: float, lon: float, **_) -> None:
+    log.info("→ Generating automated HTML execution report ...")
+    date_str = date.replace("-", "")
+    try:
+        import sys
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from src.report_generator import generate_pipeline_report
+        report_path = generate_pipeline_report(output_dir, date_str, lat, lon)
+        if report_path:
+            log.info("   ✓ HTML Report generated → %s", report_path)
+        else:
+            log.warning("   HTML Report generation failed silently.")
+    except Exception as e:
+        log.error("   Failed to generate report: %s", e)
+
+# ---------------------------------------------------------------------------
+# Step: export_ml_dataset
+# ---------------------------------------------------------------------------
+def step_export_ml_dataset(output_dir: str, date: str, **_) -> None:
+    log.info("→ Exporting ML patches for AI training ...")
+    date_str = date.replace("-", "")
+    
+    candidates_geojson = os.path.join(output_dir, f"reef_candidates_{date_str}.geojson")
+    if not os.path.exists(candidates_geojson):
+        log.warning("   Candidates GeoJSON not found (%s). Run --step bathy first.", candidates_geojson)
+        return
+        
+    import glob
+    tifs = glob.glob(os.path.join(output_dir, f"bathy_*_{date_str}.tif"))
+    if not tifs:
+        tifs = glob.glob(os.path.join(output_dir, f"S2_B02_{date_str}.tif"))
+        
+    if not tifs:
+        log.warning("   No suitable source raster found for ML extraction.")
+        return
+        
+    source_tif = tifs[0]
+    log.info("   Using source raster for ML patches: %s", source_tif)
+    
+    try:
+        import sys
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from src.ml_dataset_builder import build_ml_dataset
+        ok = build_ml_dataset(source_tif, candidates_geojson, output_dir, patch_size=128, stride=64)
+        if not ok:
+            log.error("   ML Dataset extraction failed.")
+    except ImportError as e:
+        log.error("   src.ml_dataset_builder import error: %s", e)
+    except Exception as e:
+        log.error("   ML Dataset export error: %s", e)
 
 # ---------------------------------------------------------------------------
 # Step: qgis
@@ -976,10 +1030,10 @@ def step_reef_candidates(
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-STEPS = ["capabilities", "ortho", "sentinel", "ratio", "bathy", "reef_candidates", "score", "qgis", "gee"]
+STEPS = ["capabilities", "ortho", "sentinel", "ratio", "bathy", "reef_candidates", "score", "export_ml_dataset", "report", "qgis", "gee"]
 
-# Step sequence for --step all: imagery acquisition → depth → discovery
-_ALL_STEPS = ["sentinel", "ratio", "bathy", "reef_candidates"]
+# Step sequence for --step all: imagery acquisition → depth → discovery → export → report
+_ALL_STEPS = ["sentinel", "ratio", "bathy", "reef_candidates", "export_ml_dataset", "report"]
 
 def main():
     parser = argparse.ArgumentParser(
@@ -1086,6 +1140,8 @@ def main():
         "bathy":         _step_bathy,
         "reef_candidates": step_reef_candidates,
         "score":         step_score,
+        "export_ml_dataset": step_export_ml_dataset,
+        "report":        step_report,
         "qgis":          step_qgis,
         "gee":           step_gee,
     }

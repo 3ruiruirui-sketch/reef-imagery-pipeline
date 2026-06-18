@@ -22,6 +22,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.coastal_topography import CoastalTopographyAnalyzer  # noqa: E402
+from src.utils import build_coastal_geojson  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 log = logging.getLogger("gen_coastal_dgt")
@@ -88,8 +89,11 @@ def main() -> None:
     df = pd.concat(rows, ignore_index=True)
     out_csv = OUT_DIR / "algarve_coastal_features.csv"
     df.to_csv(out_csv, index=False)
+
+    out_geojson = OUT_DIR / "algarve_coastal_features.geojson"
+    n = build_coastal_geojson(out_csv, out_geojson)
     log.info("=" * 70)
-    log.info("DONE: %d/%d sites → %s", len(df), len(SURVEY_SITES), out_csv)
+    log.info("DONE: %d/%d sites → %s + %s (%d features)", len(df), len(SURVEY_SITES), out_csv.name, out_geojson.name, n)
     print(df[["site_name", "slope_mean", "slope_max", "aspect_mean"]].to_string(index=False))
 
 

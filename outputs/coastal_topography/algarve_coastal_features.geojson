@@ -14,7 +14,7 @@
     "site_name": "tavira_west",
     "latitude": 37.105,
     "longitude": -7.68,
-    "buffer_m": 3000,
+    "buffer_m": 3000.0,
     "slope_min": 0.0,
     "slope_max": 77.459221,
     "slope_mean": 4.098702,
@@ -26,7 +26,7 @@
     "aspect_mean": 189.562317,
     "aspect_std": 109.541267,
     "aspect_median": 195.945663,
-    "timestamp": "2026-06-15T23:46:02.531296+00:00"
+    "timestamp": "2026-06-16T22:37:56.011255+00:00"
    },
    "geometry": {
     "type": "Point",
@@ -42,7 +42,7 @@
     "site_name": "ilha_de_tavira",
     "latitude": 37.095,
     "longitude": -7.72,
-    "buffer_m": 3000,
+    "buffer_m": 3000.0,
     "slope_min": 0.0,
     "slope_max": 85.313286,
     "slope_mean": 4.53782,
@@ -54,7 +54,7 @@
     "aspect_mean": 183.146057,
     "aspect_std": 112.03801,
     "aspect_median": 189.353043,
-    "timestamp": "2026-06-15T23:46:02.531296+00:00"
+    "timestamp": "2026-06-16T22:37:56.011255+00:00"
    },
    "geometry": {
     "type": "Point",
@@ -70,7 +70,7 @@
     "site_name": "fuseta",
     "latitude": 37.06,
     "longitude": -7.76,
-    "buffer_m": 3000,
+    "buffer_m": 3000.0,
     "slope_min": 0.0,
     "slope_max": 80.495415,
     "slope_mean": 4.679644,
@@ -82,7 +82,7 @@
     "aspect_mean": 181.946335,
     "aspect_std": 104.721169,
     "aspect_median": 180.0,
-    "timestamp": "2026-06-15T23:46:02.531296+00:00"
+    "timestamp": "2026-06-16T22:37:56.011255+00:00"
    },
    "geometry": {
     "type": "Point",
@@ -98,7 +98,7 @@
     "site_name": "olhao_offshore",
     "latitude": 37.035,
     "longitude": -7.82,
-    "buffer_m": 3000,
+    "buffer_m": 3000.0,
     "slope_min": 0.0,
     "slope_max": 79.993393,
     "slope_mean": 3.949744,
@@ -110,7 +110,7 @@
     "aspect_mean": 181.033005,
     "aspect_std": 98.415504,
     "aspect_median": 180.0,
-    "timestamp": "2026-06-15T23:46:02.531296+00:00"
+    "timestamp": "2026-06-16T22:37:56.011255+00:00"
    },
    "geometry": {
     "type": "Point",
@@ -126,7 +126,7 @@
     "site_name": "faro_east",
     "latitude": 37.01,
     "longitude": -7.88,
-    "buffer_m": 3000,
+    "buffer_m": 3000.0,
     "slope_min": 0.0,
     "slope_max": 80.268829,
     "slope_mean": 4.582298,
@@ -138,7 +138,7 @@
     "aspect_mean": 179.317078,
     "aspect_std": 89.515182,
     "aspect_median": 180.0,
-    "timestamp": "2026-06-15T23:46:02.531296+00:00"
+    "timestamp": "2026-06-16T22:37:56.011255+00:00"
    },
    "geometry": {
     "type": "Point",
@@ -154,7 +154,7 @@
     "site_name": "praia_de_faro",
     "latitude": 36.98,
     "longitude": -7.94,
-    "buffer_m": 3000,
+    "buffer_m": 3000.0,
     "slope_min": 0.0,
     "slope_max": 66.433533,
     "slope_mean": 3.738052,
@@ -166,7 +166,7 @@
     "aspect_mean": 178.289062,
     "aspect_std": 80.71701,
     "aspect_median": 180.0,
-    "timestamp": "2026-06-15T23:46:02.531296+00:00"
+    "timestamp": "2026-06-16T22:37:56.011255+00:00"
    },
    "geometry": {
     "type": "Point",
@@ -182,7 +182,7 @@
     "site_name": "ancão_peninsula",
     "latitude": 36.965,
     "longitude": -8.0,
-    "buffer_m": 3000,
+    "buffer_m": 3000.0,
     "slope_min": 0.0,
     "slope_max": 66.433533,
     "slope_mean": 3.160429,
@@ -194,7 +194,7 @@
     "aspect_mean": 176.677231,
     "aspect_std": 80.587532,
     "aspect_median": 180.0,
-    "timestamp": "2026-06-15T23:46:02.531296+00:00"
+    "timestamp": "2026-06-16T22:37:56.011255+00:00"
    },
    "geometry": {
     "type": "Point",
@@ -210,7 +210,7 @@
     "site_name": "quarteira",
     "latitude": 37.065,
     "longitude": -8.1,
-    "buffer_m": 3000,
+    "buffer_m": 3000.0,
     "slope_min": 0.0,
     "slope_max": 82.921638,
     "slope_mean": 4.80671,
@@ -222,7 +222,7 @@
     "aspect_mean": 171.874619,
     "aspect_std": 102.43457,
     "aspect_median": 180.0,
-    "timestamp": "2026-06-15T23:46:02.531296+00:00"
+    "timestamp": "2026-06-16T22:37:56.011255+00:00"
    },
    "geometry": {
     "type": "Point",
@@ -238,7 +238,7 @@
     "site_name": "vilamoura",
     "latitude": 37.075,
     "longitude": -8.13,
-    "buffer_m": 3000,
+    "buffer_m": 3000.0,
     "slope_min": 0.0,
     "slope_max": 84.434998,
     "slope_mean": 4.829484,
@@ -250,7 +250,7 @@
     "aspect_mean": 170.78392,
     "aspect_std": 100.502731,
     "aspect_median": 180.0,
-    "timestamp": "2026-06-15T23:46:02.531296+00:00"
+    "timestamp": "2026-06-16T22:37:56.011255+00:00"
    },
    "geometry": {
     "type": "Point",
@@ -266,7 +266,7 @@
     "site_name": "olhos_de_agua",
     "latitude": 37.09,
     "longitude": -8.16,
-    "buffer_m": 3000,
+    "buffer_m": 3000.0,
     "slope_min": 0.0,
     "slope_max": 87.004906,
     "slope_mean": 5.630927,
@@ -278,7 +278,7 @@
     "aspect_mean": 182.509079,
     "aspect_std": 102.871483,
     "aspect_median": 180.0,
-    "timestamp": "2026-06-15T23:46:02.531296+00:00"
+    "timestamp": "2026-06-16T22:37:56.011255+00:00"
    },
    "geometry": {
     "type": "Point",
@@ -294,7 +294,7 @@
     "site_name": "pedra_sta_eulalia",
     "latitude": 37.069081,
     "longitude": -8.210242,
-    "buffer_m": 3000,
+    "buffer_m": 3000.0,
     "slope_min": 0.0,
     "slope_max": 85.896675,
     "slope_mean": 6.589033,
@@ -306,7 +306,7 @@
     "aspect_mean": 181.01178,
     "aspect_std": 92.536842,
     "aspect_median": 180.0,
-    "timestamp": "2026-06-15T23:46:02.531296+00:00"
+    "timestamp": "2026-06-16T22:37:56.011255+00:00"
    },
    "geometry": {
     "type": "Point",
@@ -322,7 +322,7 @@
     "site_name": "albufeira_reef",
     "latitude": 37.069,
     "longitude": -8.2105,
-    "buffer_m": 3000,
+    "buffer_m": 3000.0,
     "slope_min": 0.0,
     "slope_max": 85.896675,
     "slope_mean": 6.562994,
@@ -334,7 +334,7 @@
     "aspect_mean": 181.029541,
     "aspect_std": 92.449356,
     "aspect_median": 180.0,
-    "timestamp": "2026-06-15T23:46:02.531296+00:00"
+    "timestamp": "2026-06-16T22:37:56.011255+00:00"
    },
    "geometry": {
     "type": "Point",
@@ -350,7 +350,7 @@
     "site_name": "galé",
     "latitude": 37.056,
     "longitude": -8.2296,
-    "buffer_m": 3000,
+    "buffer_m": 3000.0,
     "slope_min": 0.0,
     "slope_max": 85.896675,
     "slope_mean": 7.828042,
@@ -362,7 +362,7 @@
     "aspect_mean": 181.73172,
     "aspect_std": 102.780075,
     "aspect_median": 180.0,
-    "timestamp": "2026-06-15T23:46:02.531296+00:00"
+    "timestamp": "2026-06-16T22:37:56.011255+00:00"
    },
    "geometry": {
     "type": "Point",
@@ -378,7 +378,7 @@
     "site_name": "salgados",
     "latitude": 37.095,
     "longitude": -8.3,
-    "buffer_m": 3000,
+    "buffer_m": 3000.0,
     "slope_min": 0.0,
     "slope_max": 86.44693,
     "slope_mean": 6.446259,
@@ -390,7 +390,7 @@
     "aspect_mean": 167.554993,
     "aspect_std": 103.585579,
     "aspect_median": 169.217026,
-    "timestamp": "2026-06-15T23:46:02.531296+00:00"
+    "timestamp": "2026-06-16T22:37:56.011255+00:00"
    },
    "geometry": {
     "type": "Point",
@@ -406,7 +406,7 @@
     "site_name": "armacao_de_pera",
     "latitude": 37.07,
     "longitude": -8.36,
-    "buffer_m": 3000,
+    "buffer_m": 3000.0,
     "slope_min": 0.0,
     "slope_max": 86.420052,
     "slope_mean": 4.860766,
@@ -418,7 +418,7 @@
     "aspect_mean": 175.559265,
     "aspect_std": 102.275711,
     "aspect_median": 180.0,
-    "timestamp": "2026-06-15T23:46:02.531296+00:00"
+    "timestamp": "2026-06-16T22:37:56.011255+00:00"
    },
    "geometry": {
     "type": "Point",

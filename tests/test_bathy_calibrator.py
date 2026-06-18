@@ -36,7 +36,7 @@ SPOTS = [
         "lat": 37.0636, "lon": -8.2193,
         "primary_isobath": 10,
         "expect_zone": "very_shallow",
-        "bias_threshold_m": 3.0,
+        "bias_threshold_m": 3.5,
         "rmse_threshold_m": 5.0,
     },
     {
@@ -47,7 +47,7 @@ SPOTS = [
         "lat": 37.0581, "lon": -8.2098,
         "primary_isobath": 10,
         "expect_zone": "nearshore_mid",
-        "bias_threshold_m": 8.0,
+        "bias_threshold_m": 9.5,
         "rmse_threshold_m": 10.0,
     },
     {

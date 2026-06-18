@@ -463,11 +463,127 @@ def download_etopo(
 
 
 # ===========================================================================
+# 4b. DGT LiDAR Bathymetry (STAC/S3)
+# ===========================================================================
+
+def download_dgt_lidar(
+    lat: float, lon: float, buffer_m: float, output_dir: str,
+    date_str: str = "",
+) -> str | None:
+    """
+    Download high-resolution 50cm MDT from DGT STAC Catalog via S3.
+    Auth: AWS env vars from .env for bucket access.
+    """
+    if not date_str:
+        date_str = _date_str()
+    out_path = os.path.join(output_dir, f"bathy_dgt_lidar_{date_str}.tif")
+
+    bbox = _aoi_bbox(lat, lon, buffer_m, scale=1.5)
+    w, s, e, n = bbox
+
+    stac_url = "https://dgt-be.a.incd.pt:8081/search"
+    payload = {
+        "bbox": [w, s, e, n],
+        "collections": ["MDT-50cm"],
+        "limit": 10
+    }
+    log.info("→ DGT LiDAR STAC request (bbox=%.4f,%.4f,%.4f,%.4f)", w, s, e, n)
+    try:
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        r = requests.post(stac_url, json=payload, timeout=60, verify=False)
+        r.raise_for_status()
+        features = r.json().get("features", [])
+        if not features:
+            log.warning("   DGT LiDAR: No MDT-50cm data found for this bounding box.")
+            return None
+            
+        import boto3
+        from rasterio.session import AWSSession
+        from rasterio.merge import merge
+        
+        endpoint_url = os.environ.get("AWS_S3_ENDPOINT", "https://stor-001.d.acnca.pt")
+        boto3_session = boto3.Session(
+            aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY")
+        )
+        
+        src_files = []
+        for feat in features:
+            assets = feat.get("assets", {})
+            for asset_key, asset_val in assets.items():
+                href = asset_val.get("href")
+                if href and href.endswith(".tif"):
+                    # Convert to s3:// URI if it's HTTP
+                    if href.startswith("http"):
+                        parts = href.replace("https://", "").replace("http://", "").split("/")
+                        if len(parts) >= 3:
+                            href = f"s3://{parts[1]}/{'/'.join(parts[2:])}"
+                    src_files.append(href)
+                    break
+                    
+        if not src_files:
+            log.warning("   DGT LiDAR: Could not find TIFF assets in STAC features.")
+            return None
+            
+        log.info("   Found %d DGT LiDAR sources. Cropping & Merging...", len(src_files))
+        
+        env = rasterio.Env(
+            AWSSession(boto3_session, endpoint_url=endpoint_url),
+            AWS_NO_SIGN_REQUEST="NO" if "AWS_ACCESS_KEY_ID" in os.environ else "YES",
+            AWS_VIRTUAL_HOSTING="FALSE",
+        )
+        
+        datasets = []
+        with env:
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                for s3_url in src_files:
+                    try:
+                        datasets.append(rasterio.open(s3_url))
+                    except Exception as e:
+                        log.warning("   Could not open %s: %s", s3_url, e)
+                        
+                if not datasets:
+                    return None
+                    
+                mosaic, out_trans = merge(datasets, bounds=(w, s, e, n))
+                out_meta = datasets[0].meta.copy()
+                
+            for ds in datasets:
+                ds.close()
+
+        if mosaic.size == 0 or np.all(mosaic == out_meta.get("nodata")):
+            log.warning("   DGT LiDAR: Merged array is empty or nodata.")
+            return None
+
+        out_meta.update({
+            "driver": "GTiff",
+            "height": mosaic.shape[1],
+            "width": mosaic.shape[2],
+            "transform": out_trans,
+            "compress": "lzw"
+        })
+        
+        _safe_write_tif(out_path, out_meta, mosaic)
+        
+        if _validate_tiff(out_path):
+            log.info("   ✓ DGT LiDAR GeoTIFF → %s", out_path)
+            return out_path
+            
+        return None
+    except Exception as exc:
+        log.warning("   DGT LiDAR fetch failed: %s", exc)
+        return None
+
+# ===========================================================================
 # 5.  Sentinel-2 Shallow Depth Inversion (Stumpf 2003)
 # ===========================================================================
 
 def compute_s2_depth_inversion(
     b02_path: str, b03_path: str, output_dir: str,
+    b08_path: str = "",
     m0: float = -28.0, m1: float = 32.0, n_scale: float = 1500.0,
     date_str: str = "",
 ) -> str | None:
@@ -536,6 +652,25 @@ def compute_s2_depth_inversion(
         with rasterio.open(b03_path) as src_b03:
             b03 = src_b03.read(1).astype(np.float32)
 
+        # Apply empirical sunglint correction if NIR (B08) is provided
+        if b08_path and os.path.exists(b08_path):
+            try:
+                import sys
+                sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                from src.atmospheric_corrector import AtmosphericCorrector
+                
+                with rasterio.open(b08_path) as src_b08:
+                    b08 = src_b08.read(1).astype(np.float32)
+                
+                ac = AtmosphericCorrector("sentinel-2")
+                b02 = ac.empirical_sunglint(b02, b08)
+                
+                # Approximate B03 correction (using B02 factor for simplicity)
+                b03 = ac.empirical_sunglint(b03, b08)
+                log.info("   ✓ Empirical sunglint correction applied using B08")
+            except Exception as e:
+                log.warning("   Sunglint correction failed, continuing with raw bands: %s", e)
+
         # Mask invalid / zero reflectance
         valid = (b02 > 0) & (b03 > 0)
         b02_s = np.where(valid, b02, np.nan)
@@ -556,13 +691,30 @@ def compute_s2_depth_inversion(
         # Mask obviously-land and impossibly-deep values
         depth = np.where((depth > 0) | (depth < -60), np.nan, depth)
 
-        profile.update(dtype=rasterio.float32, count=1, compress="lzw", nodata=np.nan)
-        _safe_write_tif(out_path, profile, depth.astype(np.float32)[np.newaxis, ...])
+        import sys
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from src.tide_calibrator import get_tide_offset
+        
+        # Calculate center coordinates for tide API
+        lat_c = (src_b02.bounds.top + src_b02.bounds.bottom) / 2.0
+        lon_c = (src_b02.bounds.left + src_b02.bounds.right) / 2.0
+        
+        tide_offset = get_tide_offset(date_str, lat_c, lon_c)
+        depth_corrected = depth - tide_offset
 
-        valid_pct = 100.0 * np.sum(np.isfinite(depth)) / depth.size
-        d_med = float(np.nanmedian(depth))
-        log.info("   ✓ S2 depth → %s  (valid=%.0f%%, median=%.1f m)",
-                 out_path, valid_pct, d_med)
+        profile.update(dtype=rasterio.float32, count=1, compress="lzw", nodata=np.nan)
+        
+        # Write raw
+        raw_path = out_path.replace(".tif", "_raw.tif")
+        _safe_write_tif(raw_path, profile, depth.astype(np.float32)[np.newaxis, ...])
+        
+        # Write corrected
+        _safe_write_tif(out_path, profile, depth_corrected.astype(np.float32)[np.newaxis, ...])
+
+        valid_pct = 100.0 * np.sum(np.isfinite(depth_corrected)) / depth_corrected.size
+        d_med = float(np.nanmedian(depth_corrected))
+        log.info("   ✓ S2 depth (tide offset: -%.2fm) → %s  (valid=%.0f%%, median=%.1f m)",
+                 tide_offset, out_path, valid_pct, d_med)
         return out_path
     except Exception as exc:
         log.error("   S2 depth inversion failed: %s", exc)
@@ -1071,6 +1223,11 @@ def run_bathy_step(args) -> None:
     bathy_tifs: list[str] = []
     use_all = (src == "all")
 
+    if use_all or src == "dgt_lidar":
+        t = download_dgt_lidar(lat, lon, buf_m, output_dir, date_tag)
+        if t:
+            bathy_tifs.append(t)
+
     if use_all or src == "emodnet":
         t = download_emodnet_bathy(lat, lon, buf_m, output_dir, date_tag)
         if t:
@@ -1094,7 +1251,8 @@ def run_bathy_step(args) -> None:
     if use_all or src == "s2":
         b02 = os.path.join(output_dir, f"S2_B02_{date_tag}.tif")
         b03 = os.path.join(output_dir, f"S2_B03_{date_tag}.tif")
-        t = compute_s2_depth_inversion(b02, b03, output_dir, date_str=date_tag)
+        b08 = os.path.join(output_dir, f"S2_B08_{date_tag}.tif")
+        t = compute_s2_depth_inversion(b02, b03, output_dir, b08_path=b08, date_str=date_tag)
         if t:
             bathy_tifs.append(t)
 
@@ -1104,8 +1262,9 @@ def run_bathy_step(args) -> None:
         return
 
     # ---- Process: use highest-resolution (first successful) source ----
-    # Priority order: EMODnet > S2 > GEBCO > ETOPO > GEOMAR
+    # Priority order: DGT LiDAR > EMODnet > S2 > GEBCO > ETOPO > GEOMAR
     priority = [
+        f"bathy_dgt_lidar_{date_tag}.tif",
         f"bathy_emodnet_{date_tag}.tif",
         f"bathy_s2_stumpf_{date_tag}.tif",
         f"bathy_gebco_{date_tag}.tif",
@@ -1174,7 +1333,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--buffer-m",    type=float, default=500.0,
                    dest="buffer_m", help="AOI radius in metres")
     p.add_argument("--bathy-source",
-                   choices=["emodnet", "gebco", "geomar", "etopo", "s2", "all"],
+                   choices=["dgt_lidar", "emodnet", "gebco", "geomar", "etopo", "s2", "all"],
                    default="all", dest="bathy_source",
                    help="Data source(s) to use")
     p.add_argument("--depth-min",   type=float, default=-50.0, dest="depth_min",

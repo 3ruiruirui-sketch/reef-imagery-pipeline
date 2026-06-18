@@ -62,7 +62,7 @@ Sentinel-2 L2A  →  ACOLITE BOA correction  →  Gordon/QAA Kd inversion
 | `stac_ingest.py` | STAC scene discovery (Earth Search, Planetary Computer, DGT STAC) |
 | `ih_bathy_features.py` | `BathyFeatureEngine` — bathymetry-derived ML features |
 | `enhancer.py` | SNR-adaptive NLM denoising, CLAHE sharpening |
-| `utils.py` | Raster I/O, Snell refraction, Beer-Lambert transmittance, `get_kd490()` |
+| `utils.py` | Raster I/O, Snell refraction, Beer-Lambert transmittance, `get_kd490()`, `build_coastal_geojson()` |
 | `sensor_config.py` | Per-sensor band configs (Sentinel-2, PlanetScope SuperDove) |
 
 ### ML models (`models/`)
@@ -72,6 +72,24 @@ Trained artifacts: `bvi_model.pkl` (RF regressor), `bvi_weights.json`, `visibili
 ### Terrain BVI modifier
 
 `terrain_exposure_modifier(slope_mean, aspect_mean)` in `ranking_model.py` returns a multiplier in `[0.5, 1.0]` based on the site's orientation relative to the dominant SW swell (225°). Pre-computed features for 15 Algarve sites are at `outputs/coastal_topography/algarve_coastal_features.csv`.
+
+### Coastal features artefact flow
+
+The dashboard endpoint `/api/coastal-features` reads **`outputs/coastal_topography/algarve_coastal_features.geojson`** — it never reads the CSV directly. Always keep the GeoJSON in sync with the CSV.
+
+Two paths that regenerate the pair:
+
+| Path | When to use | GeoJSON auto-generated? |
+|---|---|---|
+| `python scripts/generate_coastal_features_dgt.py` | Local run with DGT CDD creds | **Yes** — calls `build_coastal_geojson()` at the end of `main()` |
+| VM extraction via JupyterHub | LiDAR tiles IP-restricted to VM | **No** — run `python scripts/build_coastal_geojson.py` manually after updating the CSV |
+
+`build_coastal_geojson(csv_path, geojson_path)` lives in `src/utils.py`. It writes atomically (temp→rename) and creates a `.bak_YYYYMMDDTHHMMSS` backup before overwriting. The CLI wrapper at `scripts/build_coastal_geojson.py` takes `--csv` and `--out` flags.
+
+```bash
+# After a VM extraction — parse CSV:: lines from stdout → update CSV — then:
+python scripts/build_coastal_geojson.py
+```
 
 ### DEM fallback chain
 

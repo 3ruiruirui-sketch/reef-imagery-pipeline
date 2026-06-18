@@ -70,10 +70,10 @@ def test_step_registry_contains_reef_candidates():
     assert rc_idx > bathy_idx, "reef_candidates must come after bathy in STEPS"
 
 
-def test_all_steps_sequence_terminates_at_reef_candidates():
-    """--step all must use a sequence ending at reef_candidates, not score."""
-    assert v3._ALL_STEPS[-1] == "reef_candidates", (
-        f"--step all must terminate at reef_candidates; got {v3._ALL_STEPS[-1]}"
+def test_all_steps_sequence_terminates_at_report():
+    """--step all must use a sequence ending at report, not score."""
+    assert v3._ALL_STEPS[-1] == "report", (
+        f"--step all must terminate at report; got {v3._ALL_STEPS[-1]}"
     )
     assert "score" not in v3._ALL_STEPS, (
         "--step all must not include the BVI score step"

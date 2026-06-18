@@ -142,6 +142,14 @@ def generate_full_dpi():
         rel = os.path.join(dir_name, f'S2_B03_{date_str}.tif')
         colormap = 'Greens_r'
         label = f'{dir_name}_B03_{date_str}'
+    elif band == 'bathy_s2' and dir_name and date_str:
+        rel = os.path.join(dir_name, f'bathy_s2_stumpf_{date_str}.tif')
+        colormap = 'terrain'
+        label = f'{dir_name}_BathyS2_{date_str}'
+    elif band == 'bathy_dgt' and dir_name and date_str:
+        rel = os.path.join(dir_name, f'bathy_dgt_lidar_{date_str}.tif')
+        colormap = 'terrain'
+        label = f'{dir_name}_BathyDGT_{date_str}'
     else:
         rel = ratio_tif
         colormap = 'viridis'

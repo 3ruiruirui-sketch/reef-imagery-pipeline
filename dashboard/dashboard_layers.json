@@ -560,5 +560,22 @@
       ]
     ],
     "source": "zimbral_temporal_analysis"
+  },
+  {
+    "dir": "reef_output_edp_art_reef",
+    "ratio_tif": "reef_output_edp_art_reef/ratio_B02_B03_20240930.tif",
+    "date": "20240930",
+    "bounds": [
+      [
+        37.05554234515289,
+        -8.223649432428237
+      ],
+      [
+        37.08285419657573,
+        -8.196147568520086
+      ]
+    ],
+    "width": 242,
+    "height": 301
   }
 ]
