@@ -1,0 +1,40 @@
+# config_cpu.yaml — CPU-optimised training hyperparameters for ReefUNetCPU
+# All values are tuned for a modern i5/i7 laptop, 16 GB RAM, no GPU.
+
+model:
+  encoder_name: null          # null = auto-select lightest available (MobileNet-V2 or V3-Small)
+  in_channels: 1              # single-channel bathymetry input
+  classes: 1                  # binary reef / no-reef
+
+data:
+  images_dir: reef_output_sota/ml_dataset/images
+  masks_dir:  reef_output_sota/ml_dataset/masks
+  val_split:  0.2             # fraction of data held out for validation
+  image_size: 128             # DO NOT exceed 128 on CPU — memory/speed constraint
+  cache_dir:  data/cache_patches  # pre-processed patches are cached here
+
+training:
+  epochs:     30
+  batch_size: 4               # batch_size 2–4 keeps peak RAM under 4 GB
+  lr:         0.001
+  weight_decay: 0.0001
+  num_workers: 2              # >2 workers on CPU is counter-productive
+  pin_memory: false           # only useful with GPU
+
+loss:
+  lambda_depth:  0.3          # weight for depth-consistency physics term
+  lambda_smooth: 0.1          # weight for total-variation smoothness term
+
+scheduler:
+  type:    ReduceLROnPlateau
+  patience: 3
+  factor:   0.5
+  min_lr:   0.00001
+
+early_stopping:
+  patience: 5                 # stop if val_loss doesn't improve for 5 epochs
+
+output:
+  model_path:   models/unet_reef_cpu.pth
+  metrics_csv:  training/metrics_cpu.csv
+  log_interval: 1             # log every N epochs

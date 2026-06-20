@@ -62,6 +62,17 @@ data/cache/
 # Backup files
 *.bak
 
+# Stale model weights from previous architectures
+models/unet_reef_best_smp_resnet18.pth
+
+# DGT one-off utility scripts at repo root (hardcoded tokens, not for version control)
+/dgt_*.py
+/dgt_check_api.py
+/dgt_examples/
+# DGT scripts with hardcoded credentials
+/scripts/dgt_kernel_exec.py
+/scripts/dgt_launch_training.py
+
 # Planet application draft (restricted)
 docs/application/
 

@@ -67,10 +67,14 @@ Repository = "https://github.com/3ruiruirui-sketch/reef-imagery-pipeline"
 Issues = "https://github.com/3ruiruirui-sketch/reef-imagery-pipeline/issues"
 
 [tool.setuptools]
-packages = ["src"]
+packages = ["src", "models", "training", "pipelines", "validation"]
 
 [tool.setuptools.package-dir]
-src = "src"
+src        = "src"
+models     = "models"
+training   = "training"
+pipelines  = "pipelines"
+validation = "validation"
 
 [tool.black]
 line-length = 100

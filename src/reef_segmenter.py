@@ -11,9 +11,9 @@ the depth window [-SDB_OPTICAL_LIMIT_M, 0]. Inference MUST use the identical
 window — `normalize_depth()` here mirrors `ReefPatchDataset._normalize_depth`
 and both default to the same `SDB_OPTICAL_LIMIT_M` constant.
 
-torch / segmentation_models_pytorch are optional heavy deps; this module degrades
-gracefully (HAS_TORCH=False, segment_* raise a clear RuntimeError) so importing it
-never breaks the pipeline on a torch-less install.
+torch is an optional heavy dep; this module degrades gracefully (HAS_TORCH=False,
+segment_* raise a clear RuntimeError) so importing it never breaks the pipeline on a
+torch-less install. segmentation_models_pytorch is NOT required — the model is pure PyTorch.
 
 Usage:
     from src.reef_segmenter import segment_reef_tif, segment_reef_array
@@ -41,8 +41,7 @@ except Exception:  # pragma: no cover - exercised only on torch-less installs
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _DEFAULT_WEIGHTS = _PROJECT_ROOT / "models" / "unet_reef_best.pth"
-_TILE = 256          # training patch size; resnet18 needs multiples of 32
-_ENCODER = "resnet18"
+_TILE = 256          # inference tile size; new pure-PyTorch model needs multiples of 16
 
 # Lazily-loaded singleton model (keyed by weights path)
 _MODEL = None
@@ -73,7 +72,7 @@ def _load_model(weights_path: Optional[str] = None):
         raise RuntimeError(f"U-Net weights not found: {path}")
 
     from src.ml_unet_model import ReefUNet
-    model = ReefUNet(encoder_name=_ENCODER, in_channels=1, classes=1)
+    model = ReefUNet(in_channels=1, classes=1)
     state = torch.load(path, map_location="cpu", weights_only=True)
     model.load_state_dict(state)
     model.eval()

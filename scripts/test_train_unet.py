@@ -56,7 +56,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     try:
-        model = ReefUNet(encoder_name="resnet18").to(device)
+        model = ReefUNet().to(device)
         criterion = get_loss_function()
         optimizer = optim.Adam(model.parameters(), lr=1e-3)
 

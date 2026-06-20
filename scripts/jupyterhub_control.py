@@ -34,6 +34,7 @@ does it automatically via a session.get() before opening any WebSocket.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import re
@@ -568,12 +569,12 @@ def cmd_sync_project(args) -> None:
     ok = err = 0
     for local, remote in files_to_sync:
         try:
-            content_raw = local.read_text(encoding="utf-8", errors="replace")
             if local.suffix == ".ipynb":
                 payload = {"type": "notebook", "format": "json",
-                           "content": json.loads(content_raw)}
+                           "content": json.loads(local.read_text(encoding="utf-8"))}
             else:
-                payload = {"type": "file", "format": "text", "content": content_raw}
+                payload = {"type": "file", "format": "text",
+                           "content": local.read_text(encoding="utf-8", errors="replace")}
             _put(f"{USER_BASE}/api/contents/{remote}", payload)
             print(f"  ✓  {remote}")
             ok += 1
@@ -582,6 +583,46 @@ def cmd_sync_project(args) -> None:
             err += 1
 
     print(f"\nSync complete: {ok} uploaded, {err} errors.")
+
+
+# ---------------------------------------------------------------------------
+# Command: upload-data  — upload binary files (e.g. .tif patches) to JupyterHub
+# ---------------------------------------------------------------------------
+
+def cmd_upload_data(args) -> None:
+    local_dir   = Path(args.local_dir).resolve()
+    try:
+        _rel = local_dir.relative_to(PROJECT_ROOT)
+        _default_remote = f"reef-imagery-pipeline/{_rel.as_posix()}"
+    except ValueError:
+        _default_remote = f"reef-imagery-pipeline/{local_dir.name}"
+    remote_base = getattr(args, "remote_path", None) or _default_remote
+    extensions  = tuple(f".{e.lstrip('.')}" for e in (args.ext or "tif").split(","))
+    dry_run     = getattr(args, "dry_run", False)
+
+    files = sorted(f for f in local_dir.rglob("*") if f.is_file() and f.suffix in extensions)
+    print(f"Binary files to upload: {len(files)} (ext: {extensions}) → {remote_base}")
+
+    if dry_run:
+        for f in files:
+            print(f"  {f.relative_to(local_dir)} → {remote_base}/{f.relative_to(local_dir).as_posix()}")
+        return
+
+    ok = err = 0
+    for local in files:
+        rel    = local.relative_to(local_dir)
+        remote = f"{remote_base}/{rel.as_posix()}"
+        try:
+            payload = {"type": "file", "format": "base64",
+                       "content": base64.b64encode(local.read_bytes()).decode()}
+            _put(f"{USER_BASE}/api/contents/{remote}", payload)
+            print(f"  ✓  {remote}")
+            ok += 1
+        except Exception as e:
+            print(f"  ✗  {remote}  ({e})", file=sys.stderr)
+            err += 1
+
+    print(f"\nUpload complete: {ok} uploaded, {err} errors.")
 
 
 # ---------------------------------------------------------------------------
@@ -673,6 +714,16 @@ def build_parser() -> argparse.ArgumentParser:
     sy_p.add_argument("--dry-run", action="store_true",
                       help="Print files that would be synced without uploading.")
 
+    # upload-data
+    ud_p = sub.add_parser("upload-data", help="Upload binary files (e.g. .tif patches) to JupyterHub.")
+    ud_p.add_argument("local_dir", help="Local directory to upload recursively.")
+    ud_p.add_argument("--remote-path", dest="remote_path", default=None,
+                      help="Remote base path (default: reef-imagery-pipeline/<relative-local-dir>).")
+    ud_p.add_argument("--ext", default="tif",
+                      help="Comma-separated extensions to upload (default: tif).")
+    ud_p.add_argument("--dry-run", action="store_true",
+                      help="Print files that would be uploaded without uploading.")
+
     # clone-repo
     cr_p = sub.add_parser("clone-repo", help="Clone a git repository into the remote environment.")
     cr_p.add_argument("repo_url", help="HTTPS URL of the repository.")
@@ -697,6 +748,7 @@ def main() -> None:
         "s3-ls":           cmd_s3_ls,
         "s3-stream-test":  cmd_s3_stream_test,
         "sync-project":    cmd_sync_project,
+        "upload-data":     cmd_upload_data,
         "clone-repo":      cmd_clone_repo,
     }
     handler = dispatch.get(args.command)
