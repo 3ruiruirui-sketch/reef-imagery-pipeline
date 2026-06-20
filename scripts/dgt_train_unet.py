@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
 """
-DGT Server U-Net Training Script — v2
-Runs on AMD EPYC-Milan (96 cores, 125 GB RAM)
+DGT Server U-Net Training Script — v3
+Runs on AMD EPYC-Milan (96 cores, 503 GB RAM) — CPU-only, sem GPU.
 
-Fixes vs v1:
-- BUG: train augmentation was silently disabled (shared Dataset object between
-  train/val Subsets — setting val.dataset.transform = None killed train augs).
-  Fix: two separate ReefPatchDataset instances, manual index split.
-- PERF: torch.set_num_threads now set explicitly (was defaulting to 1 on SLURM).
-- STABILITY: gradient clipping (max_norm=1.0) — prevents the epoch-11 loss spike.
-- CONVERGENCE: batch_size=8 (was 32) → 34 batches/epoch instead of 8.
-- SCHEDULE: CosineAnnealingLR (was ReduceLROnPlateau which could fire unexpectedly).
-- RESUME: saves full checkpoint (model + optimizer + scheduler + epoch) each epoch.
-  On startup loads checkpoint if present, else warm-starts from unet_reef_best.pth.
-- DATA: 80/20 split (was 70/15/15) — more training patches from the same 341 total.
-- AUGMENT: added ShiftScaleRotate + coarse dropout on top of flip/rotate.
-- SPEED: preloads all patches into RAM at init (341 × 128×128 ≈ 22 MB, negligible).
+Arquitetura: ReefUNet canónica (features=[64,128,256,512], sigmoid in forward).
+Modelo: ~31 M params — maior que v2 (7.7 M) mas melhor capacidade de representação.
+
+Novo em v3 vs v2:
+- ARCH: ReefUNet canónica features=[64,128,256,512] (era [32,64,128,256]).
+  Output: sigmoid probabilities — loss usa BCELoss (era BCEWithLogitsLoss com logits).
+- CLASS IMBALANCE: WeightedRandomSampler — patches com recife amostrados 18× mais.
+  Resolve o colapso para "prever zero" que ocorreu com 94.4% de patches vazios.
+- pos_weight=10.0 no loss — pixels de recife valem 10× mais no BCE.
+- Rebalanceamento: de ~6% para ~50% de patches com recife por batch.
+
+Mantido de v2:
+- BUG: dois _CachedReefDataset separados (fix do bug de transform partilhado).
+- PERF: torch.set_num_threads explícito (16 threads no EPYC-Milan).
+- STABILITY: gradient clipping (max_norm=1.0).
+- SCHEDULE: CosineAnnealingLR.
+- RESUME: full checkpoint every epoch.
+- SPEED: todos os patches em RAM (341 × 128×128 ≈ 22 MB).
 """
 from __future__ import annotations
 import os, sys, json, time, random
@@ -24,7 +29,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset, Subset
+from torch.utils.data import DataLoader, Dataset, Subset, WeightedRandomSampler
 
 # ── Path setup ────────────────────────────────────────────────────────────────
 WORK = Path('/home/jovyan/reef-imagery-pipeline')
@@ -50,9 +55,9 @@ VAL_FRAC      = 0.20     # 80/20 split (was 70/15/15)
 SEED          = 42
 
 # Threads: PyTorch tensor ops. DataLoader workers are separate.
-# On DGT (96-core EPYC-Milan), 16 threads for ops + 4 workers saturates nicely.
+# On DGT (96-core EPYC-Milan), 16 threads for ops + 16 workers for augmentation.
 NUM_THREADS = int(os.environ.get('OMP_NUM_THREADS', min(os.cpu_count() or 1, 16)))
-NUM_WORKERS = 4
+NUM_WORKERS = int(os.environ.get('DL_NUM_WORKERS', min(os.cpu_count() or 1, 16)))
 torch.set_num_threads(NUM_THREADS)
 torch.manual_seed(SEED)
 random.seed(SEED)
@@ -133,7 +138,7 @@ def _augment(img: np.ndarray, mask: np.ndarray):
 # ── Dataset split ─────────────────────────────────────────────────────────────
 
 def make_loaders():
-    # Two separate instances → each has its own augment flag
+    # Two separate instances → each has its own augment flag (v2 bug fix preserved)
     train_full = _CachedReefDataset(str(DATASET_DIR / 'images'),
                                     str(DATASET_DIR / 'masks'), augment=True)
     val_full   = _CachedReefDataset(str(DATASET_DIR / 'images'),
@@ -145,12 +150,31 @@ def make_loaders():
     n_train = n - n_val
     train_idx, val_idx = indices[:n_train], indices[n_train:]
 
+    # Class imbalance fix: oversample reef patches 18× via WeightedRandomSampler.
+    # Dataset has ≈94% empty patches (322/341) → model collapses to "predict nothing".
+    # WeightedRandomSampler makes each batch ≈50% reef patches instead of ≈6%.
+    sample_weights: list[float] = []
+    reef_in_train = 0
+    for i in train_idx:
+        has_reef = bool((train_full._masks[i] > 0.5).any())
+        if has_reef:
+            sample_weights.append(18.0)
+            reef_in_train += 1
+        else:
+            sample_weights.append(1.0)
+    empty_in_train = n_train - reef_in_train
+    effective_reef_pct = (reef_in_train * 18) / (reef_in_train * 18 + empty_in_train) * 100
     print(f"  Split: {n_train} train / {n_val} val  (batch={BATCH_SIZE})")
-    print(f"  Batches/epoch: {n_train // BATCH_SIZE} train,"
-          f" {max(1, n_val // BATCH_SIZE)} val")
+    print(f"  Reef patches in train: {reef_in_train}/{n_train} "
+          f"({100*reef_in_train/n_train:.1f}%) → oversampled to ≈{effective_reef_pct:.0f}%")
+
+    # num_samples = 2× epoch length — more reef exposure per epoch
+    sampler = WeightedRandomSampler(weights=sample_weights,
+                                    num_samples=n_train * 2,
+                                    replacement=True)
 
     train_loader = DataLoader(Subset(train_full, train_idx),
-                              batch_size=BATCH_SIZE, shuffle=True,
+                              batch_size=BATCH_SIZE, sampler=sampler,
                               num_workers=NUM_WORKERS, pin_memory=False,
                               persistent_workers=(NUM_WORKERS > 0))
     val_loader   = DataLoader(Subset(val_full, val_idx),
@@ -191,16 +215,18 @@ def val_epoch(model, loader, criterion) -> tuple[float, float]:
 
 def main():
     print("=" * 60)
-    print("REEF U-NET TRAINING v2  —  DGT AMD EPYC-Milan")
+    print("REEF U-NET TRAINING v3  —  DGT AMD EPYC-Milan  (CPU-only)")
     print(f"Cores: {os.cpu_count()}  Threads: {NUM_THREADS}  "
           f"Workers: {NUM_WORKERS}  PyTorch: {torch.__version__}")
+    print(f"Arch: ReefUNet features=[64,128,256,512]  ~31M params")
+    print(f"Loss: BCE(pos_weight=10) + SoftDice  |  Sampler: reef×18")
     print("=" * 60)
 
     train_loader, val_loader = make_loaders()
 
-    device    = torch.device('cpu')
+    device    = torch.device('cpu')  # NUNCA .cuda() — sem GPU no DGT HPC
     model     = ReefUNet().to(device)
-    criterion = get_loss_function()
+    criterion = get_loss_function(pos_weight=10.0)  # reef pixels valem 10× mais no BCE
     optimizer = optim.Adam(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=EPOCHS, eta_min=1e-5)
@@ -210,26 +236,33 @@ def main():
     best_iou    = 0.0
     history: list[dict] = []
 
+    checkpoint_loaded = False
     if CHECKPOINT.exists():
         print(f"\nResuming full checkpoint: {CHECKPOINT}")
-        ckpt = torch.load(str(CHECKPOINT), map_location=device)
-        model.load_state_dict(ckpt['model_state_dict'])
-        optimizer.load_state_dict(ckpt['optimizer_state_dict'])
-        scheduler.load_state_dict(ckpt['scheduler_state_dict'])
-        start_epoch = ckpt['epoch'] + 1
-        best_iou    = ckpt['best_iou']
-        history     = ckpt.get('history', [])
-        print(f"  → epoch {start_epoch}  best_iou={best_iou:.4f}")
-    elif BEST_WEIGHTS.exists():
-        print(f"\nWarm-start from best weights: {BEST_WEIGHTS}")
-        state = torch.load(str(BEST_WEIGHTS), map_location=device)
         try:
-            model.load_state_dict(state)
-            print("  → weights loaded (optimizer reset, fresh LR schedule)")
+            ckpt = torch.load(str(CHECKPOINT), map_location=device)
+            model.load_state_dict(ckpt['model_state_dict'])
+            optimizer.load_state_dict(ckpt['optimizer_state_dict'])
+            scheduler.load_state_dict(ckpt['scheduler_state_dict'])
+            start_epoch = ckpt['epoch'] + 1
+            best_iou    = ckpt['best_iou']
+            history     = ckpt.get('history', [])
+            print(f"  → epoch {start_epoch}  best_iou={best_iou:.4f}")
+            checkpoint_loaded = True
         except RuntimeError as e:
-            print(f"  → weight mismatch ({e!s:.120}); starting from scratch")
-    else:
-        print("\nStarting from scratch (no checkpoint or weights found)")
+            print(f"  → checkpoint load failed: weight/state mismatch. Falling back.")
+
+    if not checkpoint_loaded:
+        if BEST_WEIGHTS.exists():
+            print(f"\nWarm-start from best weights: {BEST_WEIGHTS}")
+            state = torch.load(str(BEST_WEIGHTS), map_location=device)
+            try:
+                model.load_state_dict(state)
+                print("  → weights loaded (optimizer reset, fresh LR schedule)")
+            except RuntimeError as e:
+                print(f"  → weight mismatch ({e!s:.120}); starting from scratch")
+        else:
+            print("\nStarting from scratch (no checkpoint or weights found)")
 
     # ── Training loop ─────────────────────────────────────────────────────────
     t0 = time.time()
@@ -254,6 +287,12 @@ def main():
             'best_iou':             best_iou,
             'history':              history,
         }, str(CHECKPOINT))
+
+        # Timestamp checkpoint every 5 epochs — preserva histórico de treino
+        if epoch % 5 == 0:
+            ts_path = MODELS_DIR / f'checkpoint_epoch_{epoch:03d}.pth'
+            torch.save({'epoch': epoch, 'model_state_dict': model.state_dict(),
+                        'best_iou': best_iou}, str(ts_path))
 
         lr_now = optimizer.param_groups[0]['lr']
         row = dict(epoch=epoch, train_loss=round(tr_loss, 4),

@@ -72,7 +72,7 @@ def _load_model(weights_path: Optional[str] = None):
         raise RuntimeError(f"U-Net weights not found: {path}")
 
     from src.ml_unet_model import ReefUNet
-    model = ReefUNet(in_channels=1, classes=1)
+    model = ReefUNet(in_channels=1)
     state = torch.load(path, map_location="cpu", weights_only=True)
     model.load_state_dict(state)
     model.eval()
@@ -109,8 +109,8 @@ def segment_reef_array(depth: np.ndarray, threshold: float = 0.5,
             for c in range(0, norm.shape[1], tile):
                 patch = norm[r:r + tile, c:c + tile]
                 x = torch.from_numpy(patch).float().unsqueeze(0).unsqueeze(0)  # (1,1,T,T)
-                logits = model(x)
-                prob[r:r + tile, c:c + tile] = torch.sigmoid(logits)[0, 0].cpu().numpy()
+                probs = model(x)   # model already applies sigmoid internally
+                prob[r:r + tile, c:c + tile] = probs[0, 0].cpu().numpy()
 
     prob = prob[:h, :w]
     mask = (prob >= threshold).astype(np.uint8)
