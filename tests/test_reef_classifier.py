@@ -199,3 +199,82 @@ class TestRocAuc:
         labels = np.array([1, 1, 1])
         probs  = np.array([0.1, 0.5, 0.9])
         assert _roc_auc(labels, probs) == pytest.approx(0.5)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# evaluate — classification metrics on a dataset directory
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestEvaluate:
+    def test_returns_required_keys(self, tmp_path):
+        from src.reef_classifier import ReefClassifier, evaluate
+        _make_dataset(tmp_path, n_reef=4, n_sand=4)
+        model = ReefClassifier(pretrained=False).eval()
+        metrics = evaluate(model, tmp_path, device="cpu")
+        for key in ("precision", "recall", "f1", "auc", "accuracy", "tp", "fp", "fn", "tn"):
+            assert key in metrics, f"Missing key: {key}"
+
+    def test_confusion_matrix_consistent(self, tmp_path):
+        """tp + fp + fn + tn must equal total sample count."""
+        from src.reef_classifier import ReefClassifier, evaluate
+        _make_dataset(tmp_path, n_reef=3, n_sand=5)
+        model = ReefClassifier(pretrained=False).eval()
+        m = evaluate(model, tmp_path, device="cpu")
+        assert m["tp"] + m["fp"] + m["fn"] + m["tn"] == 8
+
+    def test_n_reef_n_sand_reported(self, tmp_path):
+        from src.reef_classifier import ReefClassifier, evaluate
+        _make_dataset(tmp_path, n_reef=2, n_sand=6)
+        model = ReefClassifier(pretrained=False).eval()
+        m = evaluate(model, tmp_path, device="cpu")
+        assert m["n_reef"] == 2
+        assert m["n_sand"] == 6
+
+    def test_metrics_in_valid_range(self, tmp_path):
+        from src.reef_classifier import ReefClassifier, evaluate
+        _make_dataset(tmp_path, n_reef=4, n_sand=4)
+        model = ReefClassifier(pretrained=False).eval()
+        m = evaluate(model, tmp_path, device="cpu")
+        for key in ("precision", "recall", "f1", "accuracy", "auc"):
+            assert 0.0 <= m[key] <= 1.0, f"{key}={m[key]} out of range"
+
+    def test_threshold_reflected_in_output(self, tmp_path):
+        """Threshold is echoed back in the metrics dict."""
+        from src.reef_classifier import ReefClassifier, evaluate
+        _make_dataset(tmp_path, n_reef=3, n_sand=3)
+        model = ReefClassifier(pretrained=False).eval()
+        m = evaluate(model, tmp_path, threshold=0.3, device="cpu")
+        assert m["threshold"] == pytest.approx(0.3)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# load_model — round-trip checkpoint save / load
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestLoadModel:
+    def test_roundtrip_weights_preserved(self, tmp_path):
+        """save → load → forward output must be identical."""
+        from src.reef_classifier import ReefClassifier, load_model
+        model = ReefClassifier(pretrained=False).eval()
+        ckpt = tmp_path / "weights.pth"
+        torch.save(model.state_dict(), str(ckpt))
+
+        loaded = load_model(ckpt, device="cpu")
+        x = torch.rand(1, 4, 64, 64)
+        with torch.no_grad():
+            p_orig   = model(x).item()
+            p_loaded = loaded(x).item()
+        assert p_orig == pytest.approx(p_loaded, abs=1e-6)
+
+    def test_loaded_model_is_in_eval_mode(self, tmp_path):
+        from src.reef_classifier import ReefClassifier, load_model
+        model = ReefClassifier(pretrained=False)
+        ckpt = tmp_path / "w.pth"
+        torch.save(model.state_dict(), str(ckpt))
+        loaded = load_model(ckpt, device="cpu")
+        assert not loaded.training
+
+    def test_missing_checkpoint_raises(self, tmp_path):
+        from src.reef_classifier import load_model
+        with pytest.raises(Exception):
+            load_model(tmp_path / "nonexistent.pth", device="cpu")

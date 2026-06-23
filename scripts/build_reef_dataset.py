@@ -162,9 +162,7 @@ def step3_generate_labels(seed: int = 42) -> None:
         idx = list(range(len(sand_rows)))
 
     for i in idx:
-        col_centre = sand_cols[i] + 0.5
-        row_centre = sand_rows[i] + 0.5
-        lon, lat = rio_xy(transform, sand_rows[i], sand_cols[i])
+        lon, lat = rio_xy(transform, sand_rows[i] + 0.5, sand_cols[i] + 0.5)
         sand_labels.append({
             "lon":    float(lon),
             "lat":    float(lat),
