@@ -196,10 +196,14 @@ def run_inference(
             reef_frac = float((prob_arr > threshold).mean())
             reef_fracs.append(reef_frac)
 
-            # Copiar profile do tile de input para manter CRS e transform
+            # Copiar profile do tile de input para manter CRS e transform.
+            # Limpar layout de bloco herdado: blockxsize sem tiled=YES gera
+            # "CPLE_IllegalArg: BLOCKXSIZE can only be used with TILED=YES".
             try:
                 with rasterio.open(str(tile_path)) as src:
                     out_profile = src.profile.copy()
+                for _k in ('blockxsize', 'blockysize', 'tiled'):
+                    out_profile.pop(_k, None)
                 out_profile.update(dtype='float32', count=1, compress='deflate')
                 with rasterio.open(str(out_path), 'w', **out_profile) as dst:
                     dst.write(prob_arr.astype(np.float32), 1)

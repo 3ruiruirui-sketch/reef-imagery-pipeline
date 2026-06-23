@@ -82,15 +82,30 @@ class TileConfig:
 
 # ── Funções auxiliares ────────────────────────────────────────────────────────
 
+# DGT MDT nodata sentinel value (rasterio nodata=None mas o fill é -9999)
+_NODATA_SENTINEL = -9990.0
+# Limite de profundidade — deve coincidir com SDB_OPTICAL_LIMIT_M em src/constants.py
+# Mapeia [-DEPTH_LIMIT, 0] → [0, 1]; terra positiva → clipa a 1; nodata → 0
+_DEPTH_LIMIT_M = 40.0
+
+
 def _normalize(arr: np.ndarray, nodata: Optional[float]) -> np.ndarray:
-    """Normaliza depth MDT para [0, 1]; pixels nodata → 0."""
+    """
+    Normaliza MDT costeiro para [0, 1] usando a mesma janela de profundidade
+    do training dataset (src/constants.py SDB_OPTICAL_LIMIT_M).
+
+    Trata -9999.0 (sentinel DGT) como nodata → 0.
+    Fórmula: clip((depth + DEPTH_LIMIT) / DEPTH_LIMIT, 0, 1)
+      -40m → 0.0 | -20m → 0.5 | 0m (superfície) → 1.0 | terra > 0 → 1.0
+    """
     arr = arr.astype(np.float32)
+    # Máscara de nodata: sentinel DGT (-9999), nodata explícito, NaN
+    mask = arr < _NODATA_SENTINEL
     if nodata is not None:
-        arr = np.where(arr == nodata, np.nan, arr)
-    vmin, vmax = np.nanmin(arr), np.nanmax(arr)
-    if vmax == vmin:
-        return np.zeros_like(arr)
-    norm = (arr - vmin) / (vmax - vmin)
+        mask |= (arr == nodata)
+    mask |= np.isnan(arr)
+    arr[mask] = np.nan
+    norm = np.clip((arr + _DEPTH_LIMIT_M) / _DEPTH_LIMIT_M, 0.0, 1.0)
     return np.nan_to_num(norm, nan=0.0).astype(np.float32)
 
 
@@ -150,8 +165,12 @@ def generate_tiles(cfg: TileConfig) -> int:
                 data   = src.read(1, window=window)
 
                 # Descartar tiles maioritariamente sem dados
-                nodata_px = (np.isnan(data) | (data == nodata)).sum() if nodata is not None \
-                            else np.isnan(data).sum()
+                # Detecta sentinel DGT (-9999), nodata explícito e NaN
+                nodata_mask = data < _NODATA_SENTINEL
+                if nodata is not None:
+                    nodata_mask |= (data == nodata)
+                nodata_mask |= np.isnan(data)
+                nodata_px = nodata_mask.sum()
                 frac = nodata_px / data.size
                 if frac > cfg.nodata_frac:
                     skipped += 1

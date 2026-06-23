@@ -797,6 +797,63 @@
       </div>
     </div>
 
+    <!-- Western Algarve Reef Candidates (29SNB 2025-09-25) -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">🪸 Western Algarve Candidates</div>
+      <div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;line-height:1.4;">
+        Tile 29SNB · 2025-09-25 · dark-anomaly detector · 3639 patches
+      </div>
+      <button class="band-btn" id="westCandidatesBtn" style="width:100%;justify-content:center;background:rgba(99,102,241,0.15);border-color:rgba(99,102,241,0.35);color:#818cf8;margin-bottom:6px;" onclick="toggleWestCandidates()">
+        <span id="westCandidatesBtnIcon">▶</span> Show West Candidates
+      </button>
+      <div id="westCandidatesStats" style="display:none;font-size:11px;line-height:1.8;margin-top:4px;">
+        <span style="color:#22c55e;">●</span> mean like ≥ 0.60 &nbsp;
+        <span style="color:#f59e0b;">●</span> 0.55–0.60 &nbsp;
+        <span style="color:#ef4444;">●</span> &lt; 0.55<br>
+        <div style="color:var(--text-muted);font-size:10px;margin-top:4px;">
+          Cyan border = GPS-confirmed reef. Click for rank, score, area.
+        </div>
+      </div>
+    </div>
+
+    <!-- Eastern Algarve Reef Candidates (29SNA 2025-09-25) -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">🪸 Eastern Algarve Candidates</div>
+      <div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;line-height:1.4;">
+        Tile 29SNA · 2025-09-25 · dark-anomaly detector · 4173 patches
+      </div>
+      <button class="band-btn" id="eastCandidatesBtn" style="width:100%;justify-content:center;background:rgba(6,182,212,0.15);border-color:rgba(6,182,212,0.35);color:#22d3ee;margin-bottom:6px;" onclick="toggleEastCandidates()">
+        <span id="eastCandidatesBtnIcon">▶</span> Show East Candidates
+      </button>
+      <div id="eastCandidatesStats" style="display:none;font-size:11px;line-height:1.8;margin-top:4px;">
+        <span style="color:#22c55e;">●</span> mean like ≥ 0.60 &nbsp;
+        <span style="color:#f59e0b;">●</span> 0.55–0.60 &nbsp;
+        <span style="color:#ef4444;">●</span> &lt; 0.55<br>
+        <div style="color:var(--text-muted);font-size:10px;margin-top:4px;">
+          Cyan border = GPS-confirmed fishing reef. Click for rank, score, area.
+        </div>
+      </div>
+    </div>
+
+    <!-- Fishing GPS Spots (CarlosBarrinha.gpx) -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">🎣 Fishing GPS Spots (Rocky Reef)</div>
+      <div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;line-height:1.4;">
+        CarlosBarrinha.gpx · 841 clusters · 5–22 m depth · TRI ≥ 0.30 = rocky
+      </div>
+      <button class="band-btn" id="fishingSpotsBtn" style="width:100%;justify-content:center;background:rgba(251,146,60,0.15);border-color:rgba(251,146,60,0.35);color:#fb923c;margin-bottom:6px;" onclick="toggleFishingSpots()">
+        <span id="fishingSpotsBtnIcon">▶</span> Show Fishing Spots
+      </button>
+      <div id="fishingSpotsStats" style="display:none;font-size:11px;line-height:1.8;margin-top:4px;">
+        <span style="color:#22c55e;">●</span> TRI ≥ 0.50 (high confidence) &nbsp;
+        <span style="color:#f59e0b;">●</span> TRI 0.30–0.50 &nbsp;
+        <span style="color:#ef4444;">●</span> TRI &lt; 0.30<br>
+        <div style="color:var(--text-muted);font-size:10px;margin-top:4px;">
+          Size = visit count. Click for depth, TRI and reef score.
+        </div>
+      </div>
+    </div>
+
     <!-- Option 3: Benthic Spectral & SDB Analysis -->
     <div class="sidebar-section">
       <div class="sidebar-section-title">📊 Benthic Spectral & SDB Analysis</div>
@@ -1485,6 +1542,12 @@
     let algarveSurveyVisible = false;
     let icesat2DeepLayer = null;
     let icesat2DeepVisible = false;
+    let fishingSpotsLayer = null;
+    let fishingSpotsVisible = false;
+    let eastCandidatesLayer = null;
+    let eastCandidatesVisible = false;
+    let westCandidatesLayer = null;
+    let westCandidatesVisible = false;
 
     async function loadCandidates() {
       try {
@@ -1677,6 +1740,202 @@
       } catch (err) {
         console.error('ICESat-2 deep layer error:', err);
         btn.innerHTML = '<span id="icesat2DeepBtnIcon">▶</span> Show Deep Layer';
+      }
+    }
+
+    async function toggleWestCandidates() {
+      const btn   = document.getElementById('westCandidatesBtn');
+      const stats = document.getElementById('westCandidatesStats');
+
+      if (westCandidatesVisible) {
+        if (westCandidatesLayer) { map.removeLayer(westCandidatesLayer); westCandidatesLayer = null; }
+        westCandidatesVisible = false;
+        btn.innerHTML = '<span id="westCandidatesBtnIcon">▶</span> Show West Candidates';
+        btn.style.background = 'rgba(99,102,241,0.15)';
+        stats.style.display = 'none';
+        return;
+      }
+
+      btn.textContent = 'Loading…';
+      try {
+        const resp = await fetch('/api/reef-candidates-west');
+        const data = await resp.json();
+
+        if (!data.features || data.features.length === 0) {
+          btn.innerHTML = '<span id="westCandidatesBtnIcon">▶</span> No data yet';
+          return;
+        }
+
+        westCandidatesLayer = L.geoJSON(data, {
+          style: (feature) => {
+            const p = feature.properties;
+            const ml = p.mean_like || 0;
+            const gps = p.gps_confirmed_reef;
+            const fill = ml >= 0.60 ? '#22c55e' : ml >= 0.55 ? '#f59e0b' : '#ef4444';
+            return {
+              color: gps ? '#22d3ee' : '#334155',
+              weight: gps ? 2.5 : 0.8,
+              fillColor: fill,
+              fillOpacity: 0.5,
+            };
+          },
+          onEachFeature: (f, layer) => {
+            const p = f.properties;
+            const gpsTag = p.gps_confirmed_reef
+              ? `<div style="margin-top:6px;padding:4px 6px;background:rgba(34,211,238,0.15);border-radius:4px;font-size:10px;color:#22d3ee;">★ GPS confirmed: ${p.gps_confirmed_reef}</div>`
+              : '';
+            layer.bindPopup(`
+              <div style="font-family:-apple-system,sans-serif;min-width:200px;padding:6px;">
+                <div style="font-weight:700;font-size:13px;border-bottom:1px solid #334155;padding-bottom:4px;margin-bottom:8px;">
+                  🪸 West Candidate #${p.rank}
+                </div>
+                <div style="font-size:11px;margin-bottom:4px;"><b>Score:</b> ${(p.score||0).toFixed(3)}</div>
+                <div style="font-size:11px;margin-bottom:4px;"><b>Mean likelihood:</b> ${(p.mean_like||0).toFixed(4)}</div>
+                <div style="font-size:11px;margin-bottom:4px;"><b>Area:</b> ${(p.area_ha||0).toFixed(2)} ha</div>
+                <div style="font-size:11px;margin-bottom:4px;"><b>Size:</b> ${p.size_px||0} px</div>
+                ${gpsTag}
+              </div>`);
+          }
+        }).addTo(map);
+
+        if (westCandidatesLayer.getLayers().length) map.fitBounds(westCandidatesLayer.getBounds(), { padding: [40, 40] });
+        westCandidatesVisible = true;
+        btn.innerHTML = '<span id="westCandidatesBtnIcon">■</span> Hide West Candidates';
+        btn.style.background = 'rgba(99,102,241,0.35)';
+        stats.style.display = 'block';
+      } catch (err) {
+        console.error('West candidates error:', err);
+        btn.innerHTML = '<span id="westCandidatesBtnIcon">▶</span> Show West Candidates';
+      }
+    }
+
+    async function toggleEastCandidates() {
+      const btn   = document.getElementById('eastCandidatesBtn');
+      const stats = document.getElementById('eastCandidatesStats');
+
+      if (eastCandidatesVisible) {
+        if (eastCandidatesLayer) { map.removeLayer(eastCandidatesLayer); eastCandidatesLayer = null; }
+        eastCandidatesVisible = false;
+        btn.innerHTML = '<span id="eastCandidatesBtnIcon">▶</span> Show East Candidates';
+        btn.style.background = 'rgba(6,182,212,0.15)';
+        stats.style.display = 'none';
+        return;
+      }
+
+      btn.textContent = 'Loading…';
+      try {
+        const resp = await fetch('/api/reef-candidates-east');
+        const data = await resp.json();
+
+        if (!data.features || data.features.length === 0) {
+          btn.innerHTML = '<span id="eastCandidatesBtnIcon">▶</span> No data yet';
+          return;
+        }
+
+        eastCandidatesLayer = L.geoJSON(data, {
+          style: (feature) => {
+            const p = feature.properties;
+            const ml = p.mean_like || 0;
+            const gps = p.gps_confirmed_reef;
+            const fill = ml >= 0.60 ? '#22c55e' : ml >= 0.55 ? '#f59e0b' : '#ef4444';
+            return {
+              color: gps ? '#22d3ee' : '#334155',
+              weight: gps ? 2.5 : 0.8,
+              fillColor: fill,
+              fillOpacity: 0.5,
+            };
+          },
+          onEachFeature: (f, layer) => {
+            const p = f.properties;
+            const gpsTag = p.gps_confirmed_reef
+              ? `<div style="margin-top:6px;padding:4px 6px;background:rgba(34,211,238,0.15);border-radius:4px;font-size:10px;color:#22d3ee;">★ GPS fishing reef: ${p.gps_confirmed_reef}</div>`
+              : '';
+            layer.bindPopup(`
+              <div style="font-family:-apple-system,sans-serif;min-width:200px;padding:6px;">
+                <div style="font-weight:700;font-size:13px;border-bottom:1px solid #334155;padding-bottom:4px;margin-bottom:8px;">
+                  🪸 Reef Candidate #${p.rank}
+                </div>
+                <div style="font-size:11px;margin-bottom:4px;"><b>Score:</b> ${(p.score||0).toFixed(3)}</div>
+                <div style="font-size:11px;margin-bottom:4px;"><b>Mean likelihood:</b> ${(p.mean_like||0).toFixed(4)}</div>
+                <div style="font-size:11px;margin-bottom:4px;"><b>Area:</b> ${(p.area_ha||0).toFixed(2)} ha</div>
+                <div style="font-size:11px;margin-bottom:4px;"><b>Size:</b> ${p.size_px||0} px</div>
+                ${gpsTag}
+              </div>`);
+          }
+        }).addTo(map);
+
+        if (eastCandidatesLayer.getLayers().length) map.fitBounds(eastCandidatesLayer.getBounds(), { padding: [40, 40] });
+        eastCandidatesVisible = true;
+        btn.innerHTML = '<span id="eastCandidatesBtnIcon">■</span> Hide East Candidates';
+        btn.style.background = 'rgba(6,182,212,0.35)';
+        stats.style.display = 'block';
+      } catch (err) {
+        console.error('East candidates error:', err);
+        btn.innerHTML = '<span id="eastCandidatesBtnIcon">▶</span> Show East Candidates';
+      }
+    }
+
+    async function toggleFishingSpots() {
+      const btn   = document.getElementById('fishingSpotsBtn');
+      const stats = document.getElementById('fishingSpotsStats');
+
+      if (fishingSpotsVisible) {
+        if (fishingSpotsLayer) { map.removeLayer(fishingSpotsLayer); fishingSpotsLayer = null; }
+        fishingSpotsVisible = false;
+        btn.innerHTML = '<span id="fishingSpotsBtnIcon">▶</span> Show Fishing Spots';
+        btn.style.background = 'rgba(251,146,60,0.15)';
+        stats.style.display = 'none';
+        return;
+      }
+
+      btn.textContent = 'Loading…';
+      try {
+        const resp = await fetch('/api/fishing-spots');
+        const data = await resp.json();
+
+        if (!data.features || data.features.length === 0) {
+          btn.innerHTML = '<span id="fishingSpotsBtnIcon">▶</span> No data — run script first';
+          return;
+        }
+
+        fishingSpotsLayer = L.geoJSON(data, {
+          pointToLayer: (feature, latlng) => {
+            const tri  = feature.properties.tri_mean || 0;
+            const vis  = feature.properties.n_visits  || 1;
+            const color = tri >= 0.50 ? '#22c55e' : tri >= 0.30 ? '#f59e0b' : '#ef4444';
+            const r    = Math.min(12, Math.max(4, Math.round(3 + vis * 0.8)));
+            return L.circleMarker(latlng, {
+              radius: r, color: '#fb923c', weight: 1.2,
+              fillColor: color, fillOpacity: 0.75
+            });
+          },
+          onEachFeature: (f, layer) => {
+            const p = f.properties;
+            const tri   = (p.tri_mean || 0).toFixed(2);
+            const score = (p.reef_score || 0).toFixed(1);
+            const depth = p.depth_m != null ? p.depth_m.toFixed(1) : '—';
+            const triColor = p.tri_mean >= 0.50 ? '#22c55e' : p.tri_mean >= 0.30 ? '#f59e0b' : '#ef4444';
+            layer.bindPopup(`
+              <div style="font-family:-apple-system,sans-serif;min-width:210px;padding:6px;">
+                <div style="font-weight:700;font-size:13px;border-bottom:1px solid #334155;padding-bottom:4px;margin-bottom:8px;">
+                  🎣 Fishing GPS Cluster
+                </div>
+                <div style="font-size:11px;margin-bottom:4px;"><b>Depth:</b> ${depth} m</div>
+                <div style="font-size:11px;margin-bottom:4px;"><b>Visits:</b> ${p.n_visits || '—'}</div>
+                <div style="font-size:11px;margin-bottom:4px;"><b>TRI:</b> <span style="color:${triColor};font-weight:600;">${tri}</span> (≥ 0.30 = rocky)</div>
+                <div style="font-size:11px;margin-bottom:4px;"><b>Reef score:</b> ${score}</div>
+                <div style="font-size:10px;color:#94a3b8;">${p.likely_reef ? '✓ Likely reef (TRI ≥ 0.30)' : '— Sandy bottom'}</div>
+              </div>`);
+          }
+        }).addTo(map);
+
+        fishingSpotsVisible = true;
+        btn.innerHTML = '<span id="fishingSpotsBtnIcon">■</span> Hide Fishing Spots';
+        btn.style.background = 'rgba(251,146,60,0.35)';
+        stats.style.display = 'block';
+      } catch (err) {
+        console.error('Fishing spots error:', err);
+        btn.innerHTML = '<span id="fishingSpotsBtnIcon">▶</span> Show Fishing Spots';
       }
     }
 

@@ -9,9 +9,9 @@ Modelo: ~31 M params — maior que v2 (7.7 M) mas melhor capacidade de represent
 Novo em v3 vs v2:
 - ARCH: ReefUNet canónica features=[64,128,256,512] (era [32,64,128,256]).
   Output: sigmoid probabilities — loss usa BCELoss (era BCEWithLogitsLoss com logits).
-- CLASS IMBALANCE: WeightedRandomSampler — patches com recife amostrados 18× mais.
+- CLASS IMBALANCE: WeightedRandomSampler — patches com recife amostrados 30× mais.
   Resolve o colapso para "prever zero" que ocorreu com 94.4% de patches vazios.
-- pos_weight=10.0 no loss — pixels de recife valem 10× mais no BCE.
+- pos_weight=20.0 no loss — pixels de recife valem 20× mais no BCE.
 - Rebalanceamento: de ~6% para ~50% de patches com recife por batch.
 
 Mantido de v2:
@@ -150,20 +150,15 @@ def make_loaders():
     n_train = n - n_val
     train_idx, val_idx = indices[:n_train], indices[n_train:]
 
-    # Class imbalance fix: oversample reef patches 18× via WeightedRandomSampler.
+    # Class imbalance fix: oversample reef patches 30× via WeightedRandomSampler.
     # Dataset has ≈94% empty patches (322/341) → model collapses to "predict nothing".
     # WeightedRandomSampler makes each batch ≈50% reef patches instead of ≈6%.
-    sample_weights: list[float] = []
-    reef_in_train = 0
-    for i in train_idx:
-        has_reef = bool((train_full._masks[i] > 0.5).any())
-        if has_reef:
-            sample_weights.append(18.0)
-            reef_in_train += 1
-        else:
-            sample_weights.append(1.0)
-    empty_in_train = n_train - reef_in_train
-    effective_reef_pct = (reef_in_train * 18) / (reef_in_train * 18 + empty_in_train) * 100
+    has_reef_list = [bool((train_full._masks[i] > 0.5).any()) for i in train_idx]
+    sample_weights = [30.0 if h else 1.0 for h in has_reef_list]
+    
+    reef_in_train = sum(1 for h in has_reef_list if h)
+    empty_in_train = len(has_reef_list) - reef_in_train
+    effective_reef_pct = (reef_in_train * 30) / (reef_in_train * 30 + empty_in_train) * 100
     print(f"  Split: {n_train} train / {n_val} val  (batch={BATCH_SIZE})")
     print(f"  Reef patches in train: {reef_in_train}/{n_train} "
           f"({100*reef_in_train/n_train:.1f}%) → oversampled to ≈{effective_reef_pct:.0f}%")
@@ -219,14 +214,14 @@ def main():
     print(f"Cores: {os.cpu_count()}  Threads: {NUM_THREADS}  "
           f"Workers: {NUM_WORKERS}  PyTorch: {torch.__version__}")
     print(f"Arch: ReefUNet features=[64,128,256,512]  ~31M params")
-    print(f"Loss: BCE(pos_weight=10) + SoftDice  |  Sampler: reef×18")
+    print(f"Loss: BCE(pos_weight=20) + SoftDice  |  Sampler: reef×30")
     print("=" * 60)
 
     train_loader, val_loader = make_loaders()
 
     device    = torch.device('cpu')  # NUNCA .cuda() — sem GPU no DGT HPC
     model     = ReefUNet().to(device)
-    criterion = get_loss_function(pos_weight=10.0)  # reef pixels valem 10× mais no BCE
+    criterion = get_loss_function(pos_weight=20.0)  # reef pixels valem 20× mais no BCE
     optimizer = optim.Adam(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=EPOCHS, eta_min=1e-5)
@@ -249,18 +244,22 @@ def main():
             history     = ckpt.get('history', [])
             print(f"  → epoch {start_epoch}  best_iou={best_iou:.4f}")
             checkpoint_loaded = True
-        except RuntimeError as e:
-            print(f"  → checkpoint load failed: weight/state mismatch. Falling back.")
+        except (RuntimeError, EOFError, Exception) as e:
+            print(f"  → checkpoint load failed ({type(e).__name__}: {e!s:.80}). Removing and starting fresh.")
+            try:
+                CHECKPOINT.unlink()  # delete corrupted checkpoint
+            except OSError:
+                pass
 
     if not checkpoint_loaded:
         if BEST_WEIGHTS.exists():
             print(f"\nWarm-start from best weights: {BEST_WEIGHTS}")
-            state = torch.load(str(BEST_WEIGHTS), map_location=device)
             try:
+                state = torch.load(str(BEST_WEIGHTS), map_location=device)
                 model.load_state_dict(state)
                 print("  → weights loaded (optimizer reset, fresh LR schedule)")
-            except RuntimeError as e:
-                print(f"  → weight mismatch ({e!s:.120}); starting from scratch")
+            except (RuntimeError, EOFError, Exception) as e:
+                print(f"  → weight load failed ({type(e).__name__}: {e!s:.80}); starting from scratch")
         else:
             print("\nStarting from scratch (no checkpoint or weights found)")
 

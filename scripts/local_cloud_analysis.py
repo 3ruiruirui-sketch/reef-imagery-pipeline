@@ -8,8 +8,8 @@ Para cada data候选者, baixa um window pequeno (250m × 250m) à volta do GPS
 e verifica a cobertura real de nuvens local — não a média do tile STAC.
 
 Uso:
-  python local_cloud_analysis.py --lat 37.05895 --lon -8.20673 --depth 16
-  python local_cloud_analysis.py --lat 37.05895 --lon -8.20673 \
+  python local_cloud_analysis.py --lat 37.05815 --lon -8.20982 --depth 16
+  python local_cloud_analysis.py --lat 37.05815 --lon -8.20982 \
     --dates 2025-09-15 2025-09-25 2024-09-30 2025-09-02 2022-09-26
 """
 import argparse
@@ -33,8 +33,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 log = logging.getLogger("LocalCloud")
 
 # ── Defaults ────────────────────────────────────────────────────────────────────
-SITE_LAT = 37.05895
-SITE_LON = -8.20673
+SITE_LAT = 37.05815   # 37°03.489'N — GPS confirmed 2026-06-22
+SITE_LON = -8.20982   # 008°12.589'W — GPS confirmed 2026-06-22
 DEPTH = 16.0
 BUFFER_M = 250          # 250m radius = 500m × 500m window
 TOP_K = 5

@@ -32,8 +32,8 @@ from src.reef_ml_predictor_acolite import make_snr_map, estimate_kd_bandratio
 # ═══════════════════════════════════════════════════════════════════════════
 # SITE CONFIG
 # ═══════════════════════════════════════════════════════════════════════════
-SITE_LAT = 37.05895       # 37°03.537'N
-SITE_LON = -8.20673       # 008°12.404'W
+SITE_LAT = 37.05815       # 37°03.489'N — GPS confirmed 2026-06-22
+SITE_LON = -8.20982       # 008°12.589'W — GPS confirmed 2026-06-22
 DEPTH = 16                # meters
 BUFFER_M = 500            # pixel window around coordinate
 YEARS = 8                 # search window

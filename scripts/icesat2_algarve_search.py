@@ -23,7 +23,7 @@ BBOX_NORTH = 37.10
 
 # Dive sites
 SITES = {
-    "Pedra do Alto":      {"lat": 37.05895, "lon": -8.20673, "depth": 16},
+    "Pedra do Alto":      {"lat": 37.05815, "lon": -8.20982, "depth": 16},  # 37°03.489'N 008°12.589'W
     "Armação de Atuns":   {"lat": 37.04678, "lon": -7.66038, "depth": 10},
     "Pedra Sta Eulália":  {"lat": 37.068978, "lon": -8.210328, "depth": 12},
 }

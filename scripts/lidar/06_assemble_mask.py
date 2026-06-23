@@ -42,7 +42,6 @@ logger = logging.getLogger(__name__)
 
 try:
     import rasterio
-    from rasterio.transform import from_bounds
     HAS_RASTERIO = True
 except ImportError:
     HAS_RASTERIO = False
@@ -86,18 +85,18 @@ def assemble_mask(
     with open(str(index_path)) as f:
         idx = json.load(f)
 
-    raster_h   = idx['raster_height']
-    raster_w   = idx['raster_width']
-    tile_size  = idx['tile_size']
-    entries    = idx['tiles']
+    raster_h  = idx['raster_height']
+    raster_w  = idx['raster_width']
+    entries   = idx['tiles']
     masks_dir  = output_dir / 'masks'
     mosaic_path = Path(idx['mosaic'])
 
     logger.info("Reconstituindo mosaico: %d×%d px  com %d tiles",
                 raster_w, raster_h, len(entries))
 
-    # Acumuladores em float32 — cabem em RAM (≈800 MB para 10k×20k)
-    prob_sum   = np.zeros((raster_h, raster_w), dtype=np.float64)
+    # Acumuladores — cabem em RAM (34k×36k × 4 B ≈ 5 GB para prob_sum)
+    # float32 é suficiente: max 4 tiles em overlap → valor máximo 4.0, dentro da precisão float32
+    prob_sum   = np.zeros((raster_h, raster_w), dtype=np.float32)
     count_map  = np.zeros((raster_h, raster_w), dtype=np.uint8)
 
     missing = 0
@@ -109,7 +108,7 @@ def assemble_mask(
             continue
         try:
             with rasterio.open(str(mask_path)) as src:
-                prob = src.read(1).astype(np.float64)
+                prob = src.read(1).astype(np.float32)
         except Exception as exc:
             logger.warning("Falha ao ler %s: %s", entry['filename'], exc)
             missing += 1
@@ -136,10 +135,11 @@ def assemble_mask(
 
     # Normalizar: probabilidade média nos overlaps
     valid = count_map > 0
-    mean_prob = np.zeros((raster_h, raster_w), dtype=np.float32)
-    mean_prob[valid] = (prob_sum[valid] / count_map[valid]).astype(np.float32)
+    mean_prob = np.full((raster_h, raster_w), fill_value=-1.0, dtype=np.float32)
+    mean_prob[valid] = prob_sum[valid] / count_map[valid]
 
-    mask_binary = (mean_prob >= threshold).astype(np.uint8)
+    # Máscara binária só onde há cobertura — pixeis sem tiles ficam como 0 (não-recife)
+    mask_binary = np.where(valid, (mean_prob >= threshold), 0).astype(np.uint8)
     reef_frac   = float(mask_binary.mean())
     reef_px     = int(mask_binary.sum())
     logger.info("Fracção de recife: %.4f  (%d pixels de %d)",

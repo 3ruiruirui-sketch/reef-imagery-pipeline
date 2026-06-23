@@ -211,6 +211,42 @@ def get_candidates():
             return jsonify({"status": "error", "message": f"Could not load geojson: {e}"}), 500
     return jsonify({"type": "FeatureCollection", "features": []})
 
+@app.route('/api/reef-candidates-west')
+def get_reef_candidates_west():
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    path = os.path.join(project_root, 'outputs', 'reef_detector', 'reef_candidates_west_2025-09-25.geojson')
+    if os.path.isfile(path):
+        try:
+            with open(path, 'r') as f:
+                return jsonify(json.load(f))
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
+    return jsonify({"type": "FeatureCollection", "features": []}), 404
+
+@app.route('/api/reef-candidates-east')
+def get_reef_candidates_east():
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    path = os.path.join(project_root, 'outputs', 'reef_detector', 'reef_candidates_east_2025-09-25.geojson')
+    if os.path.isfile(path):
+        try:
+            with open(path, 'r') as f:
+                return jsonify(json.load(f))
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
+    return jsonify({"type": "FeatureCollection", "features": []}), 404
+
+@app.route('/api/fishing-spots')
+def get_fishing_spots():
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    path = os.path.join(project_root, 'outputs', 'reef_detector', 'fishing_spots_reef_depth.geojson')
+    if os.path.isfile(path):
+        try:
+            with open(path, 'r') as f:
+                return jsonify(json.load(f))
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
+    return jsonify({"type": "FeatureCollection", "features": []}), 404
+
 # ─── Phase D: IHO Nautical Chart Routes ───────────────────────────────────────
 
 @app.route('/api/isobaths')

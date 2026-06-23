@@ -387,7 +387,7 @@ print(f"    Bands: 1=depth_median(m), 2=depth_std(m), 3=n_observations")
 print(f"\n[6] Sanity check at known dive sites:")
 
 SITES = {
-    "Pedra do Alto":     {"lat": 37.05895, "lon": -8.20673, "expected": 16},
+    "Pedra do Alto":     {"lat": 37.05815, "lon": -8.20982, "expected": 16},  # 37°03.489'N 008°12.589'W
     "Pedra Sta Eulália": {"lat": 37.068978, "lon": -8.210328, "expected": 12},
 }
 
