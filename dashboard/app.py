@@ -640,5 +640,265 @@ def get_bvi_timeseries():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+# ─── Sentinel Hub OGC WMS Proxy ───────────────────────────────────────────────
+# Translates standard WMS GetMap / GetCapabilities requests into Sentinel Hub
+# Process API calls.  No Dashboard instance or pre-configured configuration
+# required — works directly with OAuth2 client credentials from .env.
+#
+# WMS URL for Leaflet / QGIS:
+#   http://localhost:3000/ogc/wms?SERVICE=WMS&REQUEST=GetMap&...
+#
+# Built-in LAYERS:
+#   TRUE_COLOR    — B04/B03/B02 gamma-stretched RGB
+#   FALSE_COLOR   — B08/B04/B03 NIR false colour
+#   B02_B03_B04_B08 — raw float32 4-band (best for analysis, image/tiff only)
+#   NDVI          — (NIR-Red)/(NIR+Red) greyscale
+#   NDWI          — (Green-NIR)/(Green+NIR) water index
+
+_SH_LAYERS = {
+    "TRUE_COLOR": {
+        "title": "True Colour (B04/B03/B02)",
+        "evalscript": (
+            "//VERSION=3\n"
+            "function setup(){return{input:[{bands:[\"B04\",\"B03\",\"B02\"]}],output:{bands:3,sampleType:\"UINT8\"}}}\n"
+            "function evaluatePixel(s){return[Math.round(Math.pow(3.5*s.B04,0.7)*255),"
+            "Math.round(Math.pow(3.5*s.B03,0.7)*255),Math.round(Math.pow(3.5*s.B02,0.7)*255)]}"
+        ),
+        "mime": "image/png",
+    },
+    "FALSE_COLOR": {
+        "title": "False Colour NIR (B08/B04/B03)",
+        "evalscript": (
+            "//VERSION=3\n"
+            "function setup(){return{input:[{bands:[\"B08\",\"B04\",\"B03\"]}],output:{bands:3,sampleType:\"UINT8\"}}}\n"
+            "function evaluatePixel(s){return[Math.round(Math.min(3.5*s.B08,1)*255),"
+            "Math.round(Math.min(3.5*s.B04,1)*255),Math.round(Math.min(3.5*s.B03,1)*255)]}"
+        ),
+        "mime": "image/png",
+    },
+    "NDVI": {
+        "title": "NDVI (vegetation)",
+        "evalscript": (
+            "//VERSION=3\n"
+            "function setup(){return{input:[{bands:[\"B08\",\"B04\"]}],output:{bands:3,sampleType:\"UINT8\"}}}\n"
+            "function evaluatePixel(s){"
+            "var ndvi=(s.B08-s.B04)/(s.B08+s.B04+1e-6);"
+            "var v=Math.round((ndvi+1)/2*255);"
+            "return[v,v,v]}"
+        ),
+        "mime": "image/png",
+    },
+    "NDWI": {
+        "title": "NDWI (water index)",
+        "evalscript": (
+            "//VERSION=3\n"
+            "function setup(){return{input:[{bands:[\"B03\",\"B08\"]}],output:{bands:3,sampleType:\"UINT8\"}}}\n"
+            "function evaluatePixel(s){"
+            "var ndwi=(s.B03-s.B08)/(s.B03+s.B08+1e-6);"
+            "var v=Math.round((ndwi+1)/2*255);"
+            "return[v,v,v]}"
+        ),
+        "mime": "image/png",
+    },
+}
+
+_WMS_CAPABILITIES_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
+<WMS_Capabilities version="1.3.0" xmlns="http://www.opengis.net/wms">
+  <Service>
+    <Name>WMS</Name>
+    <Title>Reef Imagery Pipeline — Sentinel Hub WMS Proxy</Title>
+    <Abstract>OGC WMS proxy backed by the Sentinel Hub Process API.
+    Credentials loaded from environment; no Dashboard instance required.</Abstract>
+    <OnlineResource xmlns:xlink="http://www.w3.org/1999/xlink"
+      xlink:href="{base_url}/ogc/wms"/>
+  </Service>
+  <Capability>
+    <Request>
+      <GetCapabilities>
+        <Format>text/xml</Format>
+        <DCPType><HTTP><Get><OnlineResource xmlns:xlink="http://www.w3.org/1999/xlink"
+          xlink:href="{base_url}/ogc/wms"/></Get></HTTP></DCPType>
+      </GetCapabilities>
+      <GetMap>
+        <Format>image/png</Format>
+        <Format>image/jpeg</Format>
+        <Format>image/tiff</Format>
+        <DCPType><HTTP><Get><OnlineResource xmlns:xlink="http://www.w3.org/1999/xlink"
+          xlink:href="{base_url}/ogc/wms"/></Get></HTTP></DCPType>
+      </GetMap>
+    </Request>
+    <Layer>
+      <Title>Sentinel-2 L2A Layers</Title>
+      <CRS>EPSG:4326</CRS>
+      <CRS>CRS:84</CRS>
+      <BoundingBox CRS="EPSG:4326" minx="-9.5" miny="36.5" maxx="-6.5" maxy="42.5"/>
+      {layer_xml}
+    </Layer>
+  </Capability>
+</WMS_Capabilities>"""
+
+_LAYER_XML_TEMPLATE = """
+      <Layer queryable="0">
+        <Name>{name}</Name>
+        <Title>{title}</Title>
+        <CRS>EPSG:4326</CRS>
+        <CRS>CRS:84</CRS>
+      </Layer>"""
+
+
+def _sh_token():
+    """Get a Sentinel Hub Bearer token from env vars (cached)."""
+    import time
+    cache = _sh_token.__dict__
+    if cache.get("token") and time.time() < cache.get("expires_at", 0) - 60:
+        return cache["token"]
+    client_id     = os.environ.get("SH_CLIENT_ID", "")
+    client_secret = os.environ.get("SH_CLIENT_SECRET", "")
+    if not client_id or not client_secret:
+        return None
+    import requests as _req
+    r = _req.post(
+        "https://services.sentinel-hub.com/auth/realms/main/protocol/openid-connect/token",
+        data={"grant_type": "client_credentials",
+              "client_id": client_id, "client_secret": client_secret},
+        timeout=10,
+    )
+    if not r.ok:
+        return None
+    data = r.json()
+    cache["token"]      = data["access_token"]
+    cache["expires_at"] = time.time() + data.get("expires_in", 3600)
+    return cache["token"]
+
+
+@app.route('/ogc/wms')
+def wms_proxy():
+    """
+    OGC WMS 1.3.0 proxy backed by the Sentinel Hub Process API.
+
+    Supports:
+      REQUEST=GetCapabilities  — returns WMS capabilities XML
+      REQUEST=GetMap           — proxies to Process API, returns image
+
+    GetMap parameters:
+      LAYERS   : one of TRUE_COLOR, FALSE_COLOR, NDVI, NDWI
+      BBOX     : minx,miny,maxx,maxy  (EPSG:4326 / CRS:84)
+      WIDTH, HEIGHT : pixel dimensions
+      TIME     : YYYY-MM-DD/YYYY-MM-DD  (default: last 60 days)
+      FORMAT   : image/png (default), image/jpeg, image/tiff
+
+    Example Leaflet usage:
+      L.tileLayer.wms('http://localhost:3000/ogc/wms', {
+        layers: 'TRUE_COLOR',
+        format: 'image/png',
+        transparent: true,
+        version: '1.3.0',
+        time: '2024-09-01/2024-09-30',
+      })
+    """
+    import requests as _req
+    from flask import Response
+    import time as _time
+
+    req_type = request.args.get("REQUEST", request.args.get("request", "GetCapabilities")).upper()
+
+    # ── GetCapabilities ───────────────────────────────────────────────────────
+    if req_type == "GETCAPABILITIES":
+        base_url = request.url_root.rstrip("/")
+        layer_xml = "".join(
+            _LAYER_XML_TEMPLATE.format(name=k, title=v["title"])
+            for k, v in _SH_LAYERS.items()
+        )
+        xml = _WMS_CAPABILITIES_TEMPLATE.format(base_url=base_url, layer_xml=layer_xml)
+        return Response(xml, content_type="text/xml; charset=UTF-8")
+
+    # ── GetMap ────────────────────────────────────────────────────────────────
+    if req_type != "GETMAP":
+        return Response("Only GetCapabilities and GetMap are supported", status=400)
+
+    layer_name = request.args.get("LAYERS", request.args.get("layers", "TRUE_COLOR")).upper()
+    layer = _SH_LAYERS.get(layer_name)
+    if layer is None:
+        return Response(f"Unknown layer '{layer_name}'. Available: {list(_SH_LAYERS)}", status=400)
+
+    # Parse BBOX — WMS 1.3.0 with EPSG:4326 sends lat,lon order; normalise to lon,lat
+    bbox_raw = request.args.get("BBOX", request.args.get("bbox", ""))
+    try:
+        parts = [float(x) for x in bbox_raw.split(",")]
+    except (ValueError, AttributeError):
+        return Response("Invalid or missing BBOX", status=400)
+
+    crs = request.args.get("CRS", request.args.get("SRS", "EPSG:4326")).upper()
+    if crs in ("EPSG:4326",) and abs(parts[0]) <= 90:
+        # WMS 1.3.0 EPSG:4326 sends miny,minx,maxy,maxx (lat,lon)
+        lat_min, lon_min, lat_max, lon_max = parts
+    else:
+        lon_min, lat_min, lon_max, lat_max = parts
+
+    width  = int(request.args.get("WIDTH",  request.args.get("width",  256)))
+    height = int(request.args.get("HEIGHT", request.args.get("height", 256)))
+    width, height = min(width, 2048), min(height, 2048)
+
+    # TIME: "YYYY-MM-DD/YYYY-MM-DD" or single date (→ ±15 day window)
+    time_param = request.args.get("TIME", request.args.get("time", ""))
+    if "/" in time_param:
+        t_from, t_to = time_param.split("/", 1)
+    elif time_param:
+        t_from = t_to = time_param
+    else:
+        # Default: most recent 60 days
+        now = _time.strftime("%Y-%m-%d")
+        import datetime
+        t_from = (datetime.date.today() - datetime.timedelta(days=60)).isoformat()
+        t_to   = now
+
+    fmt = request.args.get("FORMAT", request.args.get("format", layer["mime"]))
+    if fmt not in ("image/png", "image/jpeg", "image/tiff"):
+        fmt = "image/png"
+
+    token = _sh_token()
+    if not token:
+        return Response("SH_CLIENT_ID / SH_CLIENT_SECRET not configured", status=503)
+
+    payload = {
+        "input": {
+            "bounds": {
+                "bbox": [lon_min, lat_min, lon_max, lat_max],
+                "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"},
+            },
+            "data": [{
+                "type": "sentinel-2-l2a",
+                "dataFilter": {
+                    "timeRange": {
+                        "from": f"{t_from}T00:00:00Z",
+                        "to":   f"{t_to}T23:59:59Z",
+                    },
+                    "maxCloudCoverage": 30,
+                    "mosaickingOrder": "leastCC",
+                },
+            }],
+        },
+        "output": {
+            "width": width, "height": height,
+            "responses": [{"identifier": "default", "format": {"type": fmt}}],
+        },
+        "evalscript": layer["evalscript"],
+    }
+
+    try:
+        r = _req.post(
+            "https://services.sentinel-hub.com/api/v1/process",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json=payload, timeout=60,
+        )
+    except Exception as exc:
+        return Response(f"Process API error: {exc}", status=502)
+
+    if not r.ok:
+        return Response(f"Process API HTTP {r.status_code}: {r.text[:200]}", status=502)
+
+    return Response(r.content, content_type=r.headers.get("Content-Type", fmt))
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=3000, debug=True)
