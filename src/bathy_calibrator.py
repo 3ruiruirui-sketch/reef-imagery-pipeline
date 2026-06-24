@@ -411,8 +411,8 @@ def calibrate_stumpf_from_isobaths(
         clipped = (m0 != m0_raw or m1 != m1_raw)
         if clipped:
             log.warning(
-                "OLS fit hit safety bounds (raw m0=%.2f m1=%.2f) → "
-                "clipped to m0=%.2f m1=%.2f", m0_raw, m1_raw, m0, m1
+                "OLS fit hit safety bounds (raw m0=%.2f m1=%.2f rmse=%.3fm) → "
+                "clipped to m0=%.2f m1=%.2f", m0_raw, m1_raw, rmse_raw, m0, m1
             )
 
         depth_pred = m1 * X_arr + m0
