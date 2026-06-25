@@ -11,11 +11,11 @@ returns empty results cleanly if no reports exist.
 Dependencies: stdlib only (json, os, csv, glob).
 """
 
-import os
-import json
 import csv
 import glob
+import json
 import logging
+import os
 
 log = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ def load_reports(reports_dir=None):
     reports = []
     for filepath in files:
         try:
-            with open(filepath, "r") as f:
+            with open(filepath) as f:
                 data = json.load(f)
             if not isinstance(data, dict):
                 log.warning(f"Skipping non-dict report: {filepath}")

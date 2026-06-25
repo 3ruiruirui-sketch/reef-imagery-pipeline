@@ -25,7 +25,6 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 
@@ -35,9 +34,10 @@ try:
     import torch
     import torch.nn as nn
     import torch.optim as optim
-    from torch.utils.data import DataLoader, Dataset
     import torchvision.models as models
     import torchvision.transforms.functional as TF
+    from torch.utils.data import DataLoader, Dataset
+
     _HAS_TORCH = True
 except ImportError:
     _HAS_TORCH = False
@@ -47,6 +47,7 @@ except ImportError:
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. Dataset
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class ReefPatchDataset(Dataset):  # type: ignore[misc]
     """
@@ -62,14 +63,16 @@ class ReefPatchDataset(Dataset):  # type: ignore[misc]
     """
 
     def __init__(self, root: str | Path, augment: bool = False) -> None:
-        self.root    = Path(root)
+        self.root = Path(root)
         self.augment = augment
         reef_files = sorted((self.root / "reef").glob("*.npy"))
         sand_files = sorted((self.root / "sand").glob("*.npy"))
         self.samples = [(p, 1) for p in reef_files] + [(p, 0) for p in sand_files]
         log.info(
             "Dataset loaded: root=%s  reef=%d  sand=%d",
-            root, len(reef_files), len(sand_files),
+            root,
+            len(reef_files),
+            len(sand_files),
         )
 
     def __len__(self) -> int:
@@ -77,7 +80,7 @@ class ReefPatchDataset(Dataset):  # type: ignore[misc]
 
     def __getitem__(self, idx: int):
         path, label = self.samples[idx]
-        arr = np.load(path).astype(np.float32)   # (4, H, W)
+        arr = np.load(path).astype(np.float32)  # (4, H, W)
         x = torch.from_numpy(arr)
 
         if self.augment:
@@ -99,6 +102,7 @@ class ReefPatchDataset(Dataset):  # type: ignore[misc]
 # 2. Model
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class ReefClassifier(nn.Module):  # type: ignore[misc]
     """
     ResNet-18 adapted for 4-channel Sentinel-2 input → binary reef probability.
@@ -114,9 +118,7 @@ class ReefClassifier(nn.Module):  # type: ignore[misc]
         if not _HAS_TORCH:
             raise ImportError("PyTorch is required for ReefClassifier")
 
-        backbone = models.resnet18(
-            weights=models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None
-        )
+        backbone = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None)
 
         # Adapt first conv: 3 → 4 channels
         old_conv = backbone.conv1
@@ -129,7 +131,7 @@ class ReefClassifier(nn.Module):  # type: ignore[misc]
             bias=old_conv.bias is not None,
         )
         with torch.no_grad():
-            new_conv.weight[:, :3, :, :] = old_conv.weight          # RGB weights kept
+            new_conv.weight[:, :3, :, :] = old_conv.weight  # RGB weights kept
             new_conv.weight[:, 3:4, :, :] = old_conv.weight.mean(dim=1, keepdim=True)  # NIR = mean
             if old_conv.bias is not None:
                 new_conv.bias = old_conv.bias
@@ -143,17 +145,18 @@ class ReefClassifier(nn.Module):  # type: ignore[misc]
         )
         self.backbone = backbone
 
-    def forward(self, x: "torch.Tensor") -> "torch.Tensor":
-        logit = self.backbone(x).squeeze(-1)          # (B,)
-        return torch.sigmoid(logit)                   # (B,) probability
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        logit = self.backbone(x).squeeze(-1)  # (B,)
+        return torch.sigmoid(logit)  # (B,) probability
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. Training
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def train(
-    model: "ReefClassifier",
+    model: ReefClassifier,
     train_dir: str | Path,
     val_dir: str | Path,
     output_dir: str | Path,
@@ -163,7 +166,7 @@ def train(
     lr: float = 1e-4,
     weight_decay: float = 1e-4,
     patience: int = 8,
-    device: Optional[str] = None,
+    device: str | None = None,
 ) -> list[dict]:
     """
     Train the model and save the best checkpoint.
@@ -186,17 +189,17 @@ def train(
     model = model.to(dev)
 
     train_ds = ReefPatchDataset(train_dir, augment=True)
-    val_ds   = ReefPatchDataset(val_dir,   augment=False)
+    val_ds = ReefPatchDataset(val_dir, augment=False)
 
     # Class-balanced sampler for imbalanced datasets
-    labels  = [lbl for _, lbl in train_ds.samples]
-    n_reef  = sum(labels)
-    n_sand  = len(labels) - n_reef
+    labels = [lbl for _, lbl in train_ds.samples]
+    n_reef = sum(labels)
+    n_sand = len(labels) - n_reef
     weights = [1.0 / n_reef if lbl == 1 else 1.0 / n_sand for lbl in labels]
     sampler = torch.utils.data.WeightedRandomSampler(weights, num_samples=len(labels), replacement=True)
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, sampler=sampler,  num_workers=2, pin_memory=True)
-    val_loader   = DataLoader(val_ds,   batch_size=batch_size, shuffle=False, num_workers=2, pin_memory=True)
+    train_loader = DataLoader(train_ds, batch_size=batch_size, sampler=sampler, num_workers=2, pin_memory=True)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=2, pin_memory=True)
 
     criterion = nn.BCELoss()
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
@@ -241,26 +244,35 @@ def train(
                 all_probs.append(prob.cpu().numpy())
                 all_labels.append(y.cpu().numpy())
 
-        all_probs  = np.concatenate(all_probs)
+        all_probs = np.concatenate(all_probs)
         all_labels = np.concatenate(all_labels)
-        val_loss   = val_loss / len(val_ds)
-        val_acc    = float(((all_probs > 0.5) == all_labels).mean())
-        val_auc    = _roc_auc(all_labels, all_probs)
+        val_loss = val_loss / len(val_ds)
+        val_acc = float(((all_probs > 0.5) == all_labels).mean())
+        val_auc = _roc_auc(all_labels, all_probs)
 
         elapsed = time.time() - t0
         log.info(
             "Epoch %3d/%d  train_loss=%.4f  acc=%.3f  val_loss=%.4f  val_acc=%.3f  auc=%.3f  %.1fs",
-            epoch, n_epochs, avg_train_loss, train_acc, val_loss, val_acc, val_auc, elapsed,
+            epoch,
+            n_epochs,
+            avg_train_loss,
+            train_acc,
+            val_loss,
+            val_acc,
+            val_auc,
+            elapsed,
         )
 
-        history.append({
-            "epoch": epoch,
-            "train_loss": round(avg_train_loss, 4),
-            "train_acc":  round(train_acc, 4),
-            "val_loss":   round(val_loss, 4),
-            "val_acc":    round(val_acc, 4),
-            "val_auc":    round(val_auc, 4),
-        })
+        history.append(
+            {
+                "epoch": epoch,
+                "train_loss": round(avg_train_loss, 4),
+                "train_acc": round(train_acc, 4),
+                "val_loss": round(val_loss, 4),
+                "val_acc": round(val_acc, 4),
+                "val_auc": round(val_auc, 4),
+            }
+        )
 
         if val_auc > best_val_auc:
             best_val_auc = val_auc
@@ -285,12 +297,13 @@ def train(
 # 4. Evaluation
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def evaluate(
-    model: "ReefClassifier",
+    model: ReefClassifier,
     val_dir: str | Path,
     *,
     threshold: float = 0.5,
-    device: Optional[str] = None,
+    device: str | None = None,
 ) -> dict:
     """
     Evaluate model on the validation set and return classification metrics.
@@ -308,7 +321,7 @@ def evaluate(
     model = model.to(dev)
     model.eval()
 
-    val_ds     = ReefPatchDataset(val_dir, augment=False)
+    val_ds = ReefPatchDataset(val_dir, augment=False)
     val_loader = DataLoader(val_ds, batch_size=32, shuffle=False, num_workers=2)
 
     all_probs, all_labels = [], []
@@ -318,9 +331,9 @@ def evaluate(
             all_probs.append(prob.cpu().numpy())
             all_labels.append(y.numpy())
 
-    all_probs  = np.concatenate(all_probs)
+    all_probs = np.concatenate(all_probs)
     all_labels = np.concatenate(all_labels)
-    pred       = (all_probs >= threshold).astype(int)
+    pred = (all_probs >= threshold).astype(int)
 
     tp = int(((pred == 1) & (all_labels == 1)).sum())
     fp = int(((pred == 1) & (all_labels == 0)).sum())
@@ -328,25 +341,32 @@ def evaluate(
     tn = int(((pred == 0) & (all_labels == 0)).sum())
 
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-    recall    = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-    f1        = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
-    accuracy  = (tp + tn) / len(all_labels)
-    auc       = _roc_auc(all_labels, all_probs)
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+    accuracy = (tp + tn) / len(all_labels)
+    auc = _roc_auc(all_labels, all_probs)
 
     metrics = {
         "precision": round(precision, 4),
-        "recall":    round(recall,    4),
-        "f1":        round(f1,        4),
-        "auc":       round(auc,       4),
-        "accuracy":  round(accuracy,  4),
-        "tp": tp, "fp": fp, "fn": fn, "tn": tn,
+        "recall": round(recall, 4),
+        "f1": round(f1, 4),
+        "auc": round(auc, 4),
+        "accuracy": round(accuracy, 4),
+        "tp": tp,
+        "fp": fp,
+        "fn": fn,
+        "tn": tn,
         "n_reef": int((all_labels == 1).sum()),
         "n_sand": int((all_labels == 0).sum()),
         "threshold": threshold,
     }
     log.info(
         "Evaluation: precision=%.3f  recall=%.3f  F1=%.3f  AUC=%.3f  acc=%.3f",
-        precision, recall, f1, auc, accuracy,
+        precision,
+        recall,
+        f1,
+        auc,
+        accuracy,
     )
     return metrics
 
@@ -355,20 +375,21 @@ def evaluate(
 # 5. Utilities
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _roc_auc(labels: np.ndarray, probs: np.ndarray) -> float:
     """Compute ROC-AUC without sklearn — O(n log n) via rank sum."""
     pos_mask = labels == 1
-    n_pos    = pos_mask.sum()
-    n_neg    = len(labels) - n_pos
+    n_pos = pos_mask.sum()
+    n_neg = len(labels) - n_pos
     if n_pos == 0 or n_neg == 0:
         return 0.5
-    order     = np.argsort(probs)
-    ranks     = np.argsort(order) + 1          # 1-based ranks
-    rank_sum  = ranks[pos_mask].sum()
+    order = np.argsort(probs)
+    ranks = np.argsort(order) + 1  # 1-based ranks
+    rank_sum = ranks[pos_mask].sum()
     return (rank_sum - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg)
 
 
-def load_model(checkpoint_path: str | Path, device: Optional[str] = None) -> "ReefClassifier":
+def load_model(checkpoint_path: str | Path, device: str | None = None) -> ReefClassifier:
     """Load a saved ReefClassifier from a checkpoint file."""
     if not _HAS_TORCH:
         raise ImportError("PyTorch required")
@@ -382,9 +403,9 @@ def load_model(checkpoint_path: str | Path, device: Optional[str] = None) -> "Re
 
 
 def predict_single(
-    model: "ReefClassifier",
+    model: ReefClassifier,
     patch: np.ndarray,
-    device: Optional[str] = None,
+    device: str | None = None,
 ) -> float:
     """
     Predict reef probability for a single (4, H, W) float32 patch array.

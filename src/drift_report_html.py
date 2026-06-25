@@ -13,11 +13,11 @@ Dependencies: stdlib only (json, os, csv, html).
 The output HTML uses Chart.js from CDN for lightweight charts.
 """
 
-import html as _html
-import os
-import json
 import csv
+import html as _html
+import json
 import logging
+import os
 import re as _re
 from datetime import datetime, timezone
 
@@ -37,19 +37,25 @@ def _load_history(reports_dir=None):
 
     json_path = os.path.join(directory, "history.json")
     if os.path.exists(json_path):
-        with open(json_path, "r") as f:
+        with open(json_path) as f:
             return json.load(f)
 
     csv_path = os.path.join(directory, "history.csv")
     if os.path.exists(csv_path):
-        with open(csv_path, "r") as f:
+        with open(csv_path) as f:
             reader = csv.DictReader(f)
             rows = []
             for row in reader:
                 # Convert numeric fields
-                for k in ("observations", "alerts_ok", "alerts_warning",
-                          "alerts_critical", "feature_drift_count",
-                          "score_drift_count", "null_spike_count"):
+                for k in (
+                    "observations",
+                    "alerts_ok",
+                    "alerts_warning",
+                    "alerts_critical",
+                    "feature_drift_count",
+                    "score_drift_count",
+                    "null_spike_count",
+                ):
                     v = row.get(k, "0")
                     # CSV values are always strings; int("") and int("nan")
                     # both raise ValueError — catch and default to 0.
@@ -77,9 +83,11 @@ def _severity_badge(severity):
     """Return HTML badge for severity."""
     color = _severity_color(severity)
     text_color = "#fff" if severity.lower() != "warning" else "#000"
-    return (f'<span style="background:{color};color:{text_color};'
-            f'padding:2px 8px;border-radius:4px;font-size:12px;">'
-            f'{severity.upper()}</span>')
+    return (
+        f'<span style="background:{color};color:{text_color};'
+        f'padding:2px 8px;border-radius:4px;font-size:12px;">'
+        f"{severity.upper()}</span>"
+    )
 
 
 def generate_html(reports_dir=None):
@@ -99,13 +107,10 @@ def generate_html(reports_dir=None):
 
     # Find worst batch
     severity_rank = {"critical": 3, "warning": 2, "ok": 1, "": 0}
-    worst_idx = max(range(len(rows)),
-                    key=lambda i: severity_rank.get(
-                        rows[i].get("highest_severity", "").lower(), 0))
+    worst_idx = max(range(len(rows)), key=lambda i: severity_rank.get(rows[i].get("highest_severity", "").lower(), 0))
 
     # Prepare chart data
-    labels = [r.get("batch_id", r.get("timestamp", f"batch-{i}"))[:20]
-              for i, r in enumerate(rows)]
+    labels = [r.get("batch_id", r.get("timestamp", f"batch-{i}"))[:20] for i, r in enumerate(rows)]
     warnings = [int(r.get("alerts_warning", 0)) for r in rows]
     criticals = [int(r.get("alerts_critical", 0)) for r in rows]
     feat_drift = [int(r.get("feature_drift_count", 0)) for r in rows]

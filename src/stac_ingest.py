@@ -6,11 +6,12 @@ Sentinel-2 scene discovery, asset extraction, and cloud-filtered scene ranking.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any
 
 import planetary_computer as pc
-from pystac import Asset, Item
+from pystac import Item
 from pystac_client import Client
 
 PC_STAC_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
@@ -31,9 +32,7 @@ def open_stac_catalog(url: str = EARTH_SEARCH_STAC_URL) -> Client:
     return Client.open(url, modifier=modifier)
 
 
-def normalize_datetime_range(
-    date_range: Union[str, Tuple[str, str], Tuple[datetime, datetime]]
-) -> str:
+def normalize_datetime_range(date_range: str | tuple[str, str] | tuple[datetime, datetime]) -> str:
     if isinstance(date_range, str):
         return date_range
     if len(date_range) != 2:
@@ -49,12 +48,12 @@ def normalize_datetime_range(
 def search_sentinel2_scenes(
     lat: float,
     lon: float,
-    date_range: Union[str, Tuple[str, str], Tuple[datetime, datetime]],
+    date_range: str | tuple[str, str] | tuple[datetime, datetime],
     max_cloud_cover: float = 25.0,
     catalog_url: str | None = None,
     collection: str = DEFAULT_S2_COLLECTION,
     limit: int = 10,
-) -> List[Item]:
+) -> list[Item]:
     """Search Sentinel-2 L2A scenes for a point, date range, and cloud filter.
 
     If catalog_url is None, this function tries the preferred STAC endpoints in
@@ -79,12 +78,10 @@ def search_sentinel2_scenes(
             last_error = exc
             continue
 
-    raise RuntimeError(
-        f"STAC scene search failed for all endpoints {urls}: {last_error}"
-    )
+    raise RuntimeError(f"STAC scene search failed for all endpoints {urls}: {last_error}")
 
 
-def choose_least_cloudy(items: Iterable[Item]) -> Optional[Item]:
+def choose_least_cloudy(items: Iterable[Item]) -> Item | None:
     """Return the scene with the lowest STAC cloud cover from a collection of items."""
     items = [item for item in items]
     if not items:
@@ -92,9 +89,9 @@ def choose_least_cloudy(items: Iterable[Item]) -> Optional[Item]:
     return min(items, key=lambda item: item.properties.get("eo:cloud_cover", 100.0))
 
 
-def get_asset_hrefs(item: Item, asset_keys: Iterable[str]) -> Dict[str, str]:
+def get_asset_hrefs(item: Item, asset_keys: Iterable[str]) -> dict[str, str]:
     """Return a mapping of asset key -> signed asset URL for a STAC item."""
-    hrefs: Dict[str, str] = {}
+    hrefs: dict[str, str] = {}
 
     # Build a case-insensitive map of available asset keys
     available = {k.lower(): v for k, v in item.assets.items()}
@@ -142,9 +139,9 @@ def search_dgt_s2_scenes(
     lat: float,
     lon: float,
     max_cloud_cover: float = 25.0,
-    year: Optional[int] = None,
+    year: int | None = None,
     limit: int = 10,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Search DGT-hosted Sentinel-2 L2A mosaics (MosaicoS2-YYYY collections).
 
     Returns raw STAC feature dicts (not pystac Items) since the DGT STAC does
@@ -165,7 +162,7 @@ def search_dgt_s2_scenes(
     years = [year] if year else DGT_S2_YEARS
     bbox = f"{lon - 0.05},{lat - 0.05},{lon + 0.05},{lat + 0.05}"
 
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
     for yr in years:
         url = f"{DGT_STAC_URL}/collections/MosaicoS2-{yr}/items"
         try:
@@ -193,7 +190,7 @@ def search_dgt_s2_scenes(
     return results[:limit]
 
 
-def scene_summary(item: Item) -> Dict[str, Any]:
+def scene_summary(item: Item) -> dict[str, Any]:
     """Return a lightweight metadata summary for a Sentinel-2 STAC item."""
     return {
         "id": item.id,

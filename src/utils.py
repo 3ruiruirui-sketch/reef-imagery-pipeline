@@ -2,9 +2,12 @@
 """
 Utilities: raster I/O, sunglint correction, refraction, Beer-Lambert.
 """
+
 import math
+
 import numpy as np
 import rasterio
+
 
 def read_band(path, handle_nodata=True):
     """Read raster band as float32. If handle_nodata=True, converts nodata to np.nan."""
@@ -16,6 +19,7 @@ def read_band(path, handle_nodata=True):
             arr = np.where(arr == nodata, np.nan, arr)
     return arr, profile
 
+
 def write_band(path, arr, profile, nodata=None):
     """Write array to GeoTIFF. If nodata is None and arr contains NaN, uses np.nan as nodata."""
     profile = profile.copy()
@@ -25,9 +29,10 @@ def write_band(path, arr, profile, nodata=None):
     # For integer-typed arrays, use 255 as nodata sentinel if not set
     if nodata is None and np.issubdtype(arr.dtype, np.integer):
         nodata = 255
-    profile.update(dtype=rasterio.float32, count=1, compress='lzw', nodata=nodata)
-    with rasterio.open(str(path), 'w', **profile) as dst:
+    profile.update(dtype=rasterio.float32, count=1, compress="lzw", nodata=nodata)
+    with rasterio.open(str(path), "w", **profile) as dst:
         dst.write(arr.astype(np.float32), 1)
+
 
 def simulate_acolite_boa(input_tif, output_tif, b03_tif=None, sunglint_strength=0.8):
     """
@@ -68,11 +73,13 @@ def simulate_acolite_boa(input_tif, output_tif, b03_tif=None, sunglint_strength=
     write_band(str(output_tif), arr.astype(np.float32), profile)
     return str(output_tif)
 
+
 def snell_air_to_water(theta_air_rad, n_water=1.333):
     """Snell's law: returns refracted angle (radians) in water for ray entering from air."""
     s = math.sin(theta_air_rad) / n_water
     s = max(-0.999999, min(0.999999, s))
     return math.asin(s)  # angle in [0, pi/2]
+
 
 def snell_sza(sza_deg, n_water=1.333):
     """Return (sza_water_deg, theta_water_rad)."""
@@ -82,12 +89,15 @@ def snell_sza(sza_deg, n_water=1.333):
     theta_w = math.asin(sin_w)
     return math.degrees(theta_w), theta_w
 
+
 def optical_path(depth_m, theta_water_rad):
     return depth_m / max(1e-6, math.cos(theta_water_rad))
+
 
 def beer_lambert_transmittance(kd, path_m):
     """Two-way transmittance (surface → bottom → sensor)."""
     return math.exp(-2 * kd * path_m)
+
 
 def get_kd490(month, kd_prior: dict):
     return kd_prior.get(int(month), kd_prior.get(str(month), 0.080))
@@ -133,6 +143,7 @@ def get_kd490_map(
     kd = _np.clip(kd, 0.01, 2.0)
     return kd.astype(_np.float32)
 
+
 def build_coastal_geojson(csv_path, geojson_path):
     """Convert algarve_coastal_features.csv → GeoJSON FeatureCollection.
 
@@ -168,11 +179,13 @@ def build_coastal_geojson(csv_path, geojson_path):
         props["timestamp"] = ts
         lat = float(row["latitude"])
         lon = float(row["longitude"])
-        features.append({
-            "type": "Feature",
-            "properties": props,
-            "geometry": {"type": "Point", "coordinates": [lon, lat]},
-        })
+        features.append(
+            {
+                "type": "Feature",
+                "properties": props,
+                "geometry": {"type": "Point", "coordinates": [lon, lat]},
+            }
+        )
 
     collection = {
         "type": "FeatureCollection",

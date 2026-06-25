@@ -14,8 +14,9 @@ Integrated as a post-prediction observation layer.
 import logging
 import math
 import threading
-import numpy as np
 from collections import deque
+
+import numpy as np
 
 log = logging.getLogger(__name__)
 
@@ -34,9 +35,9 @@ FEATURE_BASELINES = {
 
 # Terrain feature baselines for Algarve coast (GLO-30 derived, 4 km buffer)
 TERRAIN_BASELINES = {
-    "slope_mean":   {"mean": 1.5,   "std": 1.2,  "min": 0.0,  "max": 45.0},
-    "slope_p90":    {"mean": 4.5,   "std": 2.5,  "min": 0.0,  "max": 60.0},
-    "aspect_mean":  {"mean": 180.0, "std": 60.0, "min": 0.0,  "max": 360.0},
+    "slope_mean": {"mean": 1.5, "std": 1.2, "min": 0.0, "max": 45.0},
+    "slope_p90": {"mean": 4.5, "std": 2.5, "min": 0.0, "max": 60.0},
+    "aspect_mean": {"mean": 180.0, "std": 60.0, "min": 0.0, "max": 360.0},
 }
 
 # ---------------------------------------------------------------------------
@@ -45,7 +46,7 @@ TERRAIN_BASELINES = {
 
 # Dominant Atlantic swell / wind directions for Portugal (degrees)
 _ALGARVE_PREVAILING_WIND_DIR = 315.0  # NW — dominant summer wind
-_BASE_PLUME_KM = 5.0                  # baseline plume extent for a flat, sheltered site
+_BASE_PLUME_KM = 5.0  # baseline plume extent for a flat, sheltered site
 
 
 def estimate_plume_extent(
@@ -78,7 +79,7 @@ def estimate_plume_extent(
         diff = 360 - diff
     # +1 = coast directly faces wind origin (exposed), -1 = sheltered
     exposure = math.cos(math.radians(diff))
-    exposure_norm = (exposure + 1.0) / 2.0   # 0 = sheltered, 1 = exposed
+    exposure_norm = (exposure + 1.0) / 2.0  # 0 = sheltered, 1 = exposed
 
     # Wind-driven transport factor (Beaufort-like, normalised to 10 m/s)
     wind_factor = max(wind_speed_ms, 0.0) / 10.0
@@ -119,8 +120,7 @@ def check_terrain_features(terrain_dict: dict) -> dict:
 
         # Hard range check
         if value < baseline["min"] or value > baseline["max"]:
-            alerts.append((feat, WARNING,
-                           f"out of range: {value:.2f} vs [{baseline['min']}, {baseline['max']}]"))
+            alerts.append((feat, WARNING, f"out of range: {value:.2f} vs [{baseline['min']}, {baseline['max']}]"))
             max_level = WARNING
             continue
 
@@ -135,13 +135,14 @@ def check_terrain_features(terrain_dict: dict) -> dict:
 
     return {"level": max_level, "alerts": alerts, "null_count": null_count}
 
+
 SCORE_BASELINE = {"mean": 0.60, "std": 0.15, "min": 0.0, "max": 1.0}
 
 # Thresholds (in units of standard deviations or absolute)
-Z_WARN = 2.5       # z-score for WARNING
-Z_CRIT = 4.0       # z-score for CRITICAL
-NULL_RATE_WARN = 0.1   # 10% null rate triggers WARNING
-NULL_RATE_CRIT = 0.5   # 50% null rate triggers CRITICAL
+Z_WARN = 2.5  # z-score for WARNING
+Z_CRIT = 4.0  # z-score for CRITICAL
+NULL_RATE_WARN = 0.1  # 10% null rate triggers WARNING
+NULL_RATE_CRIT = 0.5  # 50% null rate triggers CRITICAL
 
 # Alert level enum
 OK = "OK"
@@ -188,11 +189,11 @@ def _z_score(value, mean, std):
 def check_feature_drift(features_dict, schema_features=None):
     """
     Check incoming features against baseline distributions.
-    
+
     Args:
         features_dict: dict of feature_name -> value (from standard_features)
         schema_features: list of active schema feature names to check
-        
+
     Returns:
         dict: {
             "level": "OK" | "WARNING" | "CRITICAL",
@@ -204,26 +205,26 @@ def check_feature_drift(features_dict, schema_features=None):
     alerts = []
     null_count = 0
     max_level = OK
-    
+
     for feat in check_features:
         if feat not in FEATURE_BASELINES:
             continue
-            
+
         baseline = FEATURE_BASELINES[feat]
         value = features_dict.get(feat)
-        
+
         # Null / missing check
         if value is None or (isinstance(value, float) and np.isnan(value)):
             null_count += 1
             continue
-        
+
         # Range check (only if min/max defined in baseline)
         if "min" in baseline and "max" in baseline:
             if value < baseline["min"] or value > baseline["max"]:
                 alerts.append((feat, WARNING, f"out of range: {value:.4f} vs [{baseline['min']}, {baseline['max']}]"))
                 max_level = WARNING
                 continue
-        
+
         # Z-score check
         z = _z_score(value, baseline["mean"], baseline["std"])
         if z >= Z_CRIT:
@@ -233,7 +234,7 @@ def check_feature_drift(features_dict, schema_features=None):
             alerts.append((feat, WARNING, f"z={z:.1f} (value={value:.4f})"))
             if max_level != CRITICAL:
                 max_level = WARNING
-    
+
     # Null rate check
     n_checked = len([f for f in check_features if f in FEATURE_BASELINES])
     if n_checked > 0:
@@ -245,7 +246,7 @@ def check_feature_drift(features_dict, schema_features=None):
             alerts.append(("_null_rate", WARNING, f"null_rate={null_rate:.0%}"))
             if max_level != CRITICAL:
                 max_level = WARNING
-    
+
     return {"level": max_level, "alerts": alerts, "null_count": null_count}
 
 
@@ -253,10 +254,10 @@ def check_score_drift(score):
     """
     Check if prediction score is drifting from expected distribution.
     Uses both single-value range check and rolling window mean drift.
-    
+
     Args:
         score: float, the predicted score
-        
+
     Returns:
         dict: {
             "level": "OK" | "WARNING" | "CRITICAL",
@@ -266,7 +267,7 @@ def check_score_drift(score):
     """
     alerts = []
     max_level = OK
-    
+
     # Single score range check
     z = _z_score(score, SCORE_BASELINE["mean"], SCORE_BASELINE["std"])
     if z >= Z_CRIT:
@@ -275,7 +276,7 @@ def check_score_drift(score):
     elif z >= Z_WARN:
         alerts.append(("score_value", WARNING, f"z={z:.1f} (score={score:.4f})"))
         max_level = WARNING
-    
+
     # Update rolling window
     _s()._score_history.append(score)
 
@@ -292,7 +293,7 @@ def check_score_drift(score):
             alerts.append(("rolling_mean", WARNING, f"z={rolling_z:.1f} (mean={rolling_mean:.4f} over {n_hist} calls)"))
             if max_level != CRITICAL:
                 max_level = WARNING
-    
+
     return {"level": max_level, "alerts": alerts, "rolling_mean": rolling_mean}
 
 
@@ -301,12 +302,12 @@ def observe(features_dict, score, schema_features=None):
     Single entry point: observe one prediction for drift.
     Logs alerts at appropriate levels with throttling to avoid per-call spam.
     Does not alter data or block inference.
-    
+
     Args:
         features_dict: dict of standardized features
         score: float, predicted score
         schema_features: active schema feature list
-        
+
     Returns:
         dict: {"feature_drift": {...}, "score_drift": {...}}
     """
@@ -316,8 +317,11 @@ def observe(features_dict, score, schema_features=None):
     score_drift = check_score_drift(score)
 
     # Determine overall severity
-    overall = CRITICAL if CRITICAL in (feat_drift["level"], score_drift["level"]) else \
-              WARNING if WARNING in (feat_drift["level"], score_drift["level"]) else OK
+    overall = (
+        CRITICAL
+        if CRITICAL in (feat_drift["level"], score_drift["level"])
+        else WARNING if WARNING in (feat_drift["level"], score_drift["level"]) else OK
+    )
 
     # Update batch counters
     s._obs_count += 1
@@ -335,12 +339,9 @@ def observe(features_dict, score, schema_features=None):
     s._worst_alert = max(all_a, key=lambda a: level_rank.get(a[1], 0)) if all_a else None
 
     # Throttled logging: log on level change or periodic reminder
-    level_changed = (overall != s._last_logged_level)
-    should_log = (
-        overall != OK and (
-            level_changed or                    # Severity changed
-            s._calls_since_log >= _LOG_EVERY_N  # Periodic reminder
-        )
+    level_changed = overall != s._last_logged_level
+    should_log = overall != OK and (
+        level_changed or s._calls_since_log >= _LOG_EVERY_N  # Severity changed  # Periodic reminder
     )
 
     if should_log:
@@ -362,14 +363,14 @@ def observe(features_dict, score, schema_features=None):
         log.debug("Drift cleared — back to normal.")
 
     s._last_logged_level = overall
-    
+
     return {"feature_drift": feat_drift, "score_drift": score_drift}
 
 
 def summary():
     """
     Return a concise batch drift summary.
-    
+
     Returns:
         dict: {
             "total_observations": int,
@@ -406,7 +407,7 @@ def summary_line():
         f"nulls={s['null_spike_count']}",
     ]
     worst = f" | worst={s['worst_level']}"
-    if s['worst_alert']:
+    if s["worst_alert"]:
         worst += f" ({s['worst_alert'][0]}: {s['worst_alert'][2]})"
     return "Drift summary: " + " ".join(parts) + worst
 

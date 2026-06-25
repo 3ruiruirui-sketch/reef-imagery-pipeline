@@ -1,11 +1,11 @@
-import os
-import json
 import hashlib
-import pickle
+import json
 import logging
-import numpy as np
-
 import math
+import os
+import pickle
+
+import numpy as np
 
 try:
     from src.drift_monitor import observe as _observe_drift
@@ -58,6 +58,7 @@ def terrain_exposure_modifier(
     modifier = 1.0 - 0.25 * exposure_norm - 0.15 * slope_norm
     return max(0.5, min(1.0, modifier))
 
+
 # Paths
 MODELS_DIR = os.path.join(os.path.dirname(__file__), "..", "models")
 MODEL_PATH = os.path.join(MODELS_DIR, "feature_ranker_model.pkl")
@@ -74,30 +75,39 @@ METADATA_PATH = os.path.join(MODELS_DIR, "feature_ranker_metadata.json")
 _FEATURE_ALIASES = {
     # --- B02-only synthetic schema ---
     "benthic_contrast": ["benthic_contrast", "contrast_benthic_mean", "contrast"],
-    "snr":              ["snr", "SNR_mean_16m", "signal_strength"],
-    "fft_clean":        ["fft_clean", "cleanliness"],
-    "edge_entropy":     ["edge_entropy", "edge"],
-    "dyn_range":        ["dyn_range"],
-    "signal":           ["signal", "raw_mean"],
+    "snr": ["snr", "SNR_mean_16m", "signal_strength"],
+    "fft_clean": ["fft_clean", "cleanliness"],
+    "edge_entropy": ["edge_entropy", "edge"],
+    "dyn_range": ["dyn_range"],
+    "signal": ["signal", "raw_mean"],
     # --- real-data schema (numeric) ---
-    "kd_b02":                    ["kd_b02"],
-    "water_trans":               ["water_trans", "water_transmittance_twoway"],
-    "image_contrast":            ["image_contrast", "contrast_benthic_mean", "contrast"],
-    "signal_strength":           ["signal_strength", "SNR_mean_16m", "snr"],
-    "cleanliness":               ["cleanliness", "fft_clean"],
-    "bathy_slope_proxy":         ["bathy_slope_proxy", "bathymetry_slope_proxy"],
-    "contour_density_proxy":     ["contour_density_proxy"],
-    "n_isobaths_aoi":            ["n_isobaths_aoi", "n_isobaths_in_aoi"],
+    "kd_b02": ["kd_b02"],
+    "water_trans": ["water_trans", "water_transmittance_twoway"],
+    "image_contrast": ["image_contrast", "contrast_benthic_mean", "contrast"],
+    "signal_strength": ["signal_strength", "SNR_mean_16m", "snr"],
+    "cleanliness": ["cleanliness", "fft_clean"],
+    "bathy_slope_proxy": ["bathy_slope_proxy", "bathymetry_slope_proxy"],
+    "contour_density_proxy": ["contour_density_proxy"],
+    "n_isobaths_aoi": ["n_isobaths_aoi", "n_isobaths_in_aoi"],
     "nearest_isobath_proximity": ["nearest_isobath_proximity"],
 }
 
 _FEATURE_DEFAULTS = {
-    "benthic_contrast": 0.1, "snr": 0.0, "fft_clean": FFT_CLEAN_THRESHOLD,
-    "edge_entropy": 5.0, "dyn_range": 0.008, "signal": 0.12,
-    "kd_b02": 0.08, "water_trans": 0.5, "image_contrast": 0.1,
-    "signal_strength": 0.0, "cleanliness": FFT_CLEAN_THRESHOLD,
-    "bathy_slope_proxy": 0.0, "contour_density_proxy": 0.0,
-    "n_isobaths_aoi": 0.0, "nearest_isobath_proximity": 0.0,
+    "benthic_contrast": 0.1,
+    "snr": 0.0,
+    "fft_clean": FFT_CLEAN_THRESHOLD,
+    "edge_entropy": 5.0,
+    "dyn_range": 0.008,
+    "signal": 0.12,
+    "kd_b02": 0.08,
+    "water_trans": 0.5,
+    "image_contrast": 0.1,
+    "signal_strength": 0.0,
+    "cleanliness": FFT_CLEAN_THRESHOLD,
+    "bathy_slope_proxy": 0.0,
+    "contour_density_proxy": 0.0,
+    "n_isobaths_aoi": 0.0,
+    "nearest_isobath_proximity": 0.0,
 }
 
 
@@ -124,9 +134,7 @@ def _build_schema_features(features_dict, schema, bathy_features=None):
     if "nearest_isobath_proximity" not in merged and "nearest_isobath_distance_m" in merged:
         try:
             d = float(merged["nearest_isobath_distance_m"])
-            merged["nearest_isobath_proximity"] = (
-                1.0 / (1.0 + d / 100.0) if math.isfinite(d) else 0.0
-            )
+            merged["nearest_isobath_proximity"] = 1.0 / (1.0 + d / 100.0) if math.isfinite(d) else 0.0
         except (TypeError, ValueError):
             merged["nearest_isobath_proximity"] = 0.0
 
@@ -137,7 +145,7 @@ def _build_schema_features(features_dict, schema, bathy_features=None):
     unresolved = set()
     for name in schema:
         if name.startswith("zone_"):
-            out[name] = 1.0 if zone == name[len("zone_"):] else 0.0
+            out[name] = 1.0 if zone == name[len("zone_") :] else 0.0
             continue
         val = None
         for alias in _FEATURE_ALIASES.get(name, [name]):
@@ -158,6 +166,7 @@ def _build_schema_features(features_dict, schema, bathy_features=None):
             out[name] = _FEATURE_DEFAULTS.get(name, 0.0)
     return out, unresolved
 
+
 # Global cache
 _RANKER_MODEL = None
 _FEATURE_SCHEMA = None
@@ -176,7 +185,7 @@ def schema_fingerprint(features_list):
 def validate_schema(incoming_features, expected_schema, disabled=None):
     """
     Validate incoming features against the canonical schema.
-    
+
     Returns:
         dict: {
             "ok": bool,          # True if all required features are present
@@ -189,11 +198,11 @@ def validate_schema(incoming_features, expected_schema, disabled=None):
     disabled = disabled or set()
     incoming_keys = set(incoming_features.keys())
     expected_keys = set(expected_schema)
-    
+
     missing = expected_keys - incoming_keys
     extra = incoming_keys - expected_keys - disabled
     deprecated = incoming_keys & disabled
-    
+
     # Cheap type check: values that will be passed to model must be numeric
     type_errors = []
     for feat in expected_schema:
@@ -201,7 +210,7 @@ def validate_schema(incoming_features, expected_schema, disabled=None):
             val = incoming_features[feat]
             if not isinstance(val, (int, float, np.integer, np.floating)):
                 type_errors.append(f"{feat}: got {type(val).__name__}")
-    
+
     return {
         "ok": len(missing) == 0 and len(type_errors) == 0,
         "missing": missing,
@@ -209,6 +218,7 @@ def validate_schema(incoming_features, expected_schema, disabled=None):
         "deprecated": deprecated,
         "type_errors": type_errors,
     }
+
 
 def _load_resources():
     """Loads the ML ranker model and metadata schema from disk."""
@@ -222,27 +232,29 @@ def _load_resources():
 
     _LOAD_ATTEMPTED = True
     _IS_FALLBACK = True
-    
+
     if os.path.exists(MODEL_PATH) and os.path.exists(METADATA_PATH):
         try:
-            with open(MODEL_PATH, 'rb') as f:
+            with open(MODEL_PATH, "rb") as f:
                 _RANKER_MODEL = pickle.load(f)
-            with open(METADATA_PATH, 'r') as f:
+            with open(METADATA_PATH) as f:
                 meta = json.load(f)
                 _FEATURE_SCHEMA = meta.get("features", [])
                 _DISABLED_FEATURES = set(meta.get("disabled_features", {}).keys())
-                
+
             if not _FEATURE_SCHEMA:
                 raise ValueError("No features list found in metadata JSON.")
-            
+
             _SCHEMA_FINGERPRINT = schema_fingerprint(_FEATURE_SCHEMA)
-            
+
             # Canonical model path: feature_ranker_model.pkl (schema-driven).
             # Legacy visibility_rf_bathy.pkl is NOT loaded here; it is deprecated
             # for the production ranking flow and retained only for standalone scripts.
-            log.info(f"Loaded canonical ML Ranker v{meta.get('model_version', '?')}. "
-                     f"Schema ({meta.get('schema_version', '1.x')}) "
-                     f"[{_SCHEMA_FINGERPRINT}]: {_FEATURE_SCHEMA}")
+            log.info(
+                f"Loaded canonical ML Ranker v{meta.get('model_version', '?')}. "
+                f"Schema ({meta.get('schema_version', '1.x')}) "
+                f"[{_SCHEMA_FINGERPRINT}]: {_FEATURE_SCHEMA}"
+            )
             if _DISABLED_FEATURES:
                 log.info(f"Disabled features (ignored): {_DISABLED_FEATURES}")
             _IS_FALLBACK = False
@@ -251,7 +263,7 @@ def _load_resources():
             _RANKER_MODEL = None
             _FEATURE_SCHEMA = None
     else:
-        log.warning(f"ML Ranker model or metadata missing. Using FALLBACK heuristic mode.")
+        log.warning("ML Ranker model or metadata missing. Using FALLBACK heuristic mode.")
 
 
 def predict_score(features_dict, terrain_features=None, bathy_features=None):
@@ -281,7 +293,7 @@ def predict_score(features_dict, terrain_features=None, bathy_features=None):
     """
     _load_resources()
 
-    cloud_cov = features_dict.get('cloud_cover', 0.0)
+    cloud_cov = features_dict.get("cloud_cover", 0.0)
 
     SCHEMA_ORDER = [
         "benthic_contrast",
@@ -294,37 +306,25 @@ def predict_score(features_dict, terrain_features=None, bathy_features=None):
 
     # Build B02-only features for the unified model
     features = {
-        "benthic_contrast": features_dict.get("benthic_contrast",
-                       features_dict.get("contrast_benthic_mean",
-                       features_dict.get("contrast", 0.1))),
-        "snr": features_dict.get("snr",
-               features_dict.get("SNR_mean_16m",
-               features_dict.get("signal_strength", 0))),
-        "fft_clean": features_dict.get("fft_clean",
-                     features_dict.get("cleanliness", FFT_CLEAN_THRESHOLD)),
-        "edge_entropy": features_dict.get("edge_entropy",
-                     features_dict.get("edge", 5.0)),
+        "benthic_contrast": features_dict.get(
+            "benthic_contrast", features_dict.get("contrast_benthic_mean", features_dict.get("contrast", 0.1))
+        ),
+        "snr": features_dict.get("snr", features_dict.get("SNR_mean_16m", features_dict.get("signal_strength", 0))),
+        "fft_clean": features_dict.get("fft_clean", features_dict.get("cleanliness", FFT_CLEAN_THRESHOLD)),
+        "edge_entropy": features_dict.get("edge_entropy", features_dict.get("edge", 5.0)),
         "dyn_range": features_dict.get("dyn_range", 0.008),
-        "signal": features_dict.get("signal",
-              features_dict.get("raw_mean", 0.12)),
+        "signal": features_dict.get("signal", features_dict.get("raw_mean", 0.12)),
     }
 
     # Build the vector the LOADED model expects (schema-aware). When the model
     # is unavailable, fall back to the 6-feature B02-only order so the heuristic
     # and drift observer still receive a consistent dict.
     active_schema = _FEATURE_SCHEMA if (not _IS_FALLBACK and _FEATURE_SCHEMA) else SCHEMA_ORDER
-    standard_features, _unresolved_features = _build_schema_features(
-        features_dict, active_schema, bathy_features
-    )
+    standard_features, _unresolved_features = _build_schema_features(features_dict, active_schema, bathy_features)
 
     # Hard filter
     if cloud_cov > 80.0:
-        return {
-            "score": 0.0,
-            "mode": "HardFilter",
-            "features_used": standard_features,
-            "reason": "Cloud cover exceeded 80%"
-        }
+        return {"score": 0.0, "mode": "HardFilter", "features_used": standard_features, "reason": "Cloud cover exceeded 80%"}
 
     # Try ML Inference
     if not _IS_FALLBACK and _FEATURE_SCHEMA:
@@ -332,29 +332,30 @@ def predict_score(features_dict, terrain_features=None, bathy_features=None):
             # Genuinely unknown schema features (no alias, no default) → the model
             # expects something the pipeline cannot supply; revert to heuristic.
             if _unresolved_features:
-                log.warning(f"Schema drift: unresolved required features {_unresolved_features}. "
-                            f"Falling back to heuristic.")
+                log.warning(
+                    f"Schema drift: unresolved required features {_unresolved_features}. " f"Falling back to heuristic."
+                )
                 raise ValueError(f"Unresolved features: {_unresolved_features}")
 
             # Schema drift detection
             drift = validate_schema(standard_features, _FEATURE_SCHEMA, _DISABLED_FEATURES)
-            
+
             # Critical: always log warnings for type errors and missing features
             if drift["type_errors"]:
                 log.warning(f"Schema drift: type mismatch in features: {drift['type_errors']}")
             if not drift["ok"]:
                 if drift["missing"]:
-                    log.warning(f"Schema drift: missing required features {drift['missing']}. "
-                                f"Falling back to heuristic.")
+                    log.warning(f"Schema drift: missing required features {drift['missing']}. " f"Falling back to heuristic.")
                 raise ValueError(f"Schema drift: {drift}")
-            
+
             # Build ordered vector based strictly on canonical schema
             vector = [standard_features[feat_name] for feat_name in _FEATURE_SCHEMA]
-                
+
             import pandas as pd
+
             feature_df = pd.DataFrame([vector], columns=_FEATURE_SCHEMA)
             score = float(_RANKER_MODEL.predict(feature_df)[0])
-            
+
             if _observe_drift is not None:
                 _observe_drift(standard_features, score, _FEATURE_SCHEMA)
             result = {"score": score, "mode": "ML", "features_used": standard_features}
@@ -372,7 +373,7 @@ def predict_score(features_dict, terrain_features=None, bathy_features=None):
             return result
         except Exception as e:
             log.error(f"ML Inference failed ({e}). Reverting to fallback.")
-            
+
     # Fallback Heuristic (B02-only feature weights)
     benthic_contrast = features["benthic_contrast"]
     snr = features["snr"]
@@ -390,12 +391,12 @@ def predict_score(features_dict, terrain_features=None, bathy_features=None):
     signal_norm = min(max(signal, 0), 0.3) / 0.3
 
     score = (
-        0.35 * fft_norm +           # FFT cleanliness
-        0.25 * edge_norm +           # Edge entropy
-        0.20 * dyn_norm +            # Dynamic range
-        0.10 * snr_norm +            # SNR
-        0.05 * contrast_norm +       # Benthic contrast
-        0.05 * signal_norm           # Signal level
+        0.35 * fft_norm  # FFT cleanliness
+        + 0.25 * edge_norm  # Edge entropy
+        + 0.20 * dyn_norm  # Dynamic range
+        + 0.10 * snr_norm  # SNR
+        + 0.05 * contrast_norm  # Benthic contrast
+        + 0.05 * signal_norm  # Signal level
     )
 
     if fft_clean < FFT_CLEAN_THRESHOLD:

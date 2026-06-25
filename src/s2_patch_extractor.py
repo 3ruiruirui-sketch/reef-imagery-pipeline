@@ -30,34 +30,33 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import List, Optional
 
 import numpy as np
-import requests
 import rasterio
-from rasterio.windows import Window
+import requests
 from rasterio.enums import Resampling
+from rasterio.windows import Window
 
 log = logging.getLogger(__name__)
 
 # ── Spectral configuration ─────────────────────────────────────────────────────
-BANDS = ["B02", "B03", "B04", "B08"]   # blue, green, red, NIR (10 m resolution)
-PATCH_PX   = 128                        # output patch size in pixels
-S2_RES_M   = 10.0                       # Sentinel-2 native resolution (m)
+BANDS = ["B02", "B03", "B04", "B08"]  # blue, green, red, NIR (10 m resolution)
+PATCH_PX = 128  # output patch size in pixels
+S2_RES_M = 10.0  # Sentinel-2 native resolution (m)
 
 # Earth Search (AWS) uses descriptive names; Planetary Computer uses band codes.
 # This table maps our canonical band IDs to the asset key used by each catalog.
 _BAND_ALIASES: dict[str, list[str]] = {
-    "B02": ["blue",  "B02", "B2"],
+    "B02": ["blue", "B02", "B2"],
     "B03": ["green", "B03", "B3"],
-    "B04": ["red",   "B04", "B4"],
-    "B08": ["nir",   "nir08", "B08", "B8", "B8A"],
+    "B04": ["red", "B04", "B4"],
+    "B08": ["nir", "nir08", "B08", "B8", "B8A"],
 }
 
 # Per-channel normalisation clip percentiles (derived from clear-water Algarve scenes)
 # Values are BOA reflectance × 10000.  Anything below p_low is clipped to 0, above
 # p_high is clipped to 1.  These preserve contrast in the 0–25 m depth range.
-_CLIP_LOW  = {"B02": 0,    "B03": 0,    "B04": 0,    "B08": 0}
+_CLIP_LOW = {"B02": 0, "B03": 0, "B04": 0, "B08": 0}
 _CLIP_HIGH = {"B02": 2500, "B03": 2000, "B04": 1800, "B08": 3000}
 
 # ── STAC endpoint ──────────────────────────────────────────────────────────────
@@ -72,7 +71,8 @@ _DEFAULT_DATE_RANGE = "2024-06-01/2024-12-31"
 # 1. STAC scene discovery
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _find_best_scene(lat: float, lon: float, date_range: str, max_cloud: float = 5.0) -> Optional[dict]:
+
+def _find_best_scene(lat: float, lon: float, date_range: str, max_cloud: float = 5.0) -> dict | None:
     """
     Return metadata dict for the clearest Sentinel-2 scene covering (lon, lat).
     Uses pystac-client if available; falls back to raw STAC API otherwise.
@@ -80,6 +80,7 @@ def _find_best_scene(lat: float, lon: float, date_range: str, max_cloud: float =
     """
     try:
         from pystac_client import Client
+
         cat = Client.open(_EARTH_SEARCH)
         results = cat.search(
             collections=[_S2_COLLECTION],
@@ -94,10 +95,10 @@ def _find_best_scene(lat: float, lon: float, date_range: str, max_cloud: float =
             return None
         best = items[0]
         return {
-            "id":          best.id,
+            "id": best.id,
             "cloud_cover": best.properties.get("eo:cloud_cover", 99),
-            "datetime":    best.properties.get("datetime", ""),
-            "assets":      {k: v.href for k, v in best.assets.items()},
+            "datetime": best.properties.get("datetime", ""),
+            "assets": {k: v.href for k, v in best.assets.items()},
         }
     except Exception as exc:
         log.warning("pystac-client search failed (%s) — falling back to raw API", exc)
@@ -107,11 +108,11 @@ def _find_best_scene(lat: float, lon: float, date_range: str, max_cloud: float =
         url = f"{_EARTH_SEARCH}/search"
         payload = {
             "collections": [_S2_COLLECTION],
-            "intersects":  {"type": "Point", "coordinates": [lon, lat]},
-            "datetime":    date_range,
-            "query":       {"eo:cloud_cover": {"lt": max_cloud}},
-            "sortby":      [{"field": "eo:cloud_cover", "direction": "asc"}],
-            "limit":       5,
+            "intersects": {"type": "Point", "coordinates": [lon, lat]},
+            "datetime": date_range,
+            "query": {"eo:cloud_cover": {"lt": max_cloud}},
+            "sortby": [{"field": "eo:cloud_cover", "direction": "asc"}],
+            "limit": 5,
         }
         resp = requests.post(url, json=payload, timeout=30)
         resp.raise_for_status()
@@ -120,29 +121,30 @@ def _find_best_scene(lat: float, lon: float, date_range: str, max_cloud: float =
             return None
         best = features[0]
         return {
-            "id":          best["id"],
+            "id": best["id"],
             "cloud_cover": best["properties"].get("eo:cloud_cover", 99),
-            "datetime":    best["properties"].get("datetime", ""),
-            "assets":      {k: v["href"] for k, v in best["assets"].items()},
+            "datetime": best["properties"].get("datetime", ""),
+            "assets": {k: v["href"] for k, v in best["assets"].items()},
         }
     except Exception as exc2:
         log.error("Raw STAC API search also failed: %s", exc2)
         return None
 
 
-def _find_scene_by_id(scene_id: str) -> Optional[dict]:
+def _find_scene_by_id(scene_id: str) -> dict | None:
     """Fetch a specific STAC item by scene_id."""
     try:
         from pystac_client import Client
+
         cat = Client.open(_EARTH_SEARCH)
         item = cat.get_collection(_S2_COLLECTION).get_item(scene_id)
         if item is None:
             raise ValueError("Not found")
         return {
-            "id":          item.id,
+            "id": item.id,
             "cloud_cover": item.properties.get("eo:cloud_cover", 99),
-            "datetime":    item.properties.get("datetime", ""),
-            "assets":      {k: v.href for k, v in item.assets.items()},
+            "datetime": item.properties.get("datetime", ""),
+            "assets": {k: v.href for k, v in item.assets.items()},
         }
     except Exception:
         pass
@@ -153,10 +155,10 @@ def _find_scene_by_id(scene_id: str) -> Optional[dict]:
         resp.raise_for_status()
         best = resp.json()
         return {
-            "id":          best["id"],
+            "id": best["id"],
             "cloud_cover": best["properties"].get("eo:cloud_cover", 99),
-            "datetime":    best["properties"].get("datetime", ""),
-            "assets":      {k: v["href"] for k, v in best["assets"].items()},
+            "datetime": best["properties"].get("datetime", ""),
+            "assets": {k: v["href"] for k, v in best["assets"].items()},
         }
     except Exception as exc:
         log.error("Scene lookup by ID failed: %s", exc)
@@ -167,7 +169,8 @@ def _find_scene_by_id(scene_id: str) -> Optional[dict]:
 # 2. Band download and patch extraction
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _band_url(assets: dict, band: str) -> Optional[str]:
+
+def _band_url(assets: dict, band: str) -> str | None:
     """Resolve asset URL for *band* (e.g. 'B02') across Earth Search / PC naming schemes."""
     aliases = _BAND_ALIASES.get(band, [band])
     for alias in aliases:
@@ -185,7 +188,7 @@ def _download_band_window(
     lon: float,
     lat: float,
     patch_px: int,
-) -> Optional[np.ndarray]:
+) -> np.ndarray | None:
     """
     Open a COG band from *href*, extract a *patch_px* × *patch_px* window
     centred on (*lon*, *lat*), and return the raw DN array (int16 / uint16).
@@ -197,6 +200,7 @@ def _download_band_window(
             # Convert geographic coords to pixel coords in the raster's CRS
             if src.crs and src.crs.to_epsg() != 4326:
                 from pyproj import Transformer
+
                 xformer = Transformer.from_crs("EPSG:4326", src.crs.to_epsg(), always_xy=True)
                 px, py = xformer.transform(lon, lat)
             else:
@@ -213,7 +217,7 @@ def _download_band_window(
             col_off = max(0, col_f - half)
             row_off = max(0, row_f - half)
             # Clamp to raster dimensions
-            col_off = min(col_off, src.width  - patch_px)
+            col_off = min(col_off, src.width - patch_px)
             row_off = min(row_off, src.height - patch_px)
 
             window = Window.from_slices(
@@ -248,7 +252,7 @@ def extract_patch(
     lat: float,
     assets: dict,
     patch_px: int = PATCH_PX,
-) -> Optional[np.ndarray]:
+) -> np.ndarray | None:
     """
     Extract a normalised (4, patch_px, patch_px) float32 array from *assets*
     for the point (*lon*, *lat*).
@@ -275,11 +279,12 @@ def extract_patch(
 # 3. Dataset builder
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def build_dataset(
     labels_path: str | Path,
     output_dir: str | Path,
     *,
-    scene_id: Optional[str] = None,
+    scene_id: str | None = None,
     date_range: str = _DEFAULT_DATE_RANGE,
     patch_px: int = PATCH_PX,
     val_fraction: float = 0.2,
@@ -305,12 +310,12 @@ def build_dataset(
     dict with counts: n_reef_train, n_reef_val, n_sand_train, n_sand_val, n_failed.
     """
     labels_path = Path(labels_path)
-    output_dir  = Path(output_dir)
+    output_dir = Path(output_dir)
 
     with open(labels_path) as f:
         manifest = json.load(f)
 
-    labels: List[dict] = manifest["labels"]   # [{lon, lat, class, source}, ...]
+    labels: list[dict] = manifest["labels"]  # [{lon, lat, class, source}, ...]
     log.info("Loaded %d labels from %s", len(labels), labels_path)
 
     # Resolve scene (shared across all labels — Algarve fits in one S2 tile)
@@ -325,12 +330,13 @@ def build_dataset(
         scene = _find_best_scene(ref["lat"], ref["lon"], date_range, max_cloud)
         if scene is None:
             raise RuntimeError(
-                f"No clean S2 scene found in {date_range} (cloud<{max_cloud}%) "
-                f"for point ({ref['lat']}, {ref['lon']})"
+                f"No clean S2 scene found in {date_range} (cloud<{max_cloud}%) " f"for point ({ref['lat']}, {ref['lon']})"
             )
     log.info(
         "Using scene: %s  cloud=%.2f%%  date=%s",
-        scene["id"], scene["cloud_cover"], scene["datetime"][:10],
+        scene["id"],
+        scene["cloud_cover"],
+        scene["datetime"][:10],
     )
 
     assets = scene["assets"]
@@ -371,11 +377,11 @@ def build_dataset(
 
     summary = {
         **counters,
-        "scene_id":    scene["id"],
-        "scene_date":  scene["datetime"][:10],
-        "patch_px":    patch_px,
-        "n_channels":  4,
-        "bands":       BANDS,
+        "scene_id": scene["id"],
+        "scene_date": scene["datetime"][:10],
+        "patch_px": patch_px,
+        "n_channels": 4,
+        "bands": BANDS,
     }
     summary_path = output_dir / "patch_manifest.json"
     with open(summary_path, "w") as f:
@@ -383,8 +389,11 @@ def build_dataset(
 
     log.info(
         "Patch extraction complete: reef=%d+%d  sand=%d+%d  failed=%d  → %s",
-        counters["n_reef_train"], counters["n_reef_val"],
-        counters["n_sand_train"], counters["n_sand_val"],
-        counters["n_failed"], output_dir,
+        counters["n_reef_train"],
+        counters["n_reef_val"],
+        counters["n_sand_train"],
+        counters["n_sand_val"],
+        counters["n_failed"],
+        output_dir,
     )
     return summary

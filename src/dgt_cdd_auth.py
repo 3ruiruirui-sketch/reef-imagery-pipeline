@@ -23,7 +23,6 @@ import os
 import re
 import secrets
 from html.parser import HTMLParser
-from typing import Optional
 from urllib.parse import urlencode
 
 import requests
@@ -31,12 +30,11 @@ import requests
 log = logging.getLogger(__name__)
 
 _KC_AUTH_HOST = "https://auth.cdd.dgterritorio.gov.pt"
-_KC_AUTH_URL  = (f"{_KC_AUTH_HOST}/realms/dgterritorio"
-                 "/protocol/openid-connect/auth")
-_CDD_CLIENT   = "aai-oidc-dgt"
+_KC_AUTH_URL = f"{_KC_AUTH_HOST}/realms/dgterritorio" "/protocol/openid-connect/auth"
+_CDD_CLIENT = "aai-oidc-dgt"
 _CDD_CALLBACK = "https://cdd.dgterritorio.gov.pt/auth/callback"
-_CDD_BACKEND  = "https://cdd.dgterritorio.gov.pt/dgt-be"
-_CDD_MAIN     = "https://cdd.dgterritorio.gov.pt"
+_CDD_BACKEND = "https://cdd.dgterritorio.gov.pt/dgt-be"
+_CDD_MAIN = "https://cdd.dgterritorio.gov.pt"
 
 _BROWSER_HEADERS = {
     "User-Agent": (
@@ -48,7 +46,7 @@ _BROWSER_HEADERS = {
     "Upgrade-Insecure-Requests": "1",
 }
 
-_session: Optional[requests.Session] = None
+_session: requests.Session | None = None
 
 
 class _KeycloakFormParser(HTMLParser):
@@ -56,7 +54,7 @@ class _KeycloakFormParser(HTMLParser):
 
     def __init__(self) -> None:
         super().__init__()
-        self.form_action: Optional[str] = None
+        self.form_action: str | None = None
         self.form_data: dict[str, str] = {}
         self._in_form = False
 
@@ -75,7 +73,7 @@ class _KeycloakFormParser(HTMLParser):
             self._in_form = False
 
 
-def _login_keycloak_direct() -> Optional[requests.Session]:
+def _login_keycloak_direct() -> requests.Session | None:
     """
     Authenticate via direct Keycloak form POST (no PKCE).
 
@@ -92,7 +90,7 @@ def _login_keycloak_direct() -> Optional[requests.Session]:
       5. Success when the final URL lands back on the main site.
     """
     user = os.environ.get("DGT_CDD_USERNAME")
-    pwd  = os.environ.get("DGT_CDD_PASSWORD")
+    pwd = os.environ.get("DGT_CDD_PASSWORD")
     if not user or not pwd:
         log.warning(
             "DGT_CDD_USERNAME / DGT_CDD_PASSWORD not set. "
@@ -138,18 +136,15 @@ def _login_keycloak_direct() -> Optional[requests.Session]:
             "Origin": _KC_AUTH_HOST,
             "Referer": r1.url,
         }
-        r2 = sess.post(action, data=login_data, headers=login_headers,
-                       allow_redirects=True, timeout=30)
+        r2 = sess.post(action, data=login_data, headers=login_headers, allow_redirects=True, timeout=30)
 
         # Step 5 — success criterion: ended up back on the main site
         if not r2.url.startswith(_CDD_MAIN):
-            msg = re.search(r'(?:alert-error|kc-feedback-text)[^>]*>([^<]+)', r2.text)
-            log.error("DGT CDD (direct) login failed: %s",
-                      msg.group(1).strip() if msg else f"final URL {r2.url}")
+            msg = re.search(r"(?:alert-error|kc-feedback-text)[^>]*>([^<]+)", r2.text)
+            log.error("DGT CDD (direct) login failed: %s", msg.group(1).strip() if msg else f"final URL {r2.url}")
             return None
 
-        if not any(c.name in {"connect.sid", "auth_session", "JSESSIONID"}
-                   for c in sess.cookies):
+        if not any(c.name in {"connect.sid", "auth_session", "JSESSIONID"} for c in sess.cookies):
             log.warning("DGT CDD (direct): no recognised session cookie after auth")
 
         log.info("DGT CDD: authenticated via direct Keycloak flow")
@@ -163,14 +158,14 @@ def _login_keycloak_direct() -> Optional[requests.Session]:
         return None
 
 
-def _login_pkce() -> Optional[requests.Session]:
+def _login_pkce() -> requests.Session | None:
     """Perform PKCE + BFF flow. Returns an authenticated Session or None.
 
     Kept as a fallback. The direct Keycloak flow (see _login_keycloak_direct)
     is preferred because its cookies also work for asset href downloads.
     """
     user = os.environ.get("DGT_CDD_USERNAME")
-    pwd  = os.environ.get("DGT_CDD_PASSWORD")
+    pwd = os.environ.get("DGT_CDD_PASSWORD")
     if not user or not pwd:
         log.warning(
             "DGT_CDD_USERNAME / DGT_CDD_PASSWORD not set. "
@@ -181,17 +176,23 @@ def _login_pkce() -> Optional[requests.Session]:
     sess = requests.Session()
     try:
         # PKCE
-        verifier  = secrets.token_urlsafe(48)
-        challenge = base64.urlsafe_b64encode(
-            hashlib.sha256(verifier.encode()).digest()
-        ).rstrip(b"=").decode()
+        verifier = secrets.token_urlsafe(48)
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
 
         # Step 1 — Keycloak login page
-        r = sess.get(_KC_AUTH_URL, params={
-            "client_id": _CDD_CLIENT, "response_type": "code",
-            "redirect_uri": _CDD_CALLBACK, "scope": "openid profile email",
-            "code_challenge": challenge, "code_challenge_method": "S256",
-        }, timeout=15, allow_redirects=True)
+        r = sess.get(
+            _KC_AUTH_URL,
+            params={
+                "client_id": _CDD_CLIENT,
+                "response_type": "code",
+                "redirect_uri": _CDD_CALLBACK,
+                "scope": "openid profile email",
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+            },
+            timeout=15,
+            allow_redirects=True,
+        )
         r.raise_for_status()
 
         action = re.search(r'action=["\']([^"\']+)["\']', r.text)
@@ -203,14 +204,12 @@ def _login_pkce() -> Optional[requests.Session]:
         r2 = sess.post(
             action.group(1).replace("&amp;", "&"),
             data={"username": user, "password": pwd, "credentialId": ""},
-            timeout=15, allow_redirects=False,
+            timeout=15,
+            allow_redirects=False,
         )
         if r2.status_code not in (301, 302):
-            msg = re.search(
-                r'(?:alert-error|kc-feedback-text)[^>]*>([^<]+)', r2.text
-            )
-            log.error("DGT CDD login failed: %s",
-                      msg.group(1).strip() if msg else f"HTTP {r2.status_code}")
+            msg = re.search(r"(?:alert-error|kc-feedback-text)[^>]*>([^<]+)", r2.text)
+            log.error("DGT CDD login failed: %s", msg.group(1).strip() if msg else f"HTTP {r2.status_code}")
             return None
 
         # Step 3 — BFF /auth/callback sets session cookies
@@ -229,11 +228,10 @@ def _login_pkce() -> Optional[requests.Session]:
 
 
 def _is_session_alive(sess: requests.Session) -> bool:
-    return any(c.name in {"connect.sid", "auth_session", "JSESSIONID"}
-               for c in sess.cookies)
+    return any(c.name in {"connect.sid", "auth_session", "JSESSIONID"} for c in sess.cookies)
 
 
-def get_cdd_session(force_refresh: bool = False) -> Optional[requests.Session]:
+def get_cdd_session(force_refresh: bool = False) -> requests.Session | None:
     """Return a cached authenticated Session, logging in if needed.
 
     Tries the direct Keycloak flow first; falls back to PKCE/BFF if it fails.
@@ -256,7 +254,7 @@ def invalidate() -> None:
     _session = None
 
 
-def get_signed_url(collection: str, item_id: str) -> Optional[str]:
+def get_signed_url(collection: str, item_id: str) -> str | None:
     """
     Return a download URL for a DGT STAC item via the authenticated CDD backend.
 
@@ -293,14 +291,13 @@ def get_signed_url(collection: str, item_id: str) -> Optional[str]:
             r = sess.get(url, timeout=15)
 
         if r.status_code != 200:
-            log.warning("CDD item lookup failed: HTTP %d — %s/%s",
-                        r.status_code, collection, item_id)
+            log.warning("CDD item lookup failed: HTTP %d — %s/%s", r.status_code, collection, item_id)
             return None
 
         assets = r.json().get("data", {}).get("assets", {})
         # Prefer the proxied download asset ("data"); the raw-bucket "visual"
         # asset is a last resort (returns 403 for private CDD buckets).
-        asset = (assets.get("data") or assets.get("Data") or assets.get("visual"))
+        asset = assets.get("data") or assets.get("Data") or assets.get("visual")
         if not asset:
             return None
 
@@ -311,8 +308,9 @@ def get_signed_url(collection: str, item_id: str) -> Optional[str]:
             href = "https://cdd.dgterritorio.gov.pt" + href
         if "stor-002" in href and "/dgt-be/v1/download/" not in href:
             log.warning(
-                "CDD %s/%s exposes only a raw private-bucket URL (no proxy "
-                "download) — not downloadable via CDD.", collection, item_id
+                "CDD %s/%s exposes only a raw private-bucket URL (no proxy " "download) — not downloadable via CDD.",
+                collection,
+                item_id,
             )
         return href
 

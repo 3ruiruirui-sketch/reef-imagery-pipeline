@@ -10,7 +10,9 @@ Arquitetura canónica (ver reef_pipeline_system_prompt_v2.md):
   - Decoder: ConvTranspose2d + DoubleConv em cada nível
   - Output: sigmoid [0, 1] aplicado internamente em forward()
 """
+
 import logging
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -20,15 +22,19 @@ log = logging.getLogger(__name__)
 
 # ── Bloco base ────────────────────────────────────────────────────────────────
 
+
 class DoubleConv(nn.Module):
     """Dois Conv2d → BatchNorm → ReLU consecutivos."""
+
     def __init__(self, in_ch: int, out_ch: int):
         super().__init__()
         self.net = nn.Sequential(
             nn.Conv2d(in_ch, out_ch, 3, padding=1, bias=False),
-            nn.BatchNorm2d(out_ch), nn.ReLU(inplace=True),
+            nn.BatchNorm2d(out_ch),
+            nn.ReLU(inplace=True),
             nn.Conv2d(out_ch, out_ch, 3, padding=1, bias=False),
-            nn.BatchNorm2d(out_ch), nn.ReLU(inplace=True),
+            nn.BatchNorm2d(out_ch),
+            nn.ReLU(inplace=True),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -36,6 +42,7 @@ class DoubleConv(nn.Module):
 
 
 # ── Arquitectura canónica ─────────────────────────────────────────────────────
+
 
 class ReefUNet(nn.Module):
     """
@@ -56,13 +63,14 @@ class ReefUNet(nn.Module):
     NUNCA chamar .cuda() ou .to('cuda') — esta máquina não tem GPU.
     NUNCA importar segmentation-models-pytorch — não está instalado no HPC.
     """
+
     def __init__(self, in_channels: int = 1, features: list = None):
         super().__init__()
         if features is None:
             features = [64, 128, 256, 512]
-        self.downs      = nn.ModuleList()
-        self.ups        = nn.ModuleList()
-        self.pool       = nn.MaxPool2d(2, 2)
+        self.downs = nn.ModuleList()
+        self.ups = nn.ModuleList()
+        self.pool = nn.MaxPool2d(2, 2)
         ch = in_channels
         for f in features:
             self.downs.append(DoubleConv(ch, f))
@@ -94,17 +102,18 @@ class ReefUNet(nn.Module):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
 
-def load_trained_model(checkpoint_path: str, device: str = 'cpu') -> ReefUNet:
+def load_trained_model(checkpoint_path: str, device: str = "cpu") -> ReefUNet:
     """Carrega ReefUNet de um ficheiro de pesos e coloca em modo eval."""
     model = ReefUNet().to(device)
     state = torch.load(checkpoint_path, map_location=device, weights_only=True)
     model.load_state_dict(state)
     model.eval()
-    log.info('ReefUNet carregado: %s  (%d params)', checkpoint_path, model.num_parameters)
+    log.info("ReefUNet carregado: %s  (%d params)", checkpoint_path, model.num_parameters)
     return model
 
 
 # ── Loss & Métricas ───────────────────────────────────────────────────────────
+
 
 class _ReefLoss(nn.Module):
     """
@@ -114,6 +123,7 @@ class _ReefLoss(nn.Module):
     pos_weight: peso dos pixels positivos (recife) vs negativos (fundo).
     Dataset: ≈ 94% patches vazios → usar pos_weight ≈ 10 para não colapsar.
     """
+
     def __init__(self, pos_weight: float = 10.0):
         super().__init__()
         self._pw = pos_weight
@@ -139,8 +149,7 @@ def get_loss_function(pos_weight: float = 10.0) -> _ReefLoss:
     return _ReefLoss(pos_weight=pos_weight)
 
 
-def calculate_iou(probs: torch.Tensor, targets: torch.Tensor,
-                  threshold: float = 0.5) -> float:
+def calculate_iou(probs: torch.Tensor, targets: torch.Tensor, threshold: float = 0.5) -> float:
     """
     Binary IoU (Jaccard) para saídas sigmoid do ReefUNet.
 

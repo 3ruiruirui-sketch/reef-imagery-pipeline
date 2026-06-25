@@ -23,24 +23,21 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from functools import lru_cache
-from typing import Optional
 
 import requests
 
 log = logging.getLogger(__name__)
 
-_WAVE_URL  = ("https://api.ipma.pt/open-data/forecast/oceanography/daily/"
-              "hp-daily-sea-forecast-day0.json")
-_WIND_URL  = ("https://api.ipma.pt/open-data/observation/meteorology/stations/"
-              "observations.json")
-_TIMEOUT   = 10  # seconds
+_WAVE_URL = "https://api.ipma.pt/open-data/forecast/oceanography/daily/" "hp-daily-sea-forecast-day0.json"
+_WIND_URL = "https://api.ipma.pt/open-data/observation/meteorology/stations/" "observations.json"
+_TIMEOUT = 10  # seconds
 
 # Algarve station IDs confirmed from live API (lat ~37N, lon ~-8 to -9W)
 # globalIdLocal values for the three nearest marine stations
 _ALGARVE_STATION_IDS = {1080526, 1081526}  # Faro/Sagres area
 
 # Defaults matching IPMA Beaufort scale dive-condition thresholds
-_DEFAULT_MAX_WAVE_M  = 1.5   # metres (significant wave height)
+_DEFAULT_MAX_WAVE_M = 1.5  # metres (significant wave height)
 _DEFAULT_MAX_WIND_MS = 10.0  # m/s  (~Beaufort 5)
 
 
@@ -90,10 +87,12 @@ def _algarve_wave_conditions() -> dict:
     """
     stations = _fetch_wave_forecast()
     algarve = [
-        s for s in stations
+        s
+        for s in stations
         if s.get("globalIdLocal") in _ALGARVE_STATION_IDS
         or (
-            s.get("latitude") is not None and s.get("longitude") is not None
+            s.get("latitude") is not None
+            and s.get("longitude") is not None
             and 36.5 <= float(s["latitude"]) <= 37.6
             and -9.5 <= float(s["longitude"]) <= -7.0
         )
@@ -105,19 +104,19 @@ def _algarve_wave_conditions() -> dict:
     # Return worst-case (highest wave) across stations
     worst = max(algarve, key=lambda s: _safe_float(s.get("waveHighMax")))
     return {
-        "wave_high_max_m":  _safe_float(worst.get("waveHighMax")),
-        "wave_high_min_m":  _safe_float(worst.get("waveHighMin")),
-        "total_sea_max_m":  _safe_float(worst.get("totalSeaMax")),
+        "wave_high_max_m": _safe_float(worst.get("waveHighMax")),
+        "wave_high_min_m": _safe_float(worst.get("waveHighMin")),
+        "total_sea_max_m": _safe_float(worst.get("totalSeaMax")),
         "wave_period_max_s": _safe_float(worst.get("wavePeriodMax")),
-        "pred_wave_dir":    worst.get("predWaveDir", "?"),
-        "sst_max_c":        _safe_float(worst.get("sstMax")),
-        "station_id":       worst.get("globalIdLocal"),
-        "station_lat":      _safe_float(worst.get("latitude")),
-        "station_lon":      _safe_float(worst.get("longitude")),
+        "pred_wave_dir": worst.get("predWaveDir", "?"),
+        "sst_max_c": _safe_float(worst.get("sstMax")),
+        "station_id": worst.get("globalIdLocal"),
+        "station_lat": _safe_float(worst.get("latitude")),
+        "station_lon": _safe_float(worst.get("longitude")),
     }
 
 
-def _algarve_wind_ms() -> Optional[float]:
+def _algarve_wind_ms() -> float | None:
     """
     Return the maximum wind speed in m/s from the most recent observation
     at Algarve-area meteorological stations only.
@@ -167,14 +166,14 @@ def get_conditions(date: str | None = None) -> dict:
     wind = _algarve_wind_ms()
 
     result = {
-        "wave_high_max_m":  wave.get("wave_high_max_m"),
-        "total_sea_max_m":  wave.get("total_sea_max_m"),
+        "wave_high_max_m": wave.get("wave_high_max_m"),
+        "total_sea_max_m": wave.get("total_sea_max_m"),
         "wave_period_max_s": wave.get("wave_period_max_s"),
-        "pred_wave_dir":    wave.get("pred_wave_dir"),
-        "sst_max_c":        wave.get("sst_max_c"),
-        "wind_speed_ms":    wind,
-        "source":           "IPMA day-0 forecast",
-        "fetch_date":       datetime.now(timezone.utc).date().isoformat(),
+        "pred_wave_dir": wave.get("pred_wave_dir"),
+        "sst_max_c": wave.get("sst_max_c"),
+        "wind_speed_ms": wind,
+        "source": "IPMA day-0 forecast",
+        "fetch_date": datetime.now(timezone.utc).date().isoformat(),
     }
 
     # Derive usability under default thresholds
@@ -210,30 +209,34 @@ def is_scene_usable(
     wind = _algarve_wind_ms()
 
     if not wave:
-        log.warning(
-            "IPMA sea-state data unavailable for %s — accepting scene (fail-open).", date
-        )
+        log.warning("IPMA sea-state data unavailable for %s — accepting scene (fail-open).", date)
         return True
 
     wave_h = wave.get("wave_high_max_m", 0.0)
     if wave_h > max_wave_m:
         log.info(
-            "Scene %s SKIPPED — wave height %.1f m > %.1f m threshold "
-            "(dir=%s, station=%s)",
-            date, wave_h, max_wave_m,
-            wave.get("pred_wave_dir", "?"), wave.get("station_id"),
+            "Scene %s SKIPPED — wave height %.1f m > %.1f m threshold " "(dir=%s, station=%s)",
+            date,
+            wave_h,
+            max_wave_m,
+            wave.get("pred_wave_dir", "?"),
+            wave.get("station_id"),
         )
         return False
 
     if wind is not None and wind > max_wind_ms:
         log.info(
             "Scene %s SKIPPED — wind speed %.1f m/s > %.1f m/s threshold",
-            date, wind, max_wind_ms,
+            date,
+            wind,
+            max_wind_ms,
         )
         return False
 
     log.debug(
         "Scene %s ACCEPTED — wave %.1f m, wind %s m/s",
-        date, wave_h, f"{wind:.1f}" if wind is not None else "n/a",
+        date,
+        wave_h,
+        f"{wind:.1f}" if wind is not None else "n/a",
     )
     return True

@@ -29,17 +29,16 @@ import logging
 import math
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import requests
 
 log = logging.getLogger(__name__)
 
-_OA_URL   = "https://openaltimetry.earthdatacloud.nasa.gov/data/api/icesat2/atl08"
-_TIMEOUT  = 15  # seconds per request
-_SEARCH_DAYS = 180       # ±days around the scene date to search for passes
-_TRACK_IDS   = list(range(1, 15))  # ICESat-2 has 3 beams × 2 sides; try IDs 1-14
+_OA_URL = "https://openaltimetry.earthdatacloud.nasa.gov/data/api/icesat2/atl08"
+_TIMEOUT = 15  # seconds per request
+_SEARCH_DAYS = 180  # ±days around the scene date to search for passes
+_TRACK_IDS = list(range(1, 15))  # ICESat-2 has 3 beams × 2 sides; try IDs 1-14
 
 # Maximum allowed depth for SDB comparison (optical limit)
 _SDB_MAX_DEPTH_M = 40.0
@@ -51,6 +50,7 @@ _MAX_ATL08_DEPTH_M = 35.0  # discard photons deeper than this (noise/deep water)
 
 # ── OpenAltimetry fetch ───────────────────────────────────────────────────────
 
+
 def _fetch_atl08_for_date(
     bbox: tuple[float, float, float, float],
     query_date: str,
@@ -61,8 +61,10 @@ def _fetch_atl08_for_date(
     Returns a list of photon dicts, or [] on error / no data.
     """
     params = {
-        "minx": bbox[0], "miny": bbox[1],
-        "maxx": bbox[2], "maxy": bbox[3],
+        "minx": bbox[0],
+        "miny": bbox[1],
+        "maxx": bbox[2],
+        "maxy": bbox[3],
         "date": query_date,
         "trackId": track_id,
         "outputFormat": "json",
@@ -103,8 +105,7 @@ def _search_atl08(
 
     all_photons: list[dict] = []
     dates_to_try = [
-        (centre + timedelta(days=d)).isoformat()
-        for d in range(-search_days, search_days + 1, 7)  # weekly sampling
+        (centre + timedelta(days=d)).isoformat() for d in range(-search_days, search_days + 1, 7)  # weekly sampling
     ]
 
     for query_date in dates_to_try:
@@ -113,7 +114,9 @@ def _search_atl08(
             if pts:
                 log.info(
                     "ATL08: %d photons on %s track=%d over bbox",
-                    len(pts), query_date, track_id,
+                    len(pts),
+                    query_date,
+                    track_id,
                 )
                 all_photons.extend(pts)
                 # Once we have enough points, stop searching this date
@@ -126,6 +129,7 @@ def _search_atl08(
 
 
 # ── SDB raster sampling ───────────────────────────────────────────────────────
+
 
 def _sample_sdb_at_points(
     depth_map_path: str | Path,
@@ -162,13 +166,14 @@ def _sample_sdb_at_points(
 
 # ── Validation report ─────────────────────────────────────────────────────────
 
+
 def run_icesat2_validation(
     depth_map_path: str | Path,
     output_dir: str | Path,
     scene_date: str | None = None,
     bbox: tuple[float, float, float, float] | None = None,
     search_days: int = _SEARCH_DAYS,
-) -> Optional[dict]:
+) -> dict | None:
     """
     Validate SDB depth map against ICESat-2 ATL08 photon data.
 
@@ -205,6 +210,7 @@ def run_icesat2_validation(
         try:
             import rasterio
             from pyproj import Transformer
+
             with rasterio.open(str(depth_map_path)) as src:
                 if bbox is None:
                     b = src.bounds
@@ -215,6 +221,7 @@ def run_icesat2_validation(
                 if scene_date is None:
                     # Extract date from filename: supports YYYY-MM-DD, YYYY_MM_DD, YYYYMMDD
                     import re
+
                     m = re.search(r"(20\d{2})([-_]?)(\d{2})\2(\d{2})", depth_map_path.stem)
                     if m:
                         scene_date = f"{m.group(1)}-{m.group(3)}-{m.group(4)}"
@@ -228,7 +235,9 @@ def run_icesat2_validation(
 
     log.info(
         "ICESat-2 validation: bbox=%s  date=%s  ±%d days",
-        bbox, scene_date, search_days,
+        bbox,
+        scene_date,
+        search_days,
     )
 
     # ── Fetch ATL08 photons ───────────────────────────────────────────────────
@@ -255,7 +264,7 @@ def run_icesat2_validation(
     for p in photons:
         lat = p.get("lat") or p.get("latitude")
         lon = p.get("lon") or p.get("longitude")
-        h   = p.get("h")  or p.get("height") or p.get("elevation")
+        h = p.get("h") or p.get("height") or p.get("elevation")
         if lat is not None and lon is not None and h is not None:
             lats.append(float(lat))
             lons.append(float(lon))
@@ -273,8 +282,8 @@ def run_icesat2_validation(
             json.dump(report, f, indent=2)
         return report
 
-    lats  = np.array(lats)
-    lons  = np.array(lons)
+    lats = np.array(lats)
+    lons = np.array(lons)
     elevs = np.array(elevs)
 
     # Filter: keep only photons with negative elevation (below sea surface)
@@ -286,7 +295,9 @@ def run_icesat2_validation(
 
     log.info(
         "ATL08: %d total photons, %d in shallow-water depth range (0–%.0f m)",
-        len(elevs), int(depth_mask.sum()), _MAX_ATL08_DEPTH_M,
+        len(elevs),
+        int(depth_mask.sum()),
+        _MAX_ATL08_DEPTH_M,
     )
 
     if len(icesat_depth) < 5:
@@ -327,12 +338,12 @@ def run_icesat2_validation(
 
     # ── Metrics ───────────────────────────────────────────────────────────────
     icesat_v = icesat_depth[valid]
-    sdb_v    = sdb_depths[valid]
+    sdb_v = sdb_depths[valid]
     residuals = sdb_v - icesat_v
 
-    rmse = float(np.sqrt(np.mean(residuals ** 2)))
+    rmse = float(np.sqrt(np.mean(residuals**2)))
     bias = float(np.mean(residuals))
-    mae  = float(np.mean(np.abs(residuals)))
+    mae = float(np.mean(np.abs(residuals)))
 
     # Pearson r (requires ≥2 distinct values)
     if icesat_v.std() > 1e-6 and sdb_v.std() > 1e-6:
@@ -354,9 +365,9 @@ def run_icesat2_validation(
         "mae_m": round(mae, 4),
         "pearson_r": round(r_val, 4) if not math.isnan(r_val) else None,
         "icesat2_depth_mean_m": round(float(icesat_v.mean()), 3),
-        "icesat2_depth_std_m":  round(float(icesat_v.std()), 3),
-        "sdb_depth_mean_m":     round(float(sdb_v.mean()), 3),
-        "sdb_depth_std_m":      round(float(sdb_v.std()), 3),
+        "icesat2_depth_std_m": round(float(icesat_v.std()), 3),
+        "sdb_depth_mean_m": round(float(sdb_v.mean()), 3),
+        "sdb_depth_std_m": round(float(sdb_v.std()), 3),
         "interpretation": (
             f"SDB vs ICESat-2: RMSE={rmse:.2f}m, bias={bias:+.2f}m "
             f"({'over' if bias > 0 else 'under'}estimates depth), N={n_valid}"
@@ -368,6 +379,9 @@ def run_icesat2_validation(
 
     log.info(
         "ICESat-2 validation complete — RMSE=%.2fm  bias=%+.2fm  N=%d  → %s",
-        rmse, bias, n_valid, report_path,
+        rmse,
+        bias,
+        n_valid,
+        report_path,
     )
     return report

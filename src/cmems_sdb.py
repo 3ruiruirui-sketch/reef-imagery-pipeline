@@ -23,22 +23,22 @@ from pathlib import Path
 import numpy as np
 import rasterio
 from rasterio.transform import from_bounds
-from rasterio.warp import calculate_default_transform, reproject, Resampling
+from rasterio.warp import Resampling, reproject
 
 log = logging.getLogger(__name__)
 
 _DATASET_IDS = {
     "composite": "cmems_obs-sdb_glo_phy_comp_my_100m-l4-s2_static",
-    "irte":      "cmems_obs-sdb_glo_phy_irte_my_100m-l4-s2_static",
-    "it":        "cmems_obs-sdb_glo_phy_it_my_100m-l4-s2_static",
-    "wk":        "cmems_obs-sdb_glo_phy_wk_my_100m-l4-s2_static",
+    "irte": "cmems_obs-sdb_glo_phy_irte_my_100m-l4-s2_static",
+    "it": "cmems_obs-sdb_glo_phy_it_my_100m-l4-s2_static",
+    "wk": "cmems_obs-sdb_glo_phy_wk_my_100m-l4-s2_static",
 }
 
-MIN_QI_DEFAULT = 3   # only use High / Very High quality pixels
+MIN_QI_DEFAULT = 3  # only use High / Very High quality pixels
 
 
 def fetch_cmems_sdb(
-    bbox: tuple[float, float, float, float],   # (W, S, E, N) in WGS84
+    bbox: tuple[float, float, float, float],  # (W, S, E, N) in WGS84
     output_path: str | Path,
     method: str = "composite",
     min_qi: int = MIN_QI_DEFAULT,
@@ -90,8 +90,12 @@ def fetch_cmems_sdb(
         log.warning("CMEMS SDB: no valid pixels (QI≥%d, depth<0) in bbox — skipping", min_qi)
         return None
 
-    log.info("CMEMS SDB: %d valid pixels, depth range %.1f–%.1f m",
-             n_valid, float(np.nanmin(depth_neg)), float(np.nanmax(depth_neg)))
+    log.info(
+        "CMEMS SDB: %d valid pixels, depth range %.1f–%.1f m",
+        n_valid,
+        float(np.nanmin(depth_neg)),
+        float(np.nanmax(depth_neg)),
+    )
 
     rows, cols = depth_neg.shape
     transform = from_bounds(W, S, E, N, cols, rows)
@@ -100,9 +104,16 @@ def fetch_cmems_sdb(
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     with rasterio.open(
-        out_path, "w",
-        driver="GTiff", height=rows, width=cols, count=1,
-        dtype="float32", crs="EPSG:4326", transform=transform, nodata=np.nan,
+        out_path,
+        "w",
+        driver="GTiff",
+        height=rows,
+        width=cols,
+        count=1,
+        dtype="float32",
+        crs="EPSG:4326",
+        transform=transform,
+        nodata=np.nan,
     ) as dst:
         dst.write(depth_neg, 1)
 
@@ -120,10 +131,10 @@ def reproject_cmems_to_s2(
     10m Sentinel-2 reference grid (same CRS, transform, size).
     """
     with rasterio.open(s2_reference_path) as ref:
-        dst_crs       = ref.crs
+        dst_crs = ref.crs
         dst_transform = ref.transform
-        dst_width     = ref.width
-        dst_height    = ref.height
+        dst_width = ref.width
+        dst_height = ref.height
 
     with rasterio.open(cmems_path) as src:
         data = np.full((dst_height, dst_width), np.nan, dtype=np.float32)
@@ -142,10 +153,16 @@ def reproject_cmems_to_s2(
     out_path = Path(output_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with rasterio.open(
-        out_path, "w",
-        driver="GTiff", height=dst_height, width=dst_width,
-        count=1, dtype="float32",
-        crs=dst_crs, transform=dst_transform, nodata=np.nan,
+        out_path,
+        "w",
+        driver="GTiff",
+        height=dst_height,
+        width=dst_width,
+        count=1,
+        dtype="float32",
+        crs=dst_crs,
+        transform=dst_transform,
+        nodata=np.nan,
     ) as dst:
         dst.write(data, 1)
 
@@ -170,17 +187,23 @@ def blend_depth_priors(
 
     e_valid = np.isfinite(emodnet_10m)
     c_valid = np.isfinite(cmems_10m)
-    both    = e_valid & c_valid
+    both = e_valid & c_valid
 
     blended = np.full_like(emodnet_10m, np.nan)
     w_e = 1.0 - cmems_weight
-    blended[both]             = w_e * emodnet_10m[both] + cmems_weight * cmems_10m[both]
-    blended[e_valid & ~both]  = emodnet_10m[e_valid & ~both]   # EMODnet only
-    blended[c_valid & ~both]  = cmems_10m[c_valid & ~both]     # CMEMS only
+    blended[both] = w_e * emodnet_10m[both] + cmems_weight * cmems_10m[both]
+    blended[e_valid & ~both] = emodnet_10m[e_valid & ~both]  # EMODnet only
+    blended[c_valid & ~both] = cmems_10m[c_valid & ~both]  # CMEMS only
 
-    n_both  = int(both.sum())
+    n_both = int(both.sum())
     n_eonly = int((e_valid & ~both).sum())
     n_conly = int((c_valid & ~both).sum())
-    log.info("Depth prior blend: %d both (%.0f/%.0f%%), %d EMODnet-only, %d CMEMS-only",
-             n_both, w_e * 100, cmems_weight * 100, n_eonly, n_conly)
+    log.info(
+        "Depth prior blend: %d both (%.0f/%.0f%%), %d EMODnet-only, %d CMEMS-only",
+        n_both,
+        w_e * 100,
+        cmems_weight * 100,
+        n_eonly,
+        n_conly,
+    )
     return blended

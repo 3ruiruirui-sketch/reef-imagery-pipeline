@@ -7,12 +7,12 @@ correlate with sediment resuspension, swell exposure, and water visibility.
 
 Usage:
     from coastal_topography import CoastalTopographyAnalyzer
-    
+
     analyzer = CoastalTopographyAnalyzer(
         bbox=(-8.25, 37.04, -8.17, 37.10),
         output_dir="./outputs/coastal_features"
     )
-    
+
     # Extract features for specific dive sites
     features_df = analyzer.extract_features_for_sites(
         sites=[
@@ -21,10 +21,10 @@ Usage:
         ],
         buffer_m=1000
     )
-    
+
     # Save to CSV / GeoJSON
     features_df.to_csv("coastal_features.csv", index=False)
-    
+
 References:
     - DGT MDT-50cm via STAC: https://dgt-be.a.incd.pt:8081/collections/MDT-50cm/items
     - Sediment resuspension linked to coastal topography: Mahadevan & Archer (2000)
@@ -33,36 +33,40 @@ References:
 
 import base64
 import contextlib
-import logging
 import json
+import logging
 import os
-from pathlib import Path
-from typing import List, Tuple, Dict, Optional
 from datetime import datetime
+from pathlib import Path
+from typing import Optional
 from urllib.parse import urlparse
 
-import requests
-import numpy as np
 import geopandas as gpd
+import numpy as np
 import pandas as pd
-from shapely.geometry import Point, box
+import requests
+from shapely.geometry import Point
 
 try:
     import rasterio
-    from rasterio.merge import merge
     from rasterio.mask import mask
+    from rasterio.merge import merge
+
     HAS_RASTERIO = True
 except ImportError:
     HAS_RASTERIO = False
 
 try:
     from rasterstats import zonal_stats
+
     HAS_RASTERSTATS = True
 except ImportError:
     HAS_RASTERSTATS = False
 
 try:
-    from src.dgt_cdd_auth import get_cdd_session, get_signed_url, invalidate as _cdd_invalidate
+    from src.dgt_cdd_auth import get_cdd_session, get_signed_url
+    from src.dgt_cdd_auth import invalidate as _cdd_invalidate
+
     HAS_CDD_AUTH = True
 except Exception:
     HAS_CDD_AUTH = False
@@ -96,11 +100,13 @@ class CoastalTopographyAnalyzer:
     NODATA_VALUE = -999.0
     NODATA_ALT = -3.4028235e38  # seen in MDT-50cm-193014-04-2024 and similar tiles
 
-    def __init__(self,
-                 bbox: Tuple[float, float, float, float],
-                 output_dir: str = "./outputs/coastal_features",
-                 cache_tiles: bool = True,
-                 dem_source: str = "auto") -> None:
+    def __init__(
+        self,
+        bbox: tuple[float, float, float, float],
+        output_dir: str = "./outputs/coastal_features",
+        cache_tiles: bool = True,
+        dem_source: str = "auto",
+    ) -> None:
         """
         Args:
             bbox: (minx, miny, maxx, maxy) in WGS84 (lon, lat)
@@ -130,11 +136,11 @@ class CoastalTopographyAnalyzer:
         logger.info(f"  BBox (WGS84): {self.bbox}")
         logger.info(f"  Output: {self.output_dir}")
         logger.info(f"  DEM source: {self.dem_source}")
-    
-    def fetch_stac_items(self, limit: int = 50) -> List[Dict]:
+
+    def fetch_stac_items(self, limit: int = 50) -> list[dict]:
         """
         Query DGT STAC endpoint for MDT-50cm items in the bbox.
-        
+
         Returns:
             List of STAC features
         """
@@ -143,10 +149,10 @@ class CoastalTopographyAnalyzer:
             "limit": limit,
             "f": "json",
         }
-        
+
         logger.info(f"Querying DGT STAC: {self.STAC_URL}")
         return self._fetch_stac_items_from(self.STAC_URL, limit=limit)
-    
+
     # ── MinIO/S3 streaming (preferred over full-tile download) ────────────────
 
     def _minio_stream_env(self) -> Optional["rasterio.Env"]:
@@ -168,6 +174,7 @@ class CoastalTopographyAnalyzer:
         try:
             import boto3
             from rasterio.session import AWSSession
+
             host = endpoint.replace("https://", "").replace("http://", "").rstrip("/")
             session = boto3.Session(aws_access_key_id=key, aws_secret_access_key=secret)
             return rasterio.Env(
@@ -183,21 +190,20 @@ class CoastalTopographyAnalyzer:
             return None
 
     @staticmethod
-    def _href_to_vsis3(href: Optional[str]) -> Optional[str]:
+    def _href_to_vsis3(href: str | None) -> str | None:
         """Convert a MinIO HTTPS/s3 asset href into a /vsis3 GDAL path."""
         if not href:
             return None
         if href.startswith("/vsis3/"):
             return href
         if href.startswith("s3://"):
-            return "/vsis3/" + href[len("s3://"):]
+            return "/vsis3/" + href[len("s3://") :]
         parsed = urlparse(href)
         if parsed.scheme in ("http", "https") and parsed.path:
             return "/vsis3/" + parsed.path.lstrip("/")
         return None
 
-    def _stream_crop_to_local(self, href: Optional[str], local_path: Path,
-                              env: Optional["rasterio.Env"]) -> bool:
+    def _stream_crop_to_local(self, href: str | None, local_path: Path, env: Optional["rasterio.Env"]) -> bool:
         """Stream a windowed crop (self.bbox) of a DGT COG from MinIO to a local GeoTIFF.
 
         Reads only the pixels overlapping the analysis bbox via GDAL /vsis3 — no full
@@ -212,34 +218,33 @@ class CoastalTopographyAnalyzer:
             return False
         try:
             from rasterio.warp import transform_bounds
-            from rasterio.windows import from_bounds as window_from_bounds, Window
-            with env:
-                with rasterio.open(vsi) as src:
-                    left, bottom, right, top = transform_bounds(
-                        self.WGS84_CRS, src.crs, *self.bbox, densify_pts=21)
-                    win = window_from_bounds(left, bottom, right, top, src.transform)
-                    win = win.intersection(Window(0, 0, src.width, src.height))
-                    win = win.round_offsets().round_lengths()
-                    if win.width < 1 or win.height < 1:
-                        return False  # no overlap (STAC pre-filters, so unexpected)
-                    data = src.read(1, window=win)
-                    profile = src.profile.copy()
-                    profile.update(
-                        driver="GTiff",
-                        height=int(win.height),
-                        width=int(win.width),
-                        transform=src.window_transform(win),
-                    )
+            from rasterio.windows import Window
+            from rasterio.windows import from_bounds as window_from_bounds
+
+            with env, rasterio.open(vsi) as src:
+                left, bottom, right, top = transform_bounds(self.WGS84_CRS, src.crs, *self.bbox, densify_pts=21)
+                win = window_from_bounds(left, bottom, right, top, src.transform)
+                win = win.intersection(Window(0, 0, src.width, src.height))
+                win = win.round_offsets().round_lengths()
+                if win.width < 1 or win.height < 1:
+                    return False  # no overlap (STAC pre-filters, so unexpected)
+                data = src.read(1, window=win)
+                profile = src.profile.copy()
+                profile.update(
+                    driver="GTiff",
+                    height=int(win.height),
+                    width=int(win.width),
+                    transform=src.window_transform(win),
+                )
             with rasterio.open(local_path, "w", **profile) as dst:
                 dst.write(data, 1)
-            logger.info("Streamed crop %s (%dx%d px) from MinIO",
-                        local_path.name, int(win.width), int(win.height))
+            logger.info("Streamed crop %s (%dx%d px) from MinIO", local_path.name, int(win.width), int(win.height))
             return True
         except Exception as e:
             logger.debug("Stream-crop failed for %s (%s) — falling back to download", href, e)
             return False
 
-    def download_mdt_tiles(self, limit: int = 50) -> List[Path]:
+    def download_mdt_tiles(self, limit: int = 50) -> list[Path]:
         """
         Acquire MDT-50cm tiles for the bbox: stream windowed crops from MinIO when
         credentials are configured, else download full tiles via the CDD signed URL.
@@ -254,7 +259,7 @@ class CoastalTopographyAnalyzer:
         if not features:
             logger.warning("No STAC features found; no tiles to download")
             return []
-        
+
         stream_env = self._minio_stream_env()
         tile_paths = []
         for feat in features:
@@ -296,7 +301,8 @@ class CoastalTopographyAnalyzer:
                     logger.warning(
                         "DGT CDD auth unavailable for %s — "
                         "set DGT_CDD_USERNAME / DGT_CDD_PASSWORD env vars. "
-                        "Falling back to GLO-30.", fname
+                        "Falling back to GLO-30.",
+                        fname,
                     )
 
             try:
@@ -321,7 +327,7 @@ class CoastalTopographyAnalyzer:
 
     # ── MDS-50cm (Digital Surface Model) + Canopy Height Model ────────────────
 
-    def download_mds_tiles(self, limit: int = 50) -> List[Path]:
+    def download_mds_tiles(self, limit: int = 50) -> list[Path]:
         """Download MDS-50cm (Digital Surface Model) tiles from DGT STAC.
 
         MDS includes vegetation canopy and building tops; MDT is bare ground.
@@ -371,7 +377,7 @@ class CoastalTopographyAnalyzer:
                 logger.error(f"Failed to download MDS tile {href}: {exc}")
         return tile_paths
 
-    def build_mds_mosaic(self, tile_paths: Optional[List[Path]] = None) -> Optional[Path]:
+    def build_mds_mosaic(self, tile_paths: list[Path] | None = None) -> Path | None:
         """Merge MDS-50cm tiles into a mosaic GeoTIFF (mirrors build_dem_mosaic)."""
         if not HAS_RASTERIO:
             logger.error("rasterio required for MDS mosaic")
@@ -387,8 +393,8 @@ class CoastalTopographyAnalyzer:
 
         # Reuse the same merge logic as the MDT mosaic
         import rioxarray as rxr
-        from rasterio.merge import merge as _merge
         from rasterio.crs import CRS as RioCRS
+        from rasterio.merge import merge as _merge
 
         try:
             with contextlib.ExitStack() as stack:
@@ -397,9 +403,13 @@ class CoastalTopographyAnalyzer:
                 mosaic = np.where(mosaic <= self.NODATA_ALT * 0.5, self.NODATA_VALUE, mosaic)
                 src_crs = src_files[0].crs
                 meta = src_files[0].meta.copy()
-                meta.update(height=mosaic.shape[1], width=mosaic.shape[2],
-                            transform=mosaic_transform, dtype="float32",
-                            nodata=self.NODATA_VALUE)
+                meta.update(
+                    height=mosaic.shape[1],
+                    width=mosaic.shape[2],
+                    transform=mosaic_transform,
+                    dtype="float32",
+                    nodata=self.NODATA_VALUE,
+                )
 
             tmp = self.tiles_dir / "_mds_mosaic_raw.tif"
             with rasterio.open(str(tmp), "w", **meta) as dst:
@@ -408,8 +418,7 @@ class CoastalTopographyAnalyzer:
             native_crs = RioCRS.from_epsg(3763)
             if src_crs != native_crs:
                 da = rxr.open_rasterio(str(tmp), masked=True)
-                da.rio.reproject(self.NATIVE_CRS).rio.to_raster(
-                    str(self.mds_mosaic_path), dtype="float32")
+                da.rio.reproject(self.NATIVE_CRS).rio.to_raster(str(self.mds_mosaic_path), dtype="float32")
                 tmp.unlink(missing_ok=True)
             else:
                 tmp.rename(self.mds_mosaic_path)
@@ -420,9 +429,7 @@ class CoastalTopographyAnalyzer:
             logger.error(f"MDS mosaic failed: {exc}")
             return None
 
-    def compute_canopy_height(self,
-                              mdt_path: Optional[Path] = None,
-                              mds_path: Optional[Path] = None) -> Optional[Path]:
+    def compute_canopy_height(self, mdt_path: Path | None = None, mds_path: Path | None = None) -> Path | None:
         """Compute Canopy Height Model (CHM = MDS − MDT) and save as GeoTIFF.
 
         For coastal reef sites the CHM represents dune/vegetation height above
@@ -446,8 +453,7 @@ class CoastalTopographyAnalyzer:
             return self.chm_path
 
         try:
-            with rasterio.open(str(mdt_path)) as mdt_src, \
-                 rasterio.open(str(mds_path)) as mds_src:
+            with rasterio.open(str(mdt_path)) as mdt_src, rasterio.open(str(mds_path)) as mds_src:
                 mdt = mdt_src.read(1, masked=True).astype(np.float32)
                 mds = mds_src.read(1, masked=True).astype(np.float32)
                 profile = mdt_src.profile.copy()
@@ -456,6 +462,7 @@ class CoastalTopographyAnalyzer:
             if mdt.shape != mds.shape:
                 logger.warning("MDT/MDS grids differ — reprojecting MDS to match MDT")
                 import rioxarray as rxr
+
                 mdt_da = rxr.open_rasterio(str(mdt_path), masked=True)
                 mds_da = rxr.open_rasterio(str(mds_path), masked=True)
                 mds_da = mds_da.rio.reproject_match(mdt_da)
@@ -469,14 +476,13 @@ class CoastalTopographyAnalyzer:
                 dst.write(chm.astype("float32"), 1)
 
             valid = chm[~np.isnan(chm)]
-            logger.info(f"CHM saved: {self.chm_path}  "
-                        f"mean={np.mean(valid):.2f}m  max={np.max(valid):.2f}m")
+            logger.info(f"CHM saved: {self.chm_path}  " f"mean={np.mean(valid):.2f}m  max={np.max(valid):.2f}m")
             return self.chm_path
         except Exception as exc:
             logger.error(f"CHM computation failed: {exc}")
             return None
 
-    def _fetch_stac_items_from(self, url: str, limit: int = 50) -> List[Dict]:
+    def _fetch_stac_items_from(self, url: str, limit: int = 50) -> list[dict]:
         """Generic STAC item fetch from any DGT collection URL."""
         params = {
             "bbox": f"{self.bbox[0]},{self.bbox[1]},{self.bbox[2]},{self.bbox[3]}",
@@ -497,13 +503,13 @@ class CoastalTopographyAnalyzer:
     # ── Copernicus GLO-30 helpers ──────────────────────────────────────────────
 
     @staticmethod
-    def _read_cdse_credentials() -> Tuple[str, str]:
+    def _read_cdse_credentials() -> tuple[str, str]:
         """Read username/password from ~/.copernicusmarine/.copernicusmarine-credentials."""
         cred_file = CoastalTopographyAnalyzer.CDSE_CRED_FILE
         if not cred_file.exists():
             raise FileNotFoundError(f"CDSE credentials not found: {cred_file}")
         raw = base64.b64decode(cred_file.read_text().strip().rstrip("%")).decode()
-        creds: Dict[str, str] = {}
+        creds: dict[str, str] = {}
         for line in raw.splitlines():
             if "=" in line and not line.startswith("["):
                 k, v = line.split("=", 1)
@@ -512,8 +518,7 @@ class CoastalTopographyAnalyzer:
             return creds["username"], creds["password"]
         except KeyError as exc:
             raise KeyError(
-                f"CDSE credentials file {cred_file} is missing key {exc}. "
-                "Expected 'username' and 'password' entries."
+                f"CDSE credentials file {cred_file} is missing key {exc}. " "Expected 'username' and 'password' entries."
             ) from exc
 
     def _get_cdse_token(self) -> str:
@@ -533,7 +538,7 @@ class CoastalTopographyAnalyzer:
         return resp.json()["access_token"]
 
     @staticmethod
-    def _glo30_tiles_for_bbox(bbox: Tuple[float, float, float, float]) -> List[Tuple[int, int]]:
+    def _glo30_tiles_for_bbox(bbox: tuple[float, float, float, float]) -> list[tuple[int, int]]:
         """Return list of (lat_floor, lon_floor) pairs covering bbox for 1°×1° GLO-30 tiles."""
         minx, miny, maxx, maxy = bbox
         tiles = []
@@ -547,12 +552,9 @@ class CoastalTopographyAnalyzer:
         """Return the Copernicus GLO-30 tile stem for a given (lat_floor, lon_floor)."""
         lat_dir = "N" if lat >= 0 else "S"
         lon_dir = "E" if lon >= 0 else "W"
-        return (
-            f"Copernicus_DSM_COG_10_{lat_dir}{abs(lat):02d}_00"
-            f"_{lon_dir}{abs(lon):03d}_00_DEM"
-        )
+        return f"Copernicus_DSM_COG_10_{lat_dir}{abs(lat):02d}_00" f"_{lon_dir}{abs(lon):03d}_00_DEM"
 
-    def download_glo30_public(self) -> List[Path]:
+    def download_glo30_public(self) -> list[Path]:
         """
         Download Copernicus GLO-30 tiles from the public AWS S3 bucket (no auth).
 
@@ -591,7 +593,7 @@ class CoastalTopographyAnalyzer:
 
         return paths
 
-    def download_copernicus_cdse(self) -> List[Path]:
+    def download_copernicus_cdse(self) -> list[Path]:
         """
         Download Copernicus DEM GLO-30 tiles via CDSE (authenticated).
 
@@ -657,27 +659,27 @@ class CoastalTopographyAnalyzer:
 
         return paths
 
-    def build_dem_mosaic(self, tile_paths: Optional[List[Path]] = None) -> Optional[Path]:
+    def build_dem_mosaic(self, tile_paths: list[Path] | None = None) -> Path | None:
         """
         Merge MDT-50cm tiles into a single DEM GeoTIFF.
-        
+
         If mosaic already exists and cache_tiles=True, skips rebuild.
-        
+
         Args:
             tile_paths: list of local tile paths. If None, calls download_mdt_tiles()
-            
+
         Returns:
             Path to mosaic GeoTIFF, or None on failure
         """
         if not HAS_RASTERIO:
             logger.error("rasterio not installed; cannot build mosaic")
             return None
-        
+
         # Check cache
         if self.dem_mosaic_path.exists() and self.cache_tiles:
             logger.info(f"DEM mosaic already cached: {self.dem_mosaic_path}")
             return self.dem_mosaic_path
-        
+
         # Download tiles if not provided — dispatch based on dem_source
         if tile_paths is None:
             source = self.dem_source
@@ -699,7 +701,7 @@ class CoastalTopographyAnalyzer:
         if not tile_paths:
             logger.error("No tiles available for mosaicing")
             return None
-        
+
         logger.info(f"Building mosaic from {len(tile_paths)} tiles...")
 
         try:
@@ -718,13 +720,15 @@ class CoastalTopographyAnalyzer:
                 mosaic = np.where(mosaic <= self.NODATA_ALT * 0.5, self.NODATA_VALUE, mosaic)
                 src_crs = src_files[0].crs
                 meta = src_files[0].meta.copy()
-                meta.update({
-                    "height": mosaic.shape[1],
-                    "width": mosaic.shape[2],
-                    "transform": mosaic_transform,
-                    "dtype": "float32",
-                    "nodata": self.NODATA_VALUE,
-                })
+                meta.update(
+                    {
+                        "height": mosaic.shape[1],
+                        "width": mosaic.shape[2],
+                        "transform": mosaic_transform,
+                        "dtype": "float32",
+                        "nodata": self.NODATA_VALUE,
+                    }
+                )
 
             # Clip merged array to bbox + 5% margin before writing (reduces memory ~90%)
             from rasterio.transform import array_bounds
@@ -738,26 +742,26 @@ class CoastalTopographyAnalyzer:
 
             if src_crs and str(src_crs).upper() in ("EPSG:4326", "WGS 84"):
                 # Tile is geographic — clip directly by bbox
-                win = _from_bounds(clip_minx, clip_miny, clip_maxx, clip_maxy,
-                                   mosaic_transform)
+                win = _from_bounds(clip_minx, clip_miny, clip_maxx, clip_maxy, mosaic_transform)
                 row_start = max(0, int(win.row_off))
-                row_stop  = min(mosaic.shape[1], int(win.row_off + win.height) + 1)
+                row_stop = min(mosaic.shape[1], int(win.row_off + win.height) + 1)
                 col_start = max(0, int(win.col_off))
-                col_stop  = min(mosaic.shape[2], int(win.col_off + win.width) + 1)
+                col_stop = min(mosaic.shape[2], int(win.col_off + win.width) + 1)
                 mosaic = mosaic[:, row_start:row_stop, col_start:col_stop]
-                from rasterio.transform import from_bounds as _tfrom_bounds
                 h, w = mosaic.shape[1], mosaic.shape[2]
                 arr_b = array_bounds(h, w, mosaic_transform)
                 # Recompute transform for clipped window
                 from affine import Affine
+
                 mosaic_transform = Affine(
-                    mosaic_transform.a, mosaic_transform.b,
+                    mosaic_transform.a,
+                    mosaic_transform.b,
                     mosaic_transform.c + col_start * mosaic_transform.a,
-                    mosaic_transform.d, mosaic_transform.e,
+                    mosaic_transform.d,
+                    mosaic_transform.e,
                     mosaic_transform.f + row_start * mosaic_transform.e,
                 )
-                meta.update(height=mosaic.shape[1], width=mosaic.shape[2],
-                            transform=mosaic_transform)
+                meta.update(height=mosaic.shape[1], width=mosaic.shape[2], transform=mosaic_transform)
                 logger.info(f"  Clipped to bbox: {mosaic.shape[1]}×{mosaic.shape[2]} px")
 
             # Write clipped mosaic to a temp file, then reproject to EPSG:3763 if needed
@@ -772,7 +776,7 @@ class CoastalTopographyAnalyzer:
                 da_reproj = da.rio.reproject(self.NATIVE_CRS)
                 da_reproj.rio.to_raster(str(self.dem_mosaic_path), dtype="float32")
                 tmp_path.unlink(missing_ok=True)
-                logger.info(f"  Reprojection complete")
+                logger.info("  Reprojection complete")
             else:
                 tmp_path.rename(self.dem_mosaic_path)
 
@@ -785,96 +789,97 @@ class CoastalTopographyAnalyzer:
         except Exception as e:
             logger.error(f"Mosaic creation failed: {e}")
             return None
-    
-    def derive_slope_aspect(self, 
-                           dem_path: Optional[Path] = None) -> Tuple[Optional[Path], Optional[Path]]:
+
+    def derive_slope_aspect(self, dem_path: Path | None = None) -> tuple[Path | None, Path | None]:
         """
         Compute slope and aspect from DEM using gradient method.
-        
+
         Slope is in degrees; aspect is in degrees (0=N, 90=E, 180=S, 270=W).
-        
+
         Args:
             dem_path: path to DEM GeoTIFF. If None, uses self.dem_mosaic_path
-            
+
         Returns:
             (slope_path, aspect_path) or (None, None) on failure
         """
         if not HAS_RASTERIO:
             logger.error("rasterio not installed")
             return None, None
-        
+
         if dem_path is None:
             dem_path = self.dem_mosaic_path
-        
+
         if not dem_path.exists():
             logger.error(f"DEM not found: {dem_path}")
             return None, None
-        
+
         # Check cache
         if self.slope_path.exists() and self.aspect_path.exists() and self.cache_tiles:
             logger.info("Slope/aspect already cached")
             return self.slope_path, self.aspect_path
-        
+
         logger.info(f"Computing slope and aspect from {dem_path}...")
-        
+
         try:
             with rasterio.open(str(dem_path)) as src:
                 dem = src.read(1, masked=True)
                 transform = src.transform
                 profile = src.profile
-                
+
                 # Resolution in meters
                 res_x = abs(transform.a)
                 res_y = abs(transform.e)
-        
+
                 logger.info(f"  DEM resolution: {res_x:.1f} m x {res_y:.1f} m")
-            
+
             # Compute gradients (dz/dx, dz/dy in meters per meter)
             # np.gradient returns dy, dx
             dz_dy, dz_dx = np.gradient(dem.filled(np.nan), res_y, res_x)
-            
+
             # Slope in degrees
             slope_rad = np.arctan(np.hypot(dz_dx, dz_dy))
             slope = np.degrees(slope_rad)
-            
+
             # Aspect in degrees (0=N, 90=E, 180=S, 270=W)
             # Note: arctan2(x, -y) converts to geographic convention
             aspect_rad = np.arctan2(dz_dx, -dz_dy)
             aspect = np.degrees(aspect_rad)
             aspect = np.where(aspect < 0, 360 + aspect, aspect)
-            
+
             # Save slope
             profile_out = profile.copy()
             profile_out.update(dtype="float32", nodata=np.nan)
-            
+
             with rasterio.open(str(self.slope_path), "w", **profile_out) as dst:
                 dst.write(slope.astype("float32"), 1)
             logger.info(f"Slope saved: {self.slope_path}")
-            
+
             # Save aspect
             with rasterio.open(str(self.aspect_path), "w", **profile_out) as dst:
                 dst.write(aspect.astype("float32"), 1)
             logger.info(f"Aspect saved: {self.aspect_path}")
-            
+
             return self.slope_path, self.aspect_path
-        
+
         except Exception as e:
             logger.error(f"Slope/aspect derivation failed: {e}")
             return None, None
-    
-    def extract_features_for_sites(self,
-                                   sites: List[Tuple[str, float, float]],
-                                   buffer_m: float = 1000,
-                                   stats: Optional[List[str]] = None,
-                                   include_chm: bool = True) -> Optional[pd.DataFrame]:
+
+    def extract_features_for_sites(
+        self,
+        sites: list[tuple[str, float, float]],
+        buffer_m: float = 1000,
+        stats: list[str] | None = None,
+        include_chm: bool = True,
+    ) -> pd.DataFrame | None:
         """
         Extract terrain features (slope, aspect) for dive sites.
-        
+
         Args:
             sites: list of (site_name, lat, lon) tuples
             buffer_m: circular buffer radius around each site (meters)
             stats: zonal statistics to compute. Default: ["mean", "median", "std", "min", "max", "percentile_90"]
-            
+
         Returns:
             GeoDataFrame with features, or None on failure
         """
@@ -882,62 +887,50 @@ class CoastalTopographyAnalyzer:
             logger.error("rasterstats not installed; cannot compute zonal stats")
             logger.info("Install with: pip install rasterstats")
             return None
-        
+
         if stats is None:
             stats = ["mean", "median", "std", "min", "max", "percentile_90"]
-        
+
         # Build DEM and derive slope/aspect if needed
         if not self.dem_mosaic_path.exists():
             mosaic = self.build_dem_mosaic()
             if mosaic is None:
                 return None
-        
+
         if not self.slope_path.exists() or not self.aspect_path.exists():
             slope_path, aspect_path = self.derive_slope_aspect()
             if slope_path is None or aspect_path is None:
                 return None
-        
+
         logger.info(f"Extracting features for {len(sites)} sites with buffer={buffer_m}m...")
-        
+
         # Convert sites to GeoDataFrame
         points = [Point(lon, lat) for _, lat, lon in sites]
         site_names = [name for name, _, _ in sites]
-        
-        gdf = gpd.GeoDataFrame(
-            {"site_name": site_names},
-            geometry=points,
-            crs=self.WGS84_CRS
-        )
-        
+
+        gdf = gpd.GeoDataFrame({"site_name": site_names}, geometry=points, crs=self.WGS84_CRS)
+
         # Reproject to native CRS
         gdf_3763 = gdf.to_crs(self.NATIVE_CRS)
         gdf_3763["buffer_geometry"] = gdf_3763.geometry.buffer(buffer_m)
-        
+
         # Extract zonal statistics
         features_list = []
-        
+
         try:
             for idx, row in gdf_3763.iterrows():
                 site_name = row["site_name"]
                 buffer_geom = row["buffer_geometry"]
-                
+
                 logger.debug(f"Processing {site_name}...")
-                
+
                 # Slope/aspect rasters are written with nodata=NaN (not NODATA_VALUE)
-                slope_stats = zonal_stats(
-                    [buffer_geom],
-                    str(self.slope_path),
-                    stats=stats,
-                    nodata=np.nan
-                )[0]
+                slope_stats = zonal_stats([buffer_geom], str(self.slope_path), stats=stats, nodata=np.nan)[0]
 
                 aspect_stats = zonal_stats(
-                    [buffer_geom],
-                    str(self.aspect_path),
-                    stats=["mean", "median", "std", "min", "max"],
-                    nodata=np.nan
+                    [buffer_geom], str(self.aspect_path), stats=["mean", "median", "std", "min", "max"], nodata=np.nan
                 )[0]
-                
+
                 # Build row
                 feature_row = {
                     "site_name": site_name,
@@ -945,11 +938,11 @@ class CoastalTopographyAnalyzer:
                     "longitude": gdf.loc[idx, "geometry"].x,
                     "buffer_m": buffer_m,
                 }
-                
+
                 # Add slope stats with prefix
                 for key, val in slope_stats.items():
                     feature_row[f"slope_{key}"] = val
-                
+
                 # Add aspect stats with prefix
                 for key, val in aspect_stats.items():
                     feature_row[f"aspect_{key}"] = val
@@ -960,75 +953,73 @@ class CoastalTopographyAnalyzer:
                         [buffer_geom],
                         str(self.chm_path),
                         stats=["mean", "median", "std", "max", "percentile_90"],
-                        nodata=np.nan
+                        nodata=np.nan,
                     )[0]
                     for key, val in chm_stats.items():
                         feature_row[f"chm_{key}"] = val
 
                 features_list.append(feature_row)
-        
+
         except Exception as e:
             logger.error(f"Zonal stats extraction failed: {e}")
             return None
-        
+
         # Convert to DataFrame
         result_df = pd.DataFrame(features_list)
         result_df["timestamp"] = datetime.now().isoformat()
-        
+
         logger.info(f"Extracted features for {len(result_df)} sites")
-        
+
         return result_df
-    
-    def save_features(self, 
-                     features_df: pd.DataFrame,
-                     output_name: str = "coastal_features") -> Dict[str, str]:
+
+    def save_features(self, features_df: pd.DataFrame, output_name: str = "coastal_features") -> dict[str, str]:
         """
         Save features to CSV and GeoJSON.
-        
+
         Args:
             features_df: DataFrame with site features
             output_name: base name for output files
-            
+
         Returns:
             dict with paths to saved files
         """
         csv_path = self.output_dir / f"{output_name}.csv"
         json_path = self.output_dir / f"{output_name}.json"
         geojson_path = self.output_dir / f"{output_name}.geojson"
-        
+
         # CSV
         features_df.to_csv(csv_path, index=False)
         logger.info(f"Saved CSV: {csv_path}")
-        
+
         # JSON (full dump)
         with open(json_path, "w") as f:
             json.dump(features_df.to_dict(orient="records"), f, indent=2, default=str)
         logger.info(f"Saved JSON: {json_path}")
-        
+
         # GeoJSON (if geometry available)
         if "geometry" not in features_df.columns:
             gdf = gpd.GeoDataFrame(
-                features_df,
-                geometry=gpd.points_from_xy(features_df["longitude"], features_df["latitude"]),
-                crs=self.WGS84_CRS
+                features_df, geometry=gpd.points_from_xy(features_df["longitude"], features_df["latitude"]), crs=self.WGS84_CRS
             )
         else:
             gdf = gpd.GeoDataFrame(features_df, crs=self.WGS84_CRS)
-        
+
         gdf.to_file(geojson_path, driver="GeoJSON")
         logger.info(f"Saved GeoJSON: {geojson_path}")
-        
+
         return {
             "csv": str(csv_path),
             "json": str(json_path),
             "geojson": str(geojson_path),
         }
-    
-    def run_analysis(self,
-                    sites: List[Tuple[str, float, float]],
-                    buffer_m: float = 1000,
-                    output_name: str = "coastal_features",
-                    include_chm: bool = True) -> Dict:
+
+    def run_analysis(
+        self,
+        sites: list[tuple[str, float, float]],
+        buffer_m: float = 1000,
+        output_name: str = "coastal_features",
+        include_chm: bool = True,
+    ) -> dict:
         """
         Full pipeline: download MDT+MDS tiles → mosaics → CHM → slope/aspect → features → save.
 
@@ -1076,8 +1067,7 @@ class CoastalTopographyAnalyzer:
 
             # Step 5: Feature extraction
             logger.info("\n[4/5] Extracting features for dive sites...")
-            features_df = self.extract_features_for_sites(
-                sites, buffer_m=buffer_m, include_chm=include_chm)
+            features_df = self.extract_features_for_sites(sites, buffer_m=buffer_m, include_chm=include_chm)
             if features_df is None:
                 return {"status": "error", "message": "Feature extraction failed"}
 
@@ -1089,7 +1079,7 @@ class CoastalTopographyAnalyzer:
             logger.info("ANALYSIS COMPLETE")
             logger.info("=" * 70)
 
-            result: Dict = {
+            result: dict = {
                 "status": "success",
                 "sites_analyzed": len(features_df),
                 "dem_mosaic": str(mosaic_path),
@@ -1110,49 +1100,41 @@ class CoastalTopographyAnalyzer:
 
 def main() -> None:
     """Example usage with Algarve survey sites."""
-    import sys
-    
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-    
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
     # Survey sites from algarve_reef_survey.py
     survey_sites = [
-        ("tavira_west",          37.1050, -7.6800),
-        ("ilha_de_tavira",       37.0950, -7.7200),
-        ("fuseta",               37.0600, -7.7600),
-        ("olhao_offshore",       37.0350, -7.8200),
-        ("faro_east",            37.0100, -7.8800),
-        ("praia_de_faro",        36.9800, -7.9400),
-        ("ancão_peninsula",      36.9650, -8.0000),
-        ("quarteira",            37.0650, -8.1000),
-        ("vilamoura",            37.0750, -8.1300),
-        ("olhos_de_agua",        37.0900, -8.1600),
-        ("pedra_sta_eulalia",    37.069081, -8.210242),
-        ("albufeira_reef",       37.0690, -8.2105),
-        ("galé",                 37.0560, -8.2296),
-        ("salgados",             37.0950, -8.3000),
-        ("armacao_de_pera",      37.0700, -8.3600),
+        ("tavira_west", 37.1050, -7.6800),
+        ("ilha_de_tavira", 37.0950, -7.7200),
+        ("fuseta", 37.0600, -7.7600),
+        ("olhao_offshore", 37.0350, -7.8200),
+        ("faro_east", 37.0100, -7.8800),
+        ("praia_de_faro", 36.9800, -7.9400),
+        ("ancão_peninsula", 36.9650, -8.0000),
+        ("quarteira", 37.0650, -8.1000),
+        ("vilamoura", 37.0750, -8.1300),
+        ("olhos_de_agua", 37.0900, -8.1600),
+        ("pedra_sta_eulalia", 37.069081, -8.210242),
+        ("albufeira_reef", 37.0690, -8.2105),
+        ("galé", 37.0560, -8.2296),
+        ("salgados", 37.0950, -8.3000),
+        ("armacao_de_pera", 37.0700, -8.3600),
     ]
-    
+
     # BBox covering all sites (with margin)
     lats = [s[1] for s in survey_sites]
     lons = [s[2] for s in survey_sites]
     bbox = (min(lons) - 0.05, min(lats) - 0.05, max(lons) + 0.05, max(lats) + 0.05)
-    
+
     analyzer = CoastalTopographyAnalyzer(
         bbox=bbox,
         output_dir="./outputs/coastal_topography",
         dem_source="dgt",  # 50 cm DGT LiDAR (covers full Algarve); needs DGT_CDD_* creds
     )
 
-    result = analyzer.run_analysis(
-        sites=survey_sites,
-        buffer_m=4000,
-        output_name="algarve_coastal_features"
-    )
-    
+    result = analyzer.run_analysis(sites=survey_sites, buffer_m=4000, output_name="algarve_coastal_features")
+
     print("\n" + "=" * 70)
     print("RESULTS:")
     print("=" * 70)
@@ -1174,9 +1156,8 @@ def _run_selftest() -> int:
     # Hardcoded Albufeira / Sta Eulália MDT-50cm tile (DGT 2024 campaign). Only the
     # bucket/key PATH of this href is used by _href_to_vsis3; the MinIO host comes
     # from AWS_ENDPOINT_URL2 in the streaming Env.
-    TILE_HREF = ("https://stor-002.a.acnca.pt:9000/lidar/MDT50cm/"
-                 "MDT-50cm-191013-04-2024_v01.tif")
-    TILE_BBOX = (-8.234, 37.074, -8.222, 37.083)   # WGS84, overlaps the tile footprint
+    TILE_HREF = "https://stor-002.a.acnca.pt:9000/lidar/MDT50cm/" "MDT-50cm-191013-04-2024_v01.tif"
+    TILE_BBOX = (-8.234, 37.074, -8.222, 37.083)  # WGS84, overlaps the tile footprint
     # Dev/test override: COASTAL_SELFTEST_OUT redirects the throwaway file.
     # Default (CI, production) keeps the global /tmp path unchanged.
     OUT_PATH = Path(os.environ.get("COASTAL_SELFTEST_OUT", "/tmp/selftest_crop.tif"))
@@ -1189,9 +1170,11 @@ def _run_selftest() -> int:
 
     env = analyzer._minio_stream_env()
     if env is None:
-        print("No MinIO credentials found; streaming inactive "
-              "(set AWS_ENDPOINT_URL2 / AWS_ACCESS_KEY_ID2 / AWS_SECRET_ACCESS_KEY2, "
-              "e.g. `set -a; source .env; set +a`). Pipeline falls back to CDD download.")
+        print(
+            "No MinIO credentials found; streaming inactive "
+            "(set AWS_ENDPOINT_URL2 / AWS_ACCESS_KEY_ID2 / AWS_SECRET_ACCESS_KEY2, "
+            "e.g. `set -a; source .env; set +a`). Pipeline falls back to CDD download."
+        )
         return 0
 
     try:
@@ -1205,12 +1188,10 @@ def _run_selftest() -> int:
             return 0
         # Handled streaming failure (network/auth) — _stream_crop_to_local returned
         # False without raising. The real pipeline would fall back to CDD download.
-        print("Streaming failed: no crop produced; "
-              "pipeline would fall back to CDD signed-URL download.")
+        print("Streaming failed: no crop produced; " "pipeline would fall back to CDD signed-URL download.")
         return 0
     except Exception as e:
-        print(f"Streaming failed: {e}; "
-              "pipeline would fall back to CDD signed-URL download.")
+        print(f"Streaming failed: {e}; " "pipeline would fall back to CDD signed-URL download.")
         return 1
 
 
@@ -1218,11 +1199,10 @@ if __name__ == "__main__":
     import argparse
     import sys
 
-    parser = argparse.ArgumentParser(
-        description="DGT coastal topography analyzer (MDT/MDS-50cm LiDAR)."
-    )
+    parser = argparse.ArgumentParser(description="DGT coastal topography analyzer (MDT/MDS-50cm LiDAR).")
     parser.add_argument(
-        "--selftest", action="store_true",
+        "--selftest",
+        action="store_true",
         help="Validate the live /vsis3 MinIO streaming path on one Algarve tile, then exit.",
     )
     args = parser.parse_args()

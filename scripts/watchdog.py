@@ -9,6 +9,7 @@ Uso:
     python watchdog.py
     # Ctrl+C para parar
 """
+
 import subprocess
 import time
 import sys
@@ -23,14 +24,14 @@ logging.basicConfig(
 )
 
 DASHBOARD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard")
-APP_CMD       = [sys.executable, "app.py"]
-RESTART_DELAY = 3   # segundos entre restarts
-MAX_RESTARTS  = 20  # segurança: parar após N restarts consecutivos em curto espaço
+APP_CMD = [sys.executable, "app.py"]
+RESTART_DELAY = 3  # segundos entre restarts
+MAX_RESTARTS = 20  # segurança: parar após N restarts consecutivos em curto espaço
 
 _proc = None
 
+
 def _cleanup(sig, frame):
-    global _proc
     logging.info("Sinal %s recebido — a terminar servidor...", sig)
     if _proc and _proc.poll() is None:
         _proc.terminate()
@@ -40,8 +41,10 @@ def _cleanup(sig, frame):
             _proc.kill()
     sys.exit(0)
 
-signal.signal(signal.SIGINT,  _cleanup)
+
+signal.signal(signal.SIGINT, _cleanup)
 signal.signal(signal.SIGTERM, _cleanup)
+
 
 def run():
     global _proc
@@ -59,10 +62,7 @@ def run():
             restarts = 0
 
         if restarts >= MAX_RESTARTS:
-            logging.error(
-                "Atingido limite de %d restarts consecutivos — a parar watchdog.",
-                MAX_RESTARTS
-            )
+            logging.error("Atingido limite de %d restarts consecutivos — a parar watchdog.", MAX_RESTARTS)
             sys.exit(1)
 
         logging.info("A iniciar servidor (restart #%d)...", restarts + 1)
@@ -80,13 +80,11 @@ def run():
         if exit_code == 0:
             logging.info("Servidor terminou limpo (exit 0) — a reiniciar em %ds...", RESTART_DELAY)
         else:
-            logging.warning(
-                "Servidor terminou com código %d — a reiniciar em %ds...",
-                exit_code, RESTART_DELAY
-            )
+            logging.warning("Servidor terminou com código %d — a reiniciar em %ds...", exit_code, RESTART_DELAY)
 
         restarts += 1
         time.sleep(RESTART_DELAY)
+
 
 if __name__ == "__main__":
     run()

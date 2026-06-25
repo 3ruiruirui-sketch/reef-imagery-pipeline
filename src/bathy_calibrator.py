@@ -26,46 +26,39 @@ Max records/request: 1000 → use bbox filter always
 """
 
 import logging
-import warnings
-from typing import Optional
 
 import numpy as np
 import requests
 from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 from scipy.spatial import cKDTree
+from urllib3.util.retry import Retry
 
 from src.constants import (
     BENTHIC_ISOBATHS,
+    BUF_PIX,
     CONTEXT_ISOBATHS,
+    STUMPF_LOG_EPSILON,
     STUMPF_M0_DEFAULT,
     STUMPF_M1_DEFAULT,
     STUMPF_M1_LITERATURE,
-    STUMPF_LOG_EPSILON,
-    BUF_PIX,
 )
 
 log = logging.getLogger(__name__)
 
 # ── Session with retry adapter for IH/DGRM service ────────────────────────────
 _IH_SESSION = requests.Session()
-_IH_SESSION.mount("https://", HTTPAdapter(
-    max_retries=Retry(total=3, backoff_factor=1.5, status_forcelist=[500, 502, 503, 504])
-))
+_IH_SESSION.mount(
+    "https://", HTTPAdapter(max_retries=Retry(total=3, backoff_factor=1.5, status_forcelist=[500, 502, 503, 504]))
+)
 
 # ── Service constants ──────────────────────────────────────────────────────────
-_IH_BASE = (
-    "https://webgis.dgrm.mm.gov.pt/arcgis/rest/services/"
-    "Dados_entidades_externas/Batimetrica_IH/MapServer/0"
-)
+_IH_BASE = "https://webgis.dgrm.mm.gov.pt/arcgis/rest/services/" "Dados_entidades_externas/Batimetrica_IH/MapServer/0"
 _QUERY_URL = f"{_IH_BASE}/query"
 
 
 # ── 1. Data fetching ───────────────────────────────────────────────────────────
 def fetch_isobaths_for_bbox(
-    min_lon: float, min_lat: float, max_lon: float, max_lat: float,
-    depths: list[int] | None = None,
-    timeout: int = 15
+    min_lon: float, min_lat: float, max_lon: float, max_lat: float, depths: list[int] | None = None, timeout: int = 15
 ) -> list[dict]:
     """
     Fetch IH isobath polylines from the DGRM ArcGIS REST service for a
@@ -104,19 +97,22 @@ def fetch_isobaths_for_bbox(
     features = []
     for feat in data.get("features", []):
         attrs = feat.get("attributes", {})
-        geom  = feat.get("geometry", {})
+        geom = feat.get("geometry", {})
         paths = geom.get("paths", [])
         depth = float(attrs.get("Depth", 0))
         length = float(attrs.get("Shape_Leng", 0.0))
         for path in paths:
-            features.append({
-                "depth":    depth,
-                "coords":   path,          # list of [lon, lat]
-                "length_deg": length,
-            })
+            features.append(
+                {
+                    "depth": depth,
+                    "coords": path,  # list of [lon, lat]
+                    "length_deg": length,
+                }
+            )
 
-    log.info("IH isobaths fetched: %d polylines for bbox (%.3f,%.3f)→(%.3f,%.3f)",
-             len(features), min_lon, min_lat, max_lon, max_lat)
+    log.info(
+        "IH isobaths fetched: %d polylines for bbox (%.3f,%.3f)→(%.3f,%.3f)", len(features), min_lon, min_lat, max_lon, max_lat
+    )
     return features
 
 
@@ -127,7 +123,7 @@ def _haversine_m(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
     phi1, phi2 = np.radians(lat1), np.radians(lat2)
     dphi = np.radians(lat2 - lat1)
     dlam = np.radians(lon2 - lon1)
-    a = np.sin(dphi / 2)**2 + np.cos(phi1) * np.cos(phi2) * np.sin(dlam / 2)**2
+    a = np.sin(dphi / 2) ** 2 + np.cos(phi1) * np.cos(phi2) * np.sin(dlam / 2) ** 2
     return R * 2 * np.arcsin(np.sqrt(a))
 
 
@@ -144,9 +140,7 @@ def _scale_coords(arr: np.ndarray) -> np.ndarray:
     return scaled
 
 
-def _build_isobath_tree(
-    features: list[dict], target_depth: float
-) -> tuple["cKDTree | None", "np.ndarray | None"]:
+def _build_isobath_tree(features: list[dict], target_depth: float) -> tuple["cKDTree | None", "np.ndarray | None"]:
     """
     Build a cKDTree over all [lon, lat] vertices of the given isobath depth.
     The tree is built in cos-scaled degree space so that degree distances in
@@ -157,16 +151,14 @@ def _build_isobath_tree(
     coords = []
     for feat in features:
         if feat["depth"] == target_depth:
-            coords.extend(feat["coords"])   # each coord is [lon, lat]
+            coords.extend(feat["coords"])  # each coord is [lon, lat]
     if not coords:
         return None, None
     arr = np.array(coords, dtype=np.float64)  # shape (N, 2)
     return cKDTree(_scale_coords(arr)), arr
 
 
-def _build_all_isobath_trees(
-    features: list[dict], depths: list[float]
-) -> dict[float, tuple]:
+def _build_all_isobath_trees(features: list[dict], depths: list[float]) -> dict[float, tuple]:
     """
     Build one cKDTree per depth, sharing a single pass over features.
     Call this once in classify_benthic_zone instead of building trees individually.
@@ -193,7 +185,8 @@ def _build_all_isobath_trees(
 
 
 def min_distance_to_isobath_m(
-    lon: float, lat: float,
+    lon: float,
+    lat: float,
     features: list[dict],
     target_depth: float,
     _tree: tuple | None = None,
@@ -258,9 +251,13 @@ _B03_SAND_THRESHOLD = 0.15
 
 
 def _sample_pixels_near_isobath(
-    b02_arr: np.ndarray, b03_arr: np.ndarray,
-    features: list[dict], target_depth: float,
-    bounds_wgs84: tuple, n: float = 1000.0, buf: int = BUF_PIX
+    b02_arr: np.ndarray,
+    b03_arr: np.ndarray,
+    features: list[dict],
+    target_depth: float,
+    bounds_wgs84: tuple,
+    n: float = 1000.0,
+    buf: int = BUF_PIX,
 ) -> list[tuple[float, float]]:
     """
     Return (depth, X) pairs for all pixels within ±buf pixels of any
@@ -335,6 +332,7 @@ def calibrate_stumpf_from_isobaths(
     if b04_arr is not None:
         try:
             from src.substrate_classifier import get_sand_mask
+
             sand_mask = get_sand_mask(b02_arr, b03_arr, b04_arr)
             n_sand = int(sand_mask.sum())
             log.info("Substrate sand mask: %d pixels flagged (excluded from IH calibration)", n_sand)
@@ -347,9 +345,7 @@ def calibrate_stumpf_from_isobaths(
     n_sand_rejected = 0
 
     for depth_m in BENTHIC_ISOBATHS:
-        s = _sample_pixels_near_isobath(
-            b02_arr, b03_arr, features, float(depth_m), bounds_wgs84, n
-        )
+        s = _sample_pixels_near_isobath(b02_arr, b03_arr, features, float(depth_m), bounds_wgs84, n)
         if s and sand_mask is not None:
             # Filter out samples whose pixel was classified as sand
             # _sample_pixels_near_isobath returns (depth, X) in raster order;
@@ -372,7 +368,7 @@ def calibrate_stumpf_from_isobaths(
                         if b02v > 1e-6 and b03v > 1e-6 and b03v <= _B03_SAND_THRESHOLD:
                             filtered.append((float(depth_m), _stumpf_ratio(b02v, b03v, n)))
             n_sand_rejected += len(s) - len(filtered)
-            s = filtered if filtered else s   # keep original if all filtered out
+            s = filtered if filtered else s  # keep original if all filtered out
         if s:
             per_depth_n[int(depth_m)] = len(s)
             all_samples.extend(s)
@@ -382,21 +378,27 @@ def calibrate_stumpf_from_isobaths(
 
     if len(all_samples) < 4:
         log.warning(
-            "Too few IH calibration samples (%d total) — keeping Stumpf defaults. "
-            "Per-depth: %s", len(all_samples), per_depth_n
+            "Too few IH calibration samples (%d total) — keeping Stumpf defaults. " "Per-depth: %s",
+            len(all_samples),
+            per_depth_n,
         )
         return (
-            STUMPF_M0_DEFAULT, STUMPF_M1_DEFAULT,
-            {"n_samples": len(all_samples), "calibrated": False,
-             "rmse_m": None, "isobaths_used": [],
-             "per_depth_n": per_depth_n,
-             "reason": "insufficient_samples (<4)"}
+            STUMPF_M0_DEFAULT,
+            STUMPF_M1_DEFAULT,
+            {
+                "n_samples": len(all_samples),
+                "calibrated": False,
+                "rmse_m": None,
+                "isobaths_used": [],
+                "per_depth_n": per_depth_n,
+                "reason": "insufficient_samples (<4)",
+            },
         )
 
     depths_arr = np.array([s[0] for s in all_samples])
-    X_arr      = np.array([s[1] for s in all_samples])
+    X_arr = np.array([s[1] for s in all_samples])
     distinct_depths = sorted(set(depths_arr.tolist()))
-    isobaths_used   = [int(d) for d in distinct_depths]
+    isobaths_used = [int(d) for d in distinct_depths]
 
     # ── Strategy A: Full OLS regression (≥2 distinct isobath depths) ──────────
     if len(distinct_depths) >= 2:
@@ -407,12 +409,11 @@ def calibrate_stumpf_from_isobaths(
         # Physical bounds: Algarve oligotrophic clear-water regime
         # m0 range: −60 to +5 m  |  m1 range: 10 to 70
         m0 = float(np.clip(m0_raw, -60.0, 5.0))
-        m1 = float(np.clip(m1_raw,  10.0, 70.0))
-        clipped = (m0 != m0_raw or m1 != m1_raw)
+        m1 = float(np.clip(m1_raw, 10.0, 70.0))
+        clipped = m0 != m0_raw or m1 != m1_raw
         if clipped:
             log.warning(
-                "OLS fit hit safety bounds (raw m0=%.2f m1=%.2f) → "
-                "clipped to m0=%.2f m1=%.2f", m0_raw, m1_raw, m0, m1
+                "OLS fit hit safety bounds (raw m0=%.2f m1=%.2f) → " "clipped to m0=%.2f m1=%.2f", m0_raw, m1_raw, m0, m1
             )
 
         depth_pred = m1 * X_arr + m0
@@ -433,34 +434,42 @@ def calibrate_stumpf_from_isobaths(
         rmse = float(np.sqrt(np.mean((depth_pred - depths_arr) ** 2)))
         method = f"offset_calibration_single_isobath({int(d0)}m)"
         log.info(
-            "Single-isobath offset calibration on %gm: "
-            "m1_fixed=%.2f  m0_solved=%.3f  RMSE=%.2fm  n=%d",
-            d0, m1, m0, rmse, len(all_samples)
+            "Single-isobath offset calibration on %gm: " "m1_fixed=%.2f  m0_solved=%.3f  RMSE=%.2fm  n=%d",
+            d0,
+            m1,
+            m0,
+            rmse,
+            len(all_samples),
         )
 
     log.info(
-        "Stumpf calibration [%s]: m0=%.3f  m1=%.3f  RMSE=%.3fm  "
-        "n=%d samples  per_depth=%s",
-        method, m0, m1, rmse, len(all_samples), per_depth_n
+        "Stumpf calibration [%s]: m0=%.3f  m1=%.3f  RMSE=%.3fm  " "n=%d samples  per_depth=%s",
+        method,
+        m0,
+        m1,
+        rmse,
+        len(all_samples),
+        per_depth_n,
     )
 
-    return (m0, m1, {
-        "n_samples":     len(all_samples),
-        "calibrated":    True,
-        "method":        method,
-        "m0":            round(m0, 4),
-        "m1":            round(m1, 4),
-        "rmse_m":        round(rmse, 4),
-        "isobaths_used": isobaths_used,
-        "per_depth_n":   per_depth_n,
-    })
+    return (
+        m0,
+        m1,
+        {
+            "n_samples": len(all_samples),
+            "calibrated": True,
+            "method": method,
+            "m0": round(m0, 4),
+            "m1": round(m1, 4),
+            "rmse_m": round(rmse, 4),
+            "isobaths_used": isobaths_used,
+            "per_depth_n": per_depth_n,
+        },
+    )
 
 
 # ── 4. Zone classification ─────────────────────────────────────────────────────
-def classify_benthic_zone(
-    lon: float, lat: float,
-    features: list[dict]
-) -> dict:
+def classify_benthic_zone(lon: float, lat: float, features: list[dict]) -> dict:
     """
     Classify a reef observation point by depth zone using IH isobaths.
 
@@ -487,10 +496,14 @@ def classify_benthic_zone(
     # (i.e. not inf). This avoids misclassifying nearshore spots when the
     # 30m or 50m line simply falls outside the bbox.
     available = {}
-    if not np.isinf(d10): available["10m"] = d10
-    if not np.isinf(d20): available["20m"] = d20
-    if not np.isinf(d30): available["30m"] = d30
-    if not np.isinf(d50): available["50m"] = d50
+    if not np.isinf(d10):
+        available["10m"] = d10
+    if not np.isinf(d20):
+        available["20m"] = d20
+    if not np.isinf(d30):
+        available["30m"] = d30
+    if not np.isinf(d50):
+        available["50m"] = d50
 
     nearest_iso = min(available, key=lambda k: available[k]) if available else "unknown"
 
@@ -531,14 +544,14 @@ def classify_benthic_zone(
             optically_viable = False
 
     return {
-        "zone":             zone,
-        "nearest_isobath":  nearest_iso,
-        "dist_10m_m":       fmt(d10),
-        "dist_20m_m":       fmt(d20),
-        "dist_30m_m":       fmt(d30),
-        "dist_50m_m":       fmt(d50),
+        "zone": zone,
+        "nearest_isobath": nearest_iso,
+        "dist_10m_m": fmt(d10),
+        "dist_20m_m": fmt(d20),
+        "dist_30m_m": fmt(d30),
+        "dist_50m_m": fmt(d50),
         "optically_viable": optically_viable,
-        "note":             note,
+        "note": note,
     }
 
 
@@ -547,7 +560,7 @@ def validate_sdb_vs_chart(
     sdb_map: np.ndarray,
     features: list[dict],
     bounds_wgs84: tuple[float, float, float, float],
-    isobaths_to_check: list[int] | None = None
+    isobaths_to_check: list[int] | None = None,
 ) -> dict:
     """
     Validate the Stumpf SDB depth map against IH chart isobaths.
@@ -582,15 +595,14 @@ def validate_sdb_vs_chart(
         if errors:
             errors_arr = np.array(errors)
             results[f"{target_depth}m"] = {
-                "n_samples":    len(errors),
-                "bias_m":       round(float(np.mean(errors_arr)), 2),
-                "rmse_m":       round(float(np.sqrt(np.mean(errors_arr**2))), 2),
-                "mae_m":        round(float(np.mean(np.abs(errors_arr))), 2),
+                "n_samples": len(errors),
+                "bias_m": round(float(np.mean(errors_arr)), 2),
+                "rmse_m": round(float(np.sqrt(np.mean(errors_arr**2))), 2),
+                "mae_m": round(float(np.mean(np.abs(errors_arr))), 2),
             }
             all_errors.extend(errors)
         else:
-            results[f"{target_depth}m"] = {"n_samples": 0, "bias_m": None,
-                                           "rmse_m": None, "mae_m": None}
+            results[f"{target_depth}m"] = {"n_samples": 0, "bias_m": None, "rmse_m": None, "mae_m": None}
 
     overall = {}
     if all_errors:
@@ -598,13 +610,15 @@ def validate_sdb_vs_chart(
         overall = {
             "overall_bias_m": round(float(np.mean(ae)), 2),
             "overall_rmse_m": round(float(np.sqrt(np.mean(ae**2))), 2),
-            "overall_mae_m":  round(float(np.mean(np.abs(ae))), 2),
-            "n_total":        len(all_errors),
+            "overall_mae_m": round(float(np.mean(np.abs(ae))), 2),
+            "n_total": len(all_errors),
         }
         log.info(
             "SDB vs IH chart | overall bias=%.2fm  RMSE=%.2fm  MAE=%.2fm  n=%d",
-            overall["overall_bias_m"], overall["overall_rmse_m"],
-            overall["overall_mae_m"], overall["n_total"]
+            overall["overall_bias_m"],
+            overall["overall_rmse_m"],
+            overall["overall_mae_m"],
+            overall["n_total"],
         )
 
     return {"per_isobath": results, "overall": overall}
@@ -615,11 +629,11 @@ def run_bathy_integration(
     lat: float,
     lon: float,
     buffer_m: float = 3000.0,
-    b02_arr: Optional[np.ndarray] = None,
-    b03_arr: Optional[np.ndarray] = None,
-    b04_arr: Optional[np.ndarray] = None,
-    sdb_map: Optional[np.ndarray] = None,
-    bounds_wgs84: Optional[tuple] = None,
+    b02_arr: np.ndarray | None = None,
+    b03_arr: np.ndarray | None = None,
+    b04_arr: np.ndarray | None = None,
+    sdb_map: np.ndarray | None = None,
+    bounds_wgs84: tuple | None = None,
 ) -> dict:
     """
     Full integration pipeline for one observation point.
@@ -674,21 +688,16 @@ def run_bathy_integration(
 
     # Stumpf calibration (requires rasters)
     if b02_arr is not None and b03_arr is not None and bounds_wgs84 is not None:
-        m0, m1, cal_diag = calibrate_stumpf_from_isobaths(
-            b02_arr, b03_arr, features, bounds_wgs84, b04_arr=b04_arr
-        )
+        m0, m1, cal_diag = calibrate_stumpf_from_isobaths(b02_arr, b03_arr, features, bounds_wgs84, b04_arr=b04_arr)
         result["calibration"] = cal_diag
         result["recommended_m0"] = m0
         result["recommended_m1"] = m1
     else:
-        result["calibration"] = {"calibrated": False,
-                                  "note": "No rasters provided — defaults kept"}
+        result["calibration"] = {"calibrated": False, "note": "No rasters provided — defaults kept"}
 
     # SDB validation (requires sdb_map + raster bounds)
     if sdb_map is not None and bounds_wgs84 is not None:
-        result["validation"] = validate_sdb_vs_chart(
-            sdb_map, features, bounds_wgs84
-        )
+        result["validation"] = validate_sdb_vs_chart(sdb_map, features, bounds_wgs84)
 
     return result
 
@@ -696,8 +705,8 @@ def run_bathy_integration(
 # ── CLI demo ───────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import json
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(levelname)s %(message)s")
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     # Test against the main Pedra do Alto spot
     print("\n=== Pedra do Alto ===")

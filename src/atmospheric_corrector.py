@@ -18,13 +18,14 @@ Usage:
   ac = AtmosphericCorrector("pleiades-neo")
   boa = ac.dos1_correct(dn_array, band_name)
 """
-import subprocess
-import numpy as np
-from pathlib import Path
-from typing import Dict, Optional, Tuple
-import warnings
 
-from src.sensor_config import get_sensor, SensorConfig
+import subprocess
+import warnings
+from pathlib import Path
+
+import numpy as np
+
+from src.sensor_config import get_sensor
 
 
 class AtmosphericCorrector:
@@ -57,10 +58,10 @@ class AtmosphericCorrector:
         832: 0.0015,  # NIR (WV3)
         842: 0.0015,  # NIR
         865: 0.0012,  # Narrow NIR
-        1210: 0.0005, # SWIR (WV3)
-        1610: 0.0003, # SWIR1
-        2190: 0.0001, # SWIR2
-        2245: 0.0001, # SWIR7 (WV3)
+        1210: 0.0005,  # SWIR (WV3)
+        1610: 0.0003,  # SWIR1
+        2190: 0.0001,  # SWIR2
+        2245: 0.0001,  # SWIR7 (WV3)
     }
 
     def __init__(self, sensor_name: str):
@@ -132,8 +133,7 @@ class AtmosphericCorrector:
 
         return boa.astype(np.float32)
 
-    def empirical_sunglint(self, b02: np.ndarray, b_nir: np.ndarray,
-                           strength: float = 0.6) -> np.ndarray:
+    def empirical_sunglint(self, b02: np.ndarray, b_nir: np.ndarray, strength: float = 0.6) -> np.ndarray:
         """
         Empirical sunglint correction using NIR band.
 
@@ -162,8 +162,7 @@ class AtmosphericCorrector:
         corrected = b02 - k * glint
         return np.clip(corrected, 0, 1.0).astype(np.float32)
 
-    def acolite_correct(self, input_path: str, output_dir: str,
-                        sunglint: bool = True) -> str:
+    def acolite_correct(self, input_path: str, output_dir: str, sunglint: bool = True) -> str:
         """
         Run ACOLITE atmospheric correction via CLI.
 
@@ -180,14 +179,22 @@ class AtmosphericCorrector:
 
         cmd = [
             "acolite_cli",
-            "--input", str(input_path),
-            "--output", str(output_path),
-            "--product", "BOA",
-            "--sensor", self.sensor.acolite_sensor,
-            "--proc", "water",
-            "--sunglint", str(sunglint).lower(),
-            "--aot-method", "image",
-            "--output-format", "GeoTIFF",
+            "--input",
+            str(input_path),
+            "--output",
+            str(output_path),
+            "--product",
+            "BOA",
+            "--sensor",
+            self.sensor.acolite_sensor,
+            "--proc",
+            "water",
+            "--sunglint",
+            str(sunglint).lower(),
+            "--aot-method",
+            "image",
+            "--output-format",
+            "GeoTIFF",
         ]
 
         try:
@@ -236,7 +243,7 @@ class AtmosphericCorrector:
         Uses Angstrom law: tau = beta * lambda^(-alpha)
         Where alpha ~1.3 (maritime aerosols), beta ~0.1 (low turbidity)
         """
-        beta = 0.1   # Turbidity coefficient (Algarve: low-moderate)
+        beta = 0.1  # Turbidity coefficient (Algarve: low-moderate)
         alpha = 1.3  # Angstrom exponent (maritime)
         lam_um = wavelength_nm / 1000.0
         return beta * (lam_um ** (-alpha))
@@ -246,13 +253,14 @@ class AtmosphericCorrector:
 # CONVENIENCE FUNCTIONS
 # ═══════════════════════════════════════════════════════════════→═══════════════
 
+
 def correct_b02(dn_array: np.ndarray, sensor_name: str = "sentinel-2") -> np.ndarray:
     """Quick B02 correction — the only band that matters for reef ID."""
     ac = AtmosphericCorrector(sensor_name)
     return ac.dn_to_reflectance(dn_array, "B02")
 
 
-def correct_all_bands(dn_dict: Dict[str, np.ndarray], sensor_name: str = "sentinel-2") -> Dict[str, np.ndarray]:
+def correct_all_bands(dn_dict: dict[str, np.ndarray], sensor_name: str = "sentinel-2") -> dict[str, np.ndarray]:
     """Correct all bands from DN to BOA reflectance."""
     ac = AtmosphericCorrector(sensor_name)
     return {band: ac.dn_to_reflectance(arr, band) for band, arr in dn_dict.items()}

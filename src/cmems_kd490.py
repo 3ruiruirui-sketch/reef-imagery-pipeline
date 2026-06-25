@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Dict, Optional
 
 log = logging.getLogger(__name__)
 
@@ -35,10 +34,11 @@ _LAT_MIN, _LAT_MAX = 36.8, 37.5
 # Atlantic 1 km daily L3 — replaces retired atl_bgc-transp_my_l4-multi-4km_P1M
 _DATASET_ID = "cmems_obs-oc_atl_bgc-transp_my_l3-multi-1km_P1D"
 
-from src.constants import KD490_TABLE as _STATIC_TABLE, KD490_DEFAULT
+from src.constants import KD490_DEFAULT
+from src.constants import KD490_TABLE as _STATIC_TABLE
 
 
-def _fetch_cmems_climatology() -> tuple[Dict[int, float], Dict[int, float]]:
+def _fetch_cmems_climatology() -> tuple[dict[int, float], dict[int, float]]:
     """
     Download daily Kd490 + ZSD from CMEMS, aggregate to monthly climatology.
 
@@ -49,7 +49,7 @@ def _fetch_cmems_climatology() -> tuple[Dict[int, float], Dict[int, float]]:
     import numpy as np
 
     user = os.environ.get("CMEMS_USER") or os.environ.get("COPERNICUSMARINE_SERVICE_USERNAME")
-    pwd  = os.environ.get("CMEMS_PASSWORD") or os.environ.get("COPERNICUSMARINE_SERVICE_PASSWORD")
+    pwd = os.environ.get("CMEMS_PASSWORD") or os.environ.get("COPERNICUSMARINE_SERVICE_PASSWORD")
 
     log.info("Fetching CMEMS Kd490+ZSD climatology (dataset=%s) …", _DATASET_ID)
 
@@ -67,13 +67,13 @@ def _fetch_cmems_climatology() -> tuple[Dict[int, float], Dict[int, float]]:
 
     ds = copernicusmarine.open_dataset(**kwargs)
 
-    def _monthly_median(da) -> Dict[int, float]:
-        table: Dict[int, float] = {}
+    def _monthly_median(da) -> dict[int, float]:
+        table: dict[int, float] = {}
         if "time" not in da.dims:
             vals = da.values.ravel()
             valid = vals[np.isfinite(vals) & (vals > 0)]
             v = float(np.nanmedian(valid)) if valid.size > 0 else 0.0
-            return {m: v for m in range(1, 13)}
+            return dict.fromkeys(range(1, 13), v)
         monthly = da.groupby("time.month").median(dim="time")
         for m in range(1, 13):
             if m not in monthly.month.values:
@@ -84,7 +84,7 @@ def _fetch_cmems_climatology() -> tuple[Dict[int, float], Dict[int, float]]:
                 table[m] = float(np.nanmedian(valid))
         return table
 
-    kd_table  = _monthly_median(ds["KD490"])
+    kd_table = _monthly_median(ds["KD490"])
     zsd_table = _monthly_median(ds["ZSD"])
 
     # Fill missing KD490 months from static table
@@ -94,18 +94,21 @@ def _fetch_cmems_climatology() -> tuple[Dict[int, float], Dict[int, float]]:
             log.debug("Month %d KD490 missing — static fallback %.4f", m, kd_table[m])
 
     log.info(
-        "CMEMS loaded — KD490: Jul=%.4f Aug=%.4f Sep=%.4f (static Jul=%.4f) | "
-        "ZSD: Jul=%.1fm Aug=%.1fm Sep=%.1fm",
-        kd_table.get(7, 0), kd_table.get(8, 0), kd_table.get(9, 0),
+        "CMEMS loaded — KD490: Jul=%.4f Aug=%.4f Sep=%.4f (static Jul=%.4f) | " "ZSD: Jul=%.1fm Aug=%.1fm Sep=%.1fm",
+        kd_table.get(7, 0),
+        kd_table.get(8, 0),
+        kd_table.get(9, 0),
         _STATIC_TABLE.get(7, 0),
-        zsd_table.get(7, 0), zsd_table.get(8, 0), zsd_table.get(9, 0),
+        zsd_table.get(7, 0),
+        zsd_table.get(8, 0),
+        zsd_table.get(9, 0),
     )
     return kd_table, zsd_table
 
 
 # Module-level tables — static at import; updated by refresh_from_cmems()
-KD490_TABLE_LIVE: Dict[int, float] = dict(_STATIC_TABLE)
-ZSD_TABLE_LIVE:   Dict[int, float] = {}   # empty until first successful refresh
+KD490_TABLE_LIVE: dict[int, float] = dict(_STATIC_TABLE)
+ZSD_TABLE_LIVE: dict[int, float] = {}  # empty until first successful refresh
 
 
 def refresh_from_cmems() -> bool:
@@ -135,8 +138,7 @@ def refresh_from_cmems() -> bool:
         else:
             log.warning("CMEMS fetch failed (%s: %s) — retaining static table.", type(e).__name__, e)
     except Exception as e:
-        log.warning("CMEMS fetch failed (%s: %s) — retaining static table.",
-                    type(e).__name__, e)
+        log.warning("CMEMS fetch failed (%s: %s) — retaining static table.", type(e).__name__, e)
     return False
 
 
@@ -145,7 +147,7 @@ def get_kd490(month: int) -> float:
     return KD490_TABLE_LIVE.get(month, KD490_DEFAULT)
 
 
-def get_zsd(month: int) -> Optional[float]:
+def get_zsd(month: int) -> float | None:
     """
     Secchi disk depth (m) for the given calendar month from CMEMS.
 

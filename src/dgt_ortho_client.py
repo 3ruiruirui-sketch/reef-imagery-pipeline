@@ -83,7 +83,6 @@ import contextlib
 import logging
 import os
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import requests
@@ -97,39 +96,47 @@ _DGT_USER = os.environ.get("DGT_CDD_USERNAME")
 _DGT_PASS = os.environ.get("DGT_CDD_PASSWORD")
 
 
-def _build_authenticated_session() -> Optional[requests.Session]:
+def _build_authenticated_session() -> requests.Session | None:
     """Compatibility shim — delegates to dgt_cdd_auth.get_cdd_session."""
     return get_cdd_session(force_refresh=True)
 
 
-def _get_session() -> Optional[requests.Session]:
+def _get_session() -> requests.Session | None:
     return get_cdd_session()
 
 
 def _invalidate_session() -> None:
     invalidate()
 
+
 # ── STAC catalogue constants ───────────────────────────────────────────────────
 
 DGT_STAC_ROOT = "https://dgt-be.a.incd.pt:8081"
 
 # Collection IDs available on the DGT STAC (all cover Portugal mainland)
-ORTHO_COLLECTIONS: Dict[str, str] = {
-    "ORTOSAT-2023": "ORTOSAT-2023",   # 30 cm satellite RGBI
-    "ORTOS-2021":   "ORTOS-2021",     # 25 cm aerial RGBI
-    "ORTOS-2018":   "ORTOS-2018",
-    "ORTOS-2015":   "ORTOS-2015",
-    "ORTOS-2012":   "ORTOS-2012",
-    "ORTOS-2010":   "ORTOS-2010",
-    "ORTOS-2007":   "ORTOS-2007",
-    "ORTOS-2004":   "ORTOS-2004",
-    "ORTOS-1995":   "ORTOS-1995",
+ORTHO_COLLECTIONS: dict[str, str] = {
+    "ORTOSAT-2023": "ORTOSAT-2023",  # 30 cm satellite RGBI
+    "ORTOS-2021": "ORTOS-2021",  # 25 cm aerial RGBI
+    "ORTOS-2018": "ORTOS-2018",
+    "ORTOS-2015": "ORTOS-2015",
+    "ORTOS-2012": "ORTOS-2012",
+    "ORTOS-2010": "ORTOS-2010",
+    "ORTOS-2007": "ORTOS-2007",
+    "ORTOS-2004": "ORTOS-2004",
+    "ORTOS-1995": "ORTOS-1995",
 }
 
 # Sorted from newest to oldest for change-detection helpers
-COLLECTIONS_BY_YEAR: List[str] = [
-    "ORTOSAT-2023", "ORTOS-2021", "ORTOS-2018", "ORTOS-2015",
-    "ORTOS-2012", "ORTOS-2010", "ORTOS-2007", "ORTOS-2004", "ORTOS-1995",
+COLLECTIONS_BY_YEAR: list[str] = [
+    "ORTOSAT-2023",
+    "ORTOS-2021",
+    "ORTOS-2018",
+    "ORTOS-2015",
+    "ORTOS-2012",
+    "ORTOS-2010",
+    "ORTOS-2007",
+    "ORTOS-2004",
+    "ORTOS-1995",
 ]
 
 # Band order in DGT COGs: Red=1, Green=2, Blue=3, NIR=4
@@ -141,6 +148,7 @@ BAND_NIR = 4
 try:
     import rasterio
     from rasterio.merge import merge as _rio_merge
+
     HAS_RASTERIO = True
 except ImportError:
     HAS_RASTERIO = False
@@ -149,10 +157,9 @@ except ImportError:
 class DGTOrthoClient:
     """Download DGT orthophoto COGs and compute spectral indices."""
 
-    def __init__(self,
-                 bbox: Tuple[float, float, float, float],
-                 output_dir: str = "./outputs/ortho",
-                 cache: bool = True) -> None:
+    def __init__(
+        self, bbox: tuple[float, float, float, float], output_dir: str = "./outputs/ortho", cache: bool = True
+    ) -> None:
         """
         Args:
             bbox: (minx, miny, maxx, maxy) in WGS84 (lon, lat)
@@ -166,7 +173,7 @@ class DGTOrthoClient:
 
     # ── STAC discovery ─────────────────────────────────────────────────────────
 
-    def list_tiles(self, collection: str, limit: int = 100) -> List[Dict]:
+    def list_tiles(self, collection: str, limit: int = 100) -> list[dict]:
         """Query the DGT STAC and return items that intersect the bbox.
 
         Args:
@@ -196,11 +203,11 @@ class DGTOrthoClient:
 
     # ── Download ───────────────────────────────────────────────────────────────
 
-    def _signed_download_url(self, collection: str, item_id: str) -> Optional[str]:
+    def _signed_download_url(self, collection: str, item_id: str) -> str | None:
         """Return a signed download URL via the shared dgt_cdd_auth helper."""
         return get_signed_url(collection, item_id)
 
-    def download_tiles(self, collection: str, limit: int = 100) -> List[Path]:
+    def download_tiles(self, collection: str, limit: int = 100) -> list[Path]:
         """Download all COG tiles for a collection that overlap the bbox.
 
         Requires a free DGT CDD account (register at https://cdd.dgterritorio.gov.pt).
@@ -224,10 +231,10 @@ class DGTOrthoClient:
             logger.warning(f"No tiles found for {collection}")
             return []
 
-        paths: List[Path] = []
+        paths: list[Path] = []
         for feat in features:
-            item_id  = feat.get("id", "")
-            coll_id  = ORTHO_COLLECTIONS.get(collection, collection)
+            item_id = feat.get("id", "")
+            coll_id = ORTHO_COLLECTIONS.get(collection, collection)
             # Prefer the proxied "data" asset (downloadable via the CDD backend).
             # Fall back to "Data"/"visual" for non-proxied collections (e.g. the
             # orthophoto passthrough, which only exposes "visual" → raw private
@@ -258,10 +265,7 @@ class DGTOrthoClient:
             # Fall back to a per-item lookup only if the search did not embed one.
             signed_url = raw_href or self._signed_download_url(coll_id, item_id)
             if not signed_url:
-                logger.error(
-                    "Could not obtain a download URL for %s/%s — "
-                    "check credentials.", collection, item_id
-                )
+                logger.error("Could not obtain a download URL for %s/%s — " "check credentials.", collection, item_id)
                 continue
 
             session = _get_session()
@@ -271,7 +275,8 @@ class DGTOrthoClient:
                         logger.error(
                             "  HTTP %d for %s — session expired or account lacks access. "
                             "Re-check credentials at cdd.dgterritorio.gov.pt.",
-                            resp.status_code, fname,
+                            resp.status_code,
+                            fname,
                         )
                         _invalidate_session()
                         continue
@@ -292,63 +297,63 @@ class DGTOrthoClient:
             wms_path = self.download_wms_clip(collection)
             if wms_path:
                 paths.append(wms_path)
-                
+
         return paths
 
     # ── WMS Fallback ───────────────────────────────────────────────────────────
 
-    def download_wms_clip(self, collection: str, layer: str = "CorVerdadeira") -> Optional[Path]:
+    def download_wms_clip(self, collection: str, layer: str = "CorVerdadeira") -> Path | None:
         """Fallback method: Download a WMS clip if S3/STAC COG access is denied."""
         wms_urls = {
             "ORTOSAT-2023": ("https://ortos.dgterritorio.gov.pt/wms/ortosat2023", f"ortoSat2023-{layer}"),
             "ORTOS-2021": ("https://cartografia.dgterritorio.gov.pt/wms/ortos2021", f"Ortos2021-{layer}"),
-            "ORTOS-2018": ("https://cartografia.dgterritorio.gov.pt/wms/ortos2018", f"Ortos2018-{layer}")
+            "ORTOS-2018": ("https://cartografia.dgterritorio.gov.pt/wms/ortos2018", f"Ortos2018-{layer}"),
         }
-        
+
         if collection not in wms_urls:
             logger.warning(f"No known WMS endpoint for fallback collection: {collection}")
             return None
-            
+
         url, layer_name = wms_urls[collection]
         out_path = self.output_dir / collection / f"{collection}_WMS_{layer}_clip.tif"
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         if out_path.exists() and self.cache:
             return out_path
-            
+
         minx, miny, maxx, maxy = self.bbox
-        
+
         # Approximate pixel size for 25-30cm resolution based on degrees
         lat_diff = maxy - miny
         # 1 degree lat is ~111km. 111,000 / 0.3m = 370,000 pixels per degree.
         pixel_size = int(lat_diff * 370000)
         # Limit to 3333 to respect standard DGT WMS MaxSize constraints
         pixel_size = min(pixel_size, 3333)
-        
+
         params = {
             "service": "WMS",
             "version": "1.3.0",
             "request": "GetMap",
             "layers": layer_name,
             "crs": "EPSG:4326",
-            "bbox": f"{miny},{minx},{maxy},{maxx}", # WMS 1.3.0 EPSG:4326 is lat,lon
+            "bbox": f"{miny},{minx},{maxy},{maxx}",  # WMS 1.3.0 EPSG:4326 is lat,lon
             "width": str(pixel_size),
             "height": str(pixel_size),
             "format": "image/tiff",
-            "transparent": "FALSE"
+            "transparent": "FALSE",
         }
-        
+
         logger.info(f"WMS Fallback: Requesting {collection} {layer} from DGT WMS ({pixel_size}x{pixel_size}px)...")
         try:
             r = requests.get(url, params=params, timeout=120)
             if r.status_code != 200:
                 logger.error(f"WMS request failed: HTTP {r.status_code}. Response: {r.text[:200]}")
                 return None
-                
+
             r.raise_for_status()
             with open(out_path, "wb") as f:
                 f.write(r.content)
-                
+
             size_mb = out_path.stat().st_size / 1e6
             logger.info(f"  ✓ Saved WMS clip → {out_path.name} ({size_mb:.1f} MB)")
             return out_path
@@ -358,7 +363,7 @@ class DGTOrthoClient:
 
     # ── Mosaic ─────────────────────────────────────────────────────────────────
 
-    def mosaic(self, tile_paths: List[Path], output_stem: str = "mosaic") -> Optional[Path]:
+    def mosaic(self, tile_paths: list[Path], output_stem: str = "mosaic") -> Path | None:
         """Merge downloaded COG tiles into a single GeoTIFF.
 
         Args:
@@ -383,8 +388,7 @@ class DGTOrthoClient:
                 src_files = [stack.enter_context(rasterio.open(str(p))) for p in tile_paths]
                 arr, transform = _rio_merge(src_files)
                 meta = src_files[0].meta.copy()
-                meta.update(height=arr.shape[1], width=arr.shape[2],
-                            transform=transform)
+                meta.update(height=arr.shape[1], width=arr.shape[2], transform=transform)
             with rasterio.open(str(out_path), "w", **meta) as dst:
                 dst.write(arr)
             logger.info(f"Mosaic saved: {out_path}")
@@ -395,9 +399,7 @@ class DGTOrthoClient:
 
     # ── Spectral indices ───────────────────────────────────────────────────────
 
-    def compute_ndvi(self,
-                     tile_paths: List[Path],
-                     output_stem: str = "ndvi") -> Optional[Path]:
+    def compute_ndvi(self, tile_paths: list[Path], output_stem: str = "ndvi") -> Path | None:
         """Compute NDVI = (NIR − Red) / (NIR + Red) from RGBI COG tiles.
 
         DGT COGs carry 4 bands: R=1, G=2, B=3, NIR=4.
@@ -430,8 +432,7 @@ class DGTOrthoClient:
 
             with rasterio.open(str(src_path)) as src:
                 if src.count < BAND_NIR:
-                    logger.error(
-                        f"{src_path.name} has only {src.count} bands; NIR (band 4) required")
+                    logger.error(f"{src_path.name} has only {src.count} bands; NIR (band 4) required")
                     return None
                 red = src.read(BAND_RED).astype(np.float32)
                 nir = src.read(BAND_NIR).astype(np.float32)
@@ -451,17 +452,15 @@ class DGTOrthoClient:
 
             valid = ndvi[~np.isnan(ndvi)]
             logger.info(
-                f"NDVI saved: {out_path}  "
-                f"mean={np.mean(valid):.3f}  min={np.min(valid):.3f}  max={np.max(valid):.3f}")
+                f"NDVI saved: {out_path}  " f"mean={np.mean(valid):.3f}  min={np.min(valid):.3f}  max={np.max(valid):.3f}"
+            )
             return out_path
 
         except Exception as exc:
             logger.error(f"NDVI computation failed: {exc}")
             return None
 
-    def compute_ndwi(self,
-                     tile_paths: List[Path],
-                     output_stem: str = "ndwi") -> Optional[Path]:
+    def compute_ndwi(self, tile_paths: list[Path], output_stem: str = "ndwi") -> Path | None:
         """Compute NDWI = (Green − NIR) / (Green + NIR).
 
         Positive NDWI indicates open water; useful for delineating the
@@ -513,9 +512,7 @@ class DGTOrthoClient:
 
     # ── Change detection ───────────────────────────────────────────────────────
 
-    def change_summary(self,
-                       collection_early: str,
-                       collection_late: str) -> Dict:
+    def change_summary(self, collection_early: str, collection_late: str) -> dict:
         """Download NDVI for two years and compute a pixel-level change report.
 
         Returns a dict with mean/std ΔNDVI and the fraction of pixels that show
@@ -554,6 +551,7 @@ class DGTOrthoClient:
                     _early_shape = _chk.shape
                 if src_l.shape != _early_shape:
                     import rioxarray as rxr
+
                     late_da = rxr.open_rasterio(str(ndvi_late_path), masked=True)
                     early_da = rxr.open_rasterio(str(ndvi_early_path), masked=True)
                     late_da = late_da.rio.reproject_match(early_da)
@@ -583,7 +581,7 @@ class DGTOrthoClient:
 
     # ── Convenience: best available ortho for bbox ─────────────────────────────
 
-    def best_available(self) -> Optional[str]:
+    def best_available(self) -> str | None:
         """Return the newest collection that has tiles for this bbox."""
         for coll in COLLECTIONS_BY_YEAR:
             items = self.list_tiles(coll, limit=1)

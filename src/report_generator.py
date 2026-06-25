@@ -7,37 +7,43 @@ This module generates an HTML summary after a pipeline execution, detailing:
 - Number of reef candidates discovered and validated
 """
 
-import os
 import glob
 import json
+import os
 from datetime import datetime
+
 
 def generate_pipeline_report(output_dir: str, date_str: str, lat: float, lon: float) -> str | None:
     """Generates an HTML report summarizing the pipeline run."""
     try:
         report_path = os.path.join(output_dir, f"reef_report_{date_str}.html")
-        
+
         candidates_file = os.path.join(output_dir, f"reef_candidates_{date_str}_validated.geojson")
         num_candidates = 0
         num_high_conf = 0
-        
+
         if os.path.exists(candidates_file):
-            with open(candidates_file, "r") as f:
+            with open(candidates_file) as f:
                 data = json.load(f)
                 features = data.get("features", [])
                 num_candidates = len(features)
-                num_high_conf = sum(1 for f in features if f.get("properties", {}).get("validation_class") == "HIGH Confidence")
-        
+                num_high_conf = sum(
+                    1 for f in features if f.get("properties", {}).get("validation_class") == "HIGH Confidence"
+                )
+
         # Check available sources
         has_lidar = len(glob.glob(os.path.join(output_dir, f"bathy_dgt_lidar_{date_str}.tif"))) > 0
         has_emodnet = len(glob.glob(os.path.join(output_dir, f"bathy_emodnet_{date_str}.tif"))) > 0
         has_s2 = len(glob.glob(os.path.join(output_dir, f"bathy_s2_stumpf_{date_str}.tif"))) > 0
-        
+
         sources_html = ""
-        if has_lidar: sources_html += "<li>🟢 DGT LiDAR (50cm)</li>"
-        if has_emodnet: sources_html += "<li>🔵 EMODnet (115m)</li>"
-        if has_s2: sources_html += "<li>🟡 Sentinel-2 SDB (10m) - Stumpf + Sunglint</li>"
-        
+        if has_lidar:
+            sources_html += "<li>🟢 DGT LiDAR (50cm)</li>"
+        if has_emodnet:
+            sources_html += "<li>🔵 EMODnet (115m)</li>"
+        if has_s2:
+            sources_html += "<li>🟡 Sentinel-2 SDB (10m) - Stumpf + Sunglint</li>"
+
         html_content = f"""
         <!DOCTYPE html>
         <html>
@@ -75,10 +81,10 @@ def generate_pipeline_report(output_dir: str, date_str: str, lat: float, lon: fl
         </body>
         </html>
         """
-        
+
         with open(report_path, "w") as f:
             f.write(html_content)
-            
+
         return report_path
     except Exception as e:
         print(f"Error generating report: {e}")

@@ -45,11 +45,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 import time
-import warnings
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import requests
@@ -57,10 +54,7 @@ import requests
 log = logging.getLogger(__name__)
 
 # ── Service constants ──────────────────────────────────────────────────────────
-_IH_BASE = (
-    "https://webgis.dgrm.mm.gov.pt/arcgis/rest/services/"
-    "Dados_entidades_externas/Batimetrica_IH/MapServer/0"
-)
+_IH_BASE = "https://webgis.dgrm.mm.gov.pt/arcgis/rest/services/" "Dados_entidades_externas/Batimetrica_IH/MapServer/0"
 _QUERY_URL = f"{_IH_BASE}/query"
 
 # All isobath depths available in the layer (verified from service metadata)
@@ -83,6 +77,7 @@ _RETRY_DELAY_S = 2.0
 # =============================================================================
 # A.  Downloader  (bbox chunking + merge + dedup)
 # =============================================================================
+
 
 class IHBathyDownloader:
     """Chunked downloader for DGRM/IH isobath polylines with local cache."""
@@ -129,7 +124,11 @@ class IHBathyDownloader:
 
         log.info(
             "IH bathy fetching AOI [%.4f,%.4f → %.4f,%.4f] (chunk=%.2f°)",
-            min_lon, min_lat, max_lon, max_lat, self.chunk_deg,
+            min_lon,
+            min_lat,
+            max_lon,
+            max_lat,
+            self.chunk_deg,
         )
         features = self._fetch_chunked(min_lon, min_lat, max_lon, max_lat, depths)
         features = self._deduplicate(features)
@@ -150,8 +149,10 @@ class IHBathyDownloader:
 
     def _fetch_chunked(
         self,
-        min_lon: float, min_lat: float,
-        max_lon: float, max_lat: float,
+        min_lon: float,
+        min_lat: float,
+        max_lon: float,
+        max_lat: float,
         depths: list[int],
     ) -> list[dict]:
         """Tile AOI into chunks, fetch each, merge results."""
@@ -167,8 +168,10 @@ class IHBathyDownloader:
 
     def _fetch_single_bbox(
         self,
-        min_lon: float, min_lat: float,
-        max_lon: float, max_lat: float,
+        min_lon: float,
+        min_lat: float,
+        max_lon: float,
+        max_lat: float,
         depths: list[int],
     ) -> list[dict]:
         """One ArcGIS REST query with retry logic."""
@@ -201,8 +204,7 @@ class IHBathyDownloader:
                 if attempt < _MAX_RETRIES:
                     time.sleep(_RETRY_DELAY_S * attempt)
 
-        log.error("IH fetch exhausted retries for bbox [%.4f,%.4f,%.4f,%.4f]",
-                  min_lon, min_lat, max_lon, max_lat)
+        log.error("IH fetch exhausted retries for bbox [%.4f,%.4f,%.4f,%.4f]", min_lon, min_lat, max_lon, max_lat)
         return []
 
     @staticmethod
@@ -214,12 +216,14 @@ class IHBathyDownloader:
             geom = feat.get("geometry", {})
             paths = geom.get("paths", [])
             for path in paths:
-                out.append({
-                    "depth": float(attrs.get("Depth", 0)),
-                    "coords": path,  # [[lon, lat], ...]
-                    "shape_leng": float(attrs.get("Shape_Leng", 0.0)),
-                    "objectid": int(attrs.get("OBJECTID", 0)),
-                })
+                out.append(
+                    {
+                        "depth": float(attrs.get("Depth", 0)),
+                        "coords": path,  # [[lon, lat], ...]
+                        "shape_leng": float(attrs.get("Shape_Leng", 0.0)),
+                        "objectid": int(attrs.get("OBJECTID", 0)),
+                    }
+                )
         return out
 
     @staticmethod
@@ -240,8 +244,10 @@ class IHBathyDownloader:
 
     def _cache_path(
         self,
-        min_lon: float, min_lat: float,
-        max_lon: float, max_lat: float,
+        min_lon: float,
+        min_lat: float,
+        max_lon: float,
+        max_lat: float,
         depths: list[int],
     ) -> Path:
         """Deterministic cache filename from bbox + depth list."""
@@ -255,17 +261,18 @@ class IHBathyDownloader:
         try:
             import geopandas as gpd
             from shapely import LineString
-            from shapely.geometry import shape
 
             records = []
             for f in features:
                 geom = LineString(f["coords"])
-                records.append({
-                    "geometry": geom,
-                    "depth": f["depth"],
-                    "shape_leng": f["shape_leng"],
-                    "objectid": f["objectid"],
-                })
+                records.append(
+                    {
+                        "geometry": geom,
+                        "depth": f["depth"],
+                        "shape_leng": f["shape_leng"],
+                        "objectid": f["objectid"],
+                    }
+                )
             gdf = gpd.GeoDataFrame(records, crs="EPSG:4326")
             gdf.to_file(path, driver="GPKG", engine="fiona")
             log.debug("Cache saved (GeoPackage): %s (%d features)", path, len(features))
@@ -287,6 +294,7 @@ class IHBathyDownloader:
 
         try:
             import geopandas as gpd
+
             gdf = gpd.read_file(path)
             return [
                 {
@@ -303,8 +311,10 @@ class IHBathyDownloader:
 
     @staticmethod
     def _tile_bbox(
-        min_lon: float, min_lat: float,
-        max_lon: float, max_lat: float,
+        min_lon: float,
+        min_lat: float,
+        max_lon: float,
+        max_lat: float,
         step: float,
     ) -> list[tuple[float, float, float, float]]:
         """Generate non-overlapping tile bboxes."""
@@ -313,11 +323,14 @@ class IHBathyDownloader:
         while lat < max_lat:
             lon = min_lon
             while lon < max_lon:
-                tiles.append((
-                    lon, lat,
-                    min(lon + step, max_lon),
-                    min(lat + step, max_lat),
-                ))
+                tiles.append(
+                    (
+                        lon,
+                        lat,
+                        min(lon + step, max_lon),
+                        min(lat + step, max_lat),
+                    )
+                )
                 lon += step
             lat += step
         return tiles
@@ -326,6 +339,7 @@ class IHBathyDownloader:
 # =============================================================================
 # B.  Feature Engineering
 # =============================================================================
+
 
 class BathyFeatureEngine:
     """Compute bathymetry-derived features for points or grids."""
@@ -389,10 +403,8 @@ class BathyFeatureEngine:
         # purely latitudinal segments; oblique segments are underestimated.
         # For precise length computation, reproject to a metric CRS (e.g. EPSG:3763).
         M_PER_DEG = 111_320.0
-        total_length_m = sum(
-            f.get("shape_leng", 0.0) * M_PER_DEG for f in features
-        )
-        aoi_m2 = (buffer_m * 2) ** 2          # AOI area in m² (square window)
+        total_length_m = sum(f.get("shape_leng", 0.0) * M_PER_DEG for f in features)
+        aoi_m2 = (buffer_m * 2) ** 2  # AOI area in m² (square window)
         density_proxy = total_length_m / aoi_m2 if aoi_m2 > 0 else 0.0
 
         return {
@@ -423,50 +435,46 @@ class BathyFeatureEngine:
         # Expand by buffer
         deg_buf = buffer_m / M_PER_DEG
         features = self._fetch_for_bbox(
-            min_lon - deg_buf, min_lat - deg_buf,
-            max_lon + deg_buf, max_lat + deg_buf,
+            min_lon - deg_buf,
+            min_lat - deg_buf,
+            max_lon + deg_buf,
+            max_lat + deg_buf,
             depths,
         )
         # Compute per-point (could be vectorised with scipy cKDTree in future)
-        return [
-            self.compute_features_for_point(lon, lat, buffer_m=buffer_m, depths=depths)
-            for lon, lat in zip(lons, lats)
-        ]
+        return [self.compute_features_for_point(lon, lat, buffer_m=buffer_m, depths=depths) for lon, lat in zip(lons, lats)]
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
-    def _fetch_for_point(
-        self, lon: float, lat: float, buffer_m: float, depths: list[int]
-    ) -> list[dict]:
+    def _fetch_for_point(self, lon: float, lat: float, buffer_m: float, depths: list[int]) -> list[dict]:
         """Fetch isobaths for a point + buffer, with in-memory caching."""
         deg_buf = buffer_m / M_PER_DEG
         bbox = (lon - deg_buf, lat - deg_buf, lon + deg_buf, lat + deg_buf)
         key = f"{bbox[0]:.4f}_{bbox[1]:.4f}_{bbox[2]:.4f}_{bbox[3]:.4f}"
 
         if key not in self._features_cache:
-            self._features_cache[key] = self.downloader.fetch_for_aoi(
-                *bbox, depths=depths
-            )
+            self._features_cache[key] = self.downloader.fetch_for_aoi(*bbox, depths=depths)
         return self._features_cache[key]
 
     def _fetch_for_bbox(
-        self, min_lon: float, min_lat: float, max_lon: float, max_lat: float,
+        self,
+        min_lon: float,
+        min_lat: float,
+        max_lon: float,
+        max_lat: float,
         depths: list[int] | None,
     ) -> list[dict]:
         key = f"{min_lon:.4f}_{min_lat:.4f}_{max_lon:.4f}_{max_lat:.4f}"
         if key not in self._features_cache:
-            self._features_cache[key] = self.downloader.fetch_for_aoi(
-                min_lon, min_lat, max_lon, max_lat, depths=depths
-            )
+            self._features_cache[key] = self.downloader.fetch_for_aoi(min_lon, min_lat, max_lon, max_lat, depths=depths)
         return self._features_cache[key]
 
     @staticmethod
-    def _compute_distances_3763(
-        lon: float, lat: float, features: list[dict]
-    ) -> dict[str, float]:
+    def _compute_distances_3763(lon: float, lat: float, features: list[dict]) -> dict[str, float]:
         """Compute metric distances in EPSG:3763 (PT-TM06) for accuracy."""
         try:
             from pyproj import Transformer
+
             # EPSG:4326 → EPSG:3763 (PT-TM06 / ETRS89-TM06)
             transformer = Transformer.from_crs("EPSG:4326", "EPSG:3763", always_xy=True)
             px, py = transformer.transform(lon, lat)
@@ -492,9 +500,7 @@ class BathyFeatureEngine:
         return dists
 
     @staticmethod
-    def _compute_distances_haversine(
-        lon: float, lat: float, features: list[dict]
-    ) -> dict[str, float]:
+    def _compute_distances_haversine(lon: float, lat: float, features: list[dict]) -> dict[str, float]:
         """Fallback when pyproj unavailable — haversine in metres."""
         R = 6_371_000.0
         phi1, lam1 = np.radians(lat), np.radians(lon)
@@ -571,7 +577,7 @@ class BathyFeatureEngine:
                 phi1, phi2 = np.radians(lat), np.radians(node[1])
                 dlam = np.radians(node[0] - lon)
                 dphi = np.radians(node[1] - lat)
-                a = np.sin(dphi / 2)**2 + np.cos(phi1) * np.cos(phi2) * np.sin(dlam / 2)**2
+                a = np.sin(dphi / 2) ** 2 + np.cos(phi1) * np.cos(phi2) * np.sin(dlam / 2) ** 2
                 d = R * 2 * np.arcsin(np.sqrt(a))
                 if d < 2000:
                     nearby_depths.append(feat["depth"])
@@ -600,6 +606,7 @@ class BathyFeatureEngine:
 # =============================================================================
 # C.  Convenience function for pipeline integration
 # =============================================================================
+
 
 def get_bathy_features_for_summary(
     lon: float,

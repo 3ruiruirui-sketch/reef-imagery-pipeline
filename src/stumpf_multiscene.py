@@ -32,7 +32,6 @@ import rasterio
 from src.constants import (
     STUMPF_M0_DEFAULT,
     STUMPF_M1_DEFAULT,
-    BENTHIC_ISOBATHS,
 )
 
 log = logging.getLogger(__name__)
@@ -110,14 +109,19 @@ def fuse_scenes(
     if isobath_features is None:
         try:
             from src.bathy_calibrator import fetch_isobaths_for_bbox
+
             isobath_features = fetch_isobaths_for_bbox(min_lon, min_lat, max_lon, max_lat)
         except Exception as exc:
             log.warning("IH isobath fetch failed: %s", exc)
             return {
-                "m0": STUMPF_M0_DEFAULT, "m1": STUMPF_M1_DEFAULT,
-                "m0_std": 0.0, "m1_std": 0.0,
-                "n_scenes": 0, "n_rejected": len(scenes),
-                "scene_results": [], "status": "default",
+                "m0": STUMPF_M0_DEFAULT,
+                "m1": STUMPF_M1_DEFAULT,
+                "m0_std": 0.0,
+                "m1_std": 0.0,
+                "n_scenes": 0,
+                "n_rejected": len(scenes),
+                "scene_results": [],
+                "status": "default",
                 "message": f"IH fetch failed: {exc}",
             }
 
@@ -133,10 +137,14 @@ def fuse_scenes(
     if not scene_results:
         log.warning("No scenes calibrated successfully — using defaults")
         return {
-            "m0": STUMPF_M0_DEFAULT, "m1": STUMPF_M1_DEFAULT,
-            "m0_std": 0.0, "m1_std": 0.0,
-            "n_scenes": 0, "n_rejected": len(scenes),
-            "scene_results": [], "status": "default",
+            "m0": STUMPF_M0_DEFAULT,
+            "m1": STUMPF_M1_DEFAULT,
+            "m0_std": 0.0,
+            "m1_std": 0.0,
+            "n_scenes": 0,
+            "n_rejected": len(scenes),
+            "scene_results": [],
+            "status": "default",
             "message": "all scenes failed calibration",
         }
 
@@ -154,13 +162,19 @@ def fuse_scenes(
 
     fused_m0 = float(np.median(m0s))
     fused_m1 = float(np.median(m1s))
-    m0_std   = float(np.std(m0s))
-    m1_std   = float(np.std(m1s))
+    m0_std = float(np.std(m0s))
+    m1_std = float(np.std(m1s))
 
     status = "fused" if len(used) > 1 else "single_scene"
     log.info(
         "Multi-scene fusion: %d/%d scenes → m0=%.3f±%.3f  m1=%.3f±%.3f  [%s]",
-        len(used), len(scenes), fused_m0, m0_std, fused_m1, m1_std, status,
+        len(used),
+        len(scenes),
+        fused_m0,
+        m0_std,
+        fused_m1,
+        m1_std,
+        status,
     )
 
     return {

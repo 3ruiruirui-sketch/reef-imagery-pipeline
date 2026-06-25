@@ -28,7 +28,6 @@ from pathlib import Path
 
 import numpy as np
 import rasterio
-from rasterio.transform import from_bounds
 
 log = logging.getLogger(__name__)
 
@@ -115,15 +114,15 @@ def interpolate_cloud_gaps(
     for tgt_date in targets:
         # Find nearest clear scene before and after target
         before = [sc for sc in clear_scenes if sc["_date"] <= tgt_date]
-        after  = [sc for sc in clear_scenes if sc["_date"] >= tgt_date]
+        after = [sc for sc in clear_scenes if sc["_date"] >= tgt_date]
 
         if not before or not after:
             log.warning("Cannot bracket date %s — no clear scene on one side", tgt_date)
             bands.append(np.full_like(bands[0] if bands else np.zeros((1, 1)), np.nan))
             continue
 
-        sc_before = before[-1]   # closest clear scene before target
-        sc_after  = after[0]     # closest clear scene after target
+        sc_before = before[-1]  # closest clear scene before target
+        sc_after = after[0]  # closest clear scene after target
 
         arr_b, _ = _load_sdb(sc_before["sdb_path"])
         arr_a, _ = _load_sdb(sc_after["sdb_path"])
@@ -152,10 +151,14 @@ def interpolate_cloud_gaps(
         arr_interp[invalid] = np.nan
 
         log.info(
-            "%s: interpolated between %s (t=%.2f) and %s (t=%.2f) — "
-            "t_adj=%.3f  valid=%.1f%%",
-            tgt_date, sc_before["_date"], 1 - t, sc_after["_date"], t,
-            t_adj, 100 * float(np.isfinite(arr_interp).mean()),
+            "%s: interpolated between %s (t=%.2f) and %s (t=%.2f) — " "t_adj=%.3f  valid=%.1f%%",
+            tgt_date,
+            sc_before["_date"],
+            1 - t,
+            sc_after["_date"],
+            t,
+            t_adj,
+            100 * float(np.isfinite(arr_interp).mean()),
         )
         bands.append(arr_interp.astype(np.float32))
 

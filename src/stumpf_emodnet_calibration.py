@@ -1,12 +1,15 @@
-import numpy as np
-import rasterio
-from src.constants import STUMPF_LOG_EPSILON
-from rasterio.warp import calculate_default_transform, reproject
-from rasterio.enums import Resampling
-from sklearn.linear_model import HuberRegressor
 import logging
 
+import numpy as np
+import rasterio
+from rasterio.enums import Resampling
+from rasterio.warp import reproject
+from sklearn.linear_model import HuberRegressor
+
+from src.constants import STUMPF_LOG_EPSILON
+
 log = logging.getLogger(__name__)
+
 
 def reproject_emodnet_to_s2(emodnet_path, s2_reference_path, output_emodnet_10m):
     """
@@ -20,17 +23,13 @@ def reproject_emodnet_to_s2(emodnet_path, s2_reference_path, output_emodnet_10m)
         dst_width = dst_ref.width
         dst_height = dst_ref.height
         dst_profile = dst_ref.profile
-        
+
     log.info(f"Reamostrando EMODnet para alinhar com Sentinel-2 (CRS: {dst_crs})...")
     with rasterio.open(emodnet_path) as src:
         # Atualizar o profile de destino com base no Sentinel-2
-        dst_profile.update({
-            'dtype': rasterio.float32,
-            'count': 1,
-            'nodata': np.nan if src.nodata is None else src.nodata
-        })
+        dst_profile.update({"dtype": rasterio.float32, "count": 1, "nodata": np.nan if src.nodata is None else src.nodata})
 
-        with rasterio.open(output_emodnet_10m, 'w', **dst_profile) as dst:
+        with rasterio.open(output_emodnet_10m, "w", **dst_profile) as dst:
             reproject(
                 source=rasterio.band(src, 1),
                 destination=rasterio.band(dst, 1),
@@ -38,7 +37,7 @@ def reproject_emodnet_to_s2(emodnet_path, s2_reference_path, output_emodnet_10m)
                 src_crs=src.crs,
                 dst_transform=dst_transform,
                 dst_crs=dst_crs,
-                resampling=Resampling.bilinear
+                resampling=Resampling.bilinear,
             )
     log.info(f"EMODnet reamostrado guardado em: {output_emodnet_10m}")
     return output_emodnet_10m
@@ -50,9 +49,7 @@ def validate_reprojected_emodnet(emodnet_path, min_valid_pixels: int = 500):
         arr = src.read(1)
     valid_pixels = int(np.count_nonzero(np.isfinite(arr)))
     if valid_pixels < min_valid_pixels:
-        raise ValueError(
-            f"Reprojected EMODnet raster has too few valid pixels: {valid_pixels} < {min_valid_pixels}"
-        )
+        raise ValueError(f"Reprojected EMODnet raster has too few valid pixels: {valid_pixels} < {min_valid_pixels}")
     # EMODnet bathymetry uses negative values for depth below sea level.
     # Check sign convention on marine pixels only (< 5 m elevation) to avoid
     # false positives on coastal tiles that include significant land area.
@@ -73,6 +70,7 @@ def stumpf_log_ratio(b_blue, b_green, n=1000):
     b_blue = np.clip(b_blue, STUMPF_LOG_EPSILON, None)
     b_green = np.clip(b_green, STUMPF_LOG_EPSILON, None)
     return np.log(n * b_blue) / np.log(n * b_green)
+
 
 def calibrate_stumpf_vs_emodnet(
     s2_blue_path,
@@ -110,13 +108,13 @@ def calibrate_stumpf_vs_emodnet(
         try:
             with rasterio.open(cmems_10m_path) as src:
                 cmems_prior = src.read(1)
-            log.info("CMEMS SDB prior loaded (%d valid pixels)",
-                     int(np.isfinite(cmems_prior).sum()))
+            log.info("CMEMS SDB prior loaded (%d valid pixels)", int(np.isfinite(cmems_prior).sum()))
         except Exception as exc:
             log.warning("Could not load CMEMS prior — using EMODnet only: %s", exc)
 
     try:
         from src.cmems_sdb import blend_depth_priors
+
         depth_prior = blend_depth_priors(emodnet_prior, cmems_prior)
     except ImportError:
         depth_prior = emodnet_prior.copy()
@@ -129,10 +127,7 @@ def calibrate_stumpf_vs_emodnet(
     X_ratio = stumpf_log_ratio(b_blue, b_green)
 
     valid_mask = (
-        (depth_prior <= -depth_min_m) &
-        (depth_prior >= -depth_max_m) &
-        np.isfinite(X_ratio) &
-        np.isfinite(depth_prior)
+        (depth_prior <= -depth_min_m) & (depth_prior >= -depth_max_m) & np.isfinite(X_ratio) & np.isfinite(depth_prior)
     )
 
     X_train = X_ratio[valid_mask].reshape(-1, 1)
@@ -140,12 +135,10 @@ def calibrate_stumpf_vs_emodnet(
 
     if len(X_train) < 100:
         raise ValueError(
-            f"Insufficient training points ({len(X_train)}) for calibration. "
-            "Check cloud mask or bbox coverage."
+            f"Insufficient training points ({len(X_train)}) for calibration. " "Check cloud mask or bbox coverage."
         )
 
-    log.info("Training robust regression model with %d samples (%s prior)...",
-             len(X_train), prior_source)
+    log.info("Training robust regression model with %d samples (%s prior)...", len(X_train), prior_source)
     model = HuberRegressor()
     model.fit(X_train, y_train)
 
@@ -156,11 +149,7 @@ def calibrate_stumpf_vs_emodnet(
     sdb_depth = (m1 * X_ratio) + m0
 
     # Mask: only output where prior is valid and within depth window
-    invalid_mask = (
-        ~np.isfinite(depth_prior) |
-        (depth_prior >= -1.0) |
-        (depth_prior < -depth_max_m)
-    )
+    invalid_mask = ~np.isfinite(depth_prior) | (depth_prior >= -1.0) | (depth_prior < -depth_max_m)
     sdb_depth = np.where(invalid_mask, np.nan, sdb_depth)
 
     log.info("Writing calibrated SDB depth to %s", output_path)
@@ -180,6 +169,7 @@ def calibrate_stumpf_vs_emodnet(
         "depth_prior_source": prior_source,
         "depth_training_window_m": [depth_min_m, depth_max_m],
     }
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

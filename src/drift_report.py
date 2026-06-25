@@ -10,11 +10,8 @@ Usage:
 """
 
 from src.drift_report_html import (
-    generate_html,
     export_html,
-    _load_history,
-    _severity_color,
-    _severity_badge,
+    generate_html,
 )
 
 __all__ = ["generate_html", "export_html"]

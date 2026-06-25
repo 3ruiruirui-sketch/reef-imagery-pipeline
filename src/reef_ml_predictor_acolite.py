@@ -6,21 +6,33 @@ Adds:
   (B) Stumpf log-ratio Satellite Derived Bathymetry (SDB) depth map
   (C) Gordon band-ratio Kd estimator integrated into run_predictor
 """
-import math, logging
+
+import logging
+import math
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from src.utils import read_band, write_band, snell_sza, optical_path, beer_lambert_transmittance, get_kd490
+from src.utils import (
+    beer_lambert_transmittance,
+    get_kd490,
+    optical_path,
+    read_band,
+    snell_sza,
+    write_band,
+)
+
 try:
     from src.bathy_calibrator import run_bathy_integration
+
     _BATHY_AVAILABLE = True
 except ImportError:
     _BATHY_AVAILABLE = False
 
 try:
     from src.ih_bathy_features import get_bathy_features_for_summary
+
     _IH_BATHY_FEATURES_AVAILABLE = True
 except ImportError:
     _IH_BATHY_FEATURES_AVAILABLE = False
@@ -29,16 +41,25 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 # ── Physical constants ────────────────────────────────────────────────────────
 from src.constants import (
-    DEFAULT_DEPTH_TARGET, SDB_OPTICAL_LIMIT_M,
-    STUMPF_M0_DEFAULT, STUMPF_M1_DEFAULT, STUMPF_M1_LITERATURE, STUMPF_N, STUMPF_LOG_EPSILON,
-    KD490_TABLE, KD490_DEFAULT, KD490_MAP_SATURATION_CEILING, GLINT_PENALTY, GLINT_PENALTY_DEFAULT,
-    N_WATER, SNR_THRESHOLD, BUF_PIX, SAND_R, ROCK_R,
-    REFLECTANCE_DN_SCALE, REFLECTANCE_DN_THRESHOLD,
+    DEFAULT_DEPTH_TARGET,
     FFT_CLEAN_THRESHOLD,
+    GLINT_PENALTY,
+    GLINT_PENALTY_DEFAULT,
+    KD490_MAP_SATURATION_CEILING,
+    KD490_TABLE,
+    REFLECTANCE_DN_SCALE,
+    REFLECTANCE_DN_THRESHOLD,
+    ROCK_R,
+    SAND_R,
+    SDB_OPTICAL_LIMIT_M,
+    STUMPF_LOG_EPSILON,
+    STUMPF_M0_DEFAULT,
+    STUMPF_M1_DEFAULT,
+    STUMPF_N,
 )
 
 # Aliases for backward compat
-DEPTH_TARGET    = DEFAULT_DEPTH_TARGET
+DEPTH_TARGET = DEFAULT_DEPTH_TARGET
 _log = logging.getLogger(__name__)
 try:
     from src.cmems_kd490 import KD490_TABLE_LIVE as DEFAULT_KD_TABLE
@@ -49,10 +70,11 @@ except Exception as _cmems_err:
 # Sentinel-2 band pure-water attenuation (aw, m⁻¹) — Pope & Fry 1997
 AW = {"B02": 0.0145, "B03": 0.0612, "B04": 0.4300}
 
+
 # ── A: Gordon/QAA Kd inversion ───────────────────────────────────────────────
-def gordon_kd_inversion(b02: np.ndarray, b03: np.ndarray,
-                         b04: np.ndarray | None = None,
-                         kd_prior: float = 0.045) -> tuple[float, float, float]:
+def gordon_kd_inversion(
+    b02: np.ndarray, b03: np.ndarray, b04: np.ndarray | None = None, kd_prior: float = 0.045
+) -> tuple[float, float, float]:
     """
     Quasi-Analytical Algorithm (QAA, Lee et al. 2002) simplified for B02/B03/B04.
     Returns: (kd_b02_est, kd_b03_est, kd_b04_est)
@@ -73,21 +95,21 @@ def gordon_kd_inversion(b02: np.ndarray, b03: np.ndarray,
     """
     G0, G1 = 0.0895, 0.1247
     AW_B02, AW_B03 = AW["B02"], AW["B03"]
-    AW_B04         = AW["B04"]
+    AW_B04 = AW["B04"]
 
     def to_rrs(rrs_surf):
         return rrs_surf / (0.52 + 1.7 * rrs_surf + 1e-9)
 
     mask = (b02 > 0) & (b03 > 0)
     if mask.sum() < 10:
-        return kd_prior, kd_prior * (490/560)**0.5, kd_prior * 0.1
+        return kd_prior, kd_prior * (490 / 560) ** 0.5, kd_prior * 0.1
 
     rrs02 = to_rrs(b02[mask])
     rrs03 = to_rrs(b03[mask])
 
     # Step 2: u at green (B03)
     u_green = (-G0 + np.sqrt(G0**2 + 4 * G1 * rrs03 + 1e-12)) / (2 * G1)
-    u_blue  = (-G0 + np.sqrt(G0**2 + 4 * G1 * rrs02 + 1e-12)) / (2 * G1)
+    u_blue = (-G0 + np.sqrt(G0**2 + 4 * G1 * rrs02 + 1e-12)) / (2 * G1)
 
     # Step 3: total absorption at green (560nm)
     chi = np.log10(np.clip(rrs02 / (rrs03 + 1e-9), 1e-3, 100))
@@ -106,7 +128,7 @@ def gordon_kd_inversion(b02: np.ndarray, b03: np.ndarray,
 
     # Kd ≈ a + bb  (nadir viewing, simplified Morel)
     kd_b02 = float(np.nanmedian(a_blue + bb_blue))
-    kd_b03 = float(np.nanmedian(a555   + bb555))
+    kd_b03 = float(np.nanmedian(a555 + bb555))
 
     # B04 (665nm) — use simple Gordon power-law scaling from B03
     kd_b04 = kd_b03 * (AW_B04 / AW_B03 * 0.8) if b04 is None else _kd_from_band(b04, AW_B04)
@@ -117,6 +139,7 @@ def gordon_kd_inversion(b02: np.ndarray, b03: np.ndarray,
     kd_b04 = float(np.clip(kd_b04, 0.050, 2.000))
 
     return kd_b02, kd_b03, kd_b04
+
 
 def _kd_from_band(band: np.ndarray, aw: float) -> float:
     """Fallback: estimate Kd from single band reflectance level."""
@@ -129,6 +152,7 @@ def _kd_from_band(band: np.ndarray, aw: float) -> float:
     a = aw + u * aw / (1 - u + 1e-9) * 0.5
     bb = np.clip(u * a / (1 - u + 1e-9), 0, 1)
     return float(np.nanmedian(a + bb))
+
 
 # ── A½: Water-column reflectance inversion ───────────────────────────────────
 def invert_water_column(
@@ -145,10 +169,9 @@ def invert_water_column(
 
 
 # ── B: Stumpf Log-Ratio SDB depth map ────────────────────────────────────────
-def stumpf_sdb(b02: np.ndarray, b03: np.ndarray,
-               m0: float = STUMPF_M0_DEFAULT,
-               m1: float = STUMPF_M1_DEFAULT,
-               n: float = STUMPF_N) -> np.ndarray:
+def stumpf_sdb(
+    b02: np.ndarray, b03: np.ndarray, m0: float = STUMPF_M0_DEFAULT, m1: float = STUMPF_M1_DEFAULT, n: float = STUMPF_N
+) -> np.ndarray:
     """
     Stumpf et al. (2003) log-ratio Satellite Derived Bathymetry:
         depth = m1 * ln(n * B02) / ln(n * B03) + m0
@@ -157,21 +180,17 @@ def stumpf_sdb(b02: np.ndarray, b03: np.ndarray,
     (optical limit exceeded, unreliable extrapolation).
     """
     eps = STUMPF_LOG_EPSILON
-    with np.errstate(divide='ignore', invalid='ignore'):
-        ratio = np.where(
-            (b02 > eps) & (b03 > eps),
-            np.log(n * b02 + eps) / (np.log(n * b03 + eps) + eps),
-            np.nan
-        )
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ratio = np.where((b02 > eps) & (b03 > eps), np.log(n * b02 + eps) / (np.log(n * b03 + eps) + eps), np.nan)
     depth = m1 * ratio + m0
     # Clip negative values to 0, but set beyond optical limit to NaN
     depth = np.where(depth < 0, np.nan, depth)
     depth = np.where(depth > SDB_OPTICAL_LIMIT_M, np.nan, depth)
     return depth.astype(np.float32)
 
+
 # ── C: Integrated Kd estimator (simple band-ratio, fallback when QAA fails) ──
-def estimate_kd_bandratio(b02: np.ndarray, b03: np.ndarray,
-                          kd_prior: float) -> tuple[float, bool]:
+def estimate_kd_bandratio(b02: np.ndarray, b03: np.ndarray, kd_prior: float) -> tuple[float, bool]:
     """Gordon approximation: Kd scales with B02/B03 ratio residual."""
     mask = (b02 > 0) & (b03 > 0)
     if mask.sum() < 10:
@@ -181,12 +200,14 @@ def estimate_kd_bandratio(b02: np.ndarray, b03: np.ndarray,
     high_uncert = abs(kd_est - kd_prior) / kd_prior > 0.30
     return float(np.clip(kd_est, 0.010, 0.500)), high_uncert
 
+
 # ── SNR map ───────────────────────────────────────────────────────────────────
 def make_snr_map(arr: np.ndarray, window: int = 7) -> np.ndarray:
     try:
         from scipy.ndimage import uniform_filter
-        m  = uniform_filter(arr.astype(np.float64), size=window)
-        sq = uniform_filter(arr.astype(np.float64)**2, size=window)
+
+        m = uniform_filter(arr.astype(np.float64), size=window)
+        sq = uniform_filter(arr.astype(np.float64) ** 2, size=window)
         std = np.sqrt(np.clip(sq - m**2, 0, None))
         return np.where(std > 0, m / std, 0).astype(np.float32)
     except ImportError:
@@ -194,22 +215,31 @@ def make_snr_map(arr: np.ndarray, window: int = 7) -> np.ndarray:
         std = np.std(arr[arr > 0]) + 1e-9
         return np.full_like(arr, sig / std, dtype=np.float32)
 
+
 # ── Main predictor ────────────────────────────────────────────────────────────
-def run_predictor(boa_b02_path, metadata, output_dir,
-                  kd_prior: dict | None = None, cloud_threshold: float = 0.2,
-                  snr_threshold: float = 3.0, date: str | None = None,
-                  b03_path: str | None = None, b04_path: str | None = None,
-                  lat: float | None = None, lon: float | None = None,
-                  depth_target: float = DEFAULT_DEPTH_TARGET,
-                  with_bathy_features: bool = False,
-                  stumpf_m0_override: float | None = None,
-                  stumpf_m1_override: float | None = None) -> dict:
+def run_predictor(
+    boa_b02_path,
+    metadata,
+    output_dir,
+    kd_prior: dict | None = None,
+    cloud_threshold: float = 0.2,
+    snr_threshold: float = 3.0,
+    date: str | None = None,
+    b03_path: str | None = None,
+    b04_path: str | None = None,
+    lat: float | None = None,
+    lon: float | None = None,
+    depth_target: float = DEFAULT_DEPTH_TARGET,
+    with_bathy_features: bool = False,
+    stumpf_m0_override: float | None = None,
+    stumpf_m1_override: float | None = None,
+) -> dict:
 
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
-    date    = date or metadata.get("date", "unknown")
-    month   = int(date.split("-")[1]) if "-" in date else 9
-    kd_tbl  = kd_prior or DEFAULT_KD_TABLE
+    date = date or metadata.get("date", "unknown")
+    month = int(date.split("-")[1]) if "-" in date else 9
+    kd_tbl = kd_prior or DEFAULT_KD_TABLE
     kd_seas = get_kd490(month, kd_tbl)
     glint_pen = GLINT_PENALTY.get(month, GLINT_PENALTY_DEFAULT)
 
@@ -223,8 +253,11 @@ def run_predictor(boa_b02_path, metadata, output_dir,
         logging.info("B02 looks like raw DN (max=%.1f) — scaling by 1/10000", _b02_max)
         b02_arr = b02_arr / REFLECTANCE_DN_SCALE
     elif _b02_max > 1.0:
-        logging.warning("B02 max=%.4f is >1.0 but <=%.1f — ambiguous DN/reflectance; "
-                        "assuming reflectance, no scaling applied", _b02_max, REFLECTANCE_DN_THRESHOLD)
+        logging.warning(
+            "B02 max=%.4f is >1.0 but <=%.1f — ambiguous DN/reflectance; " "assuming reflectance, no scaling applied",
+            _b02_max,
+            REFLECTANCE_DN_THRESHOLD,
+        )
 
     b03_arr = b04_arr = None
     if b03_path:
@@ -240,7 +273,7 @@ def run_predictor(boa_b02_path, metadata, output_dir,
     kd_method = "seasonal_prior"
     kd_high_uncert = False
     kd_b02, kd_b03, kd_b04 = kd_seas, kd_seas, kd_seas
-    kd_map = None   # per-pixel Kd490 map; computed when B04 is available
+    kd_map = None  # per-pixel Kd490 map; computed when B04 is available
 
     if b03_arr is not None:
         try:
@@ -250,23 +283,25 @@ def run_predictor(boa_b02_path, metadata, output_dir,
                 raise ValueError("QAA Kd saturated — using band-ratio fallback")
             kd_high_uncert = abs(kd_b02 - kd_seas) / kd_seas > 0.30
             kd_method = "gordon_qaa"
-            logging.info("Gordon/QAA Kd: B02=%.4f B03=%.4f B04=%.4f (prior=%.4f)",
-                         kd_b02, kd_b03, kd_b04, kd_seas)
+            logging.info("Gordon/QAA Kd: B02=%.4f B03=%.4f B04=%.4f (prior=%.4f)", kd_b02, kd_b03, kd_b04, kd_seas)
         except Exception as e:
             logging.warning("Gordon inversion issue (%s) — falling back to band-ratio", e)
             kd_b02, kd_high_uncert = estimate_kd_bandratio(b02_arr, b03_arr, kd_seas)
-            kd_b03 = kd_b02 * (490 / 560)**0.5
+            kd_b03 = kd_b02 * (490 / 560) ** 0.5
             kd_method = "band_ratio_fallback"
 
         # Per-pixel Kd490 spatial map (Lee et al. 2013) — captures turbidity gradient
         if b04_arr is not None:
             try:
                 from src.utils import get_kd490_map
+
                 kd_map = get_kd490_map(b02_arr, b03_arr, b04_arr)
                 write_band(str(out / "kd490_map.tif"), kd_map, profile)
                 logging.info(
                     "Per-pixel Kd490 map: mean=%.4f min=%.4f max=%.4f → kd490_map.tif",
-                    float(np.nanmean(kd_map)), float(np.nanmin(kd_map)), float(np.nanmax(kd_map)),
+                    float(np.nanmean(kd_map)),
+                    float(np.nanmin(kd_map)),
+                    float(np.nanmax(kd_map)),
                 )
             except Exception as _kd_err:
                 logging.debug("Kd490 map skipped: %s", _kd_err)
@@ -289,15 +324,16 @@ def run_predictor(boa_b02_path, metadata, output_dir,
         _frac_pinned = float(np.nanmean(kd_map >= 1.99))
         if _kd_mean > KD490_MAP_SATURATION_CEILING or _frac_pinned > 0.5:
             logging.warning(
-                "Kd490 map saturated (mean=%.2f, pinned=%.0f%%) — "
-                "falling back to scalar kd_b02=%.3f for transmittance",
-                _kd_mean, 100 * _frac_pinned, kd_b02,
+                "Kd490 map saturated (mean=%.2f, pinned=%.0f%%) — " "falling back to scalar kd_b02=%.3f for transmittance",
+                _kd_mean,
+                100 * _frac_pinned,
+                kd_b02,
             )
             trans_map = None
             trans = beer_lambert_transmittance(kd_b02, path_m)
         else:
             trans_map = np.exp(-2.0 * kd_map * path_m).astype(np.float32)
-            trans = float(np.nanmean(trans_map))   # scalar summary for logging/CSV
+            trans = float(np.nanmean(trans_map))  # scalar summary for logging/CSV
             write_band(str(out / "transmittance_map.tif"), trans_map, profile)
     else:
         trans_map = None
@@ -308,8 +344,8 @@ def run_predictor(boa_b02_path, metadata, output_dir,
     bottom_est = invert_water_column(b02_arr, kd_b02, depth_target)
 
     # ── SNR map ───────────────────────────────────────────────────────────────
-    snr_map    = make_snr_map(bottom_est)
-    snr_mean   = float(np.nanmean(snr_map))
+    snr_map = make_snr_map(bottom_est)
+    snr_mean = float(np.nanmean(snr_map))
     snr_median = float(np.nanmedian(snr_map))
 
     # ── SDB depth map (Stumpf) — with IH chart calibration ───────────────────
@@ -330,23 +366,20 @@ def run_predictor(boa_b02_path, metadata, output_dir,
                 if tf is not None:
                     h, w = b02_arr.shape
                     # Native raster bounds (may be projected, e.g. UTM metres)
-                    _native_left   = tf.c
-                    _native_top    = tf.f
-                    _native_right  = tf.c + tf.a * w
+                    _native_left = tf.c
+                    _native_top = tf.f
+                    _native_right = tf.c + tf.a * w
                     _native_bottom = tf.f + tf.e * h
                     _raster_crs = profile.get("crs")
                     # Reproject to WGS84 if the raster is in a projected CRS
                     try:
                         from rasterio.warp import transform_bounds as _tb
-                        _wgs = _tb(_raster_crs, "EPSG:4326",
-                                   _native_left, _native_bottom,
-                                   _native_right, _native_top)
+
+                        _wgs = _tb(_raster_crs, "EPSG:4326", _native_left, _native_bottom, _native_right, _native_top)
                         # _wgs = (min_lon, min_lat, max_lon, max_lat)
-                        bounds_wgs = (_wgs[1], _wgs[0], _wgs[3], _wgs[2])   # → (min_lat, min_lon, max_lat, max_lon)
+                        bounds_wgs = (_wgs[1], _wgs[0], _wgs[3], _wgs[2])  # → (min_lat, min_lon, max_lat, max_lon)
                     except Exception as _reproj_err:
-                        logging.warning(
-                            "bounds CRS reproject failed (%s); raster_crs=%s", _reproj_err, _raster_crs
-                        )
+                        logging.warning("bounds CRS reproject failed (%s); raster_crs=%s", _reproj_err, _raster_crs)
                         # Only trust native bounds if the raster is already geographic.
                         # Otherwise they are projected metres (e.g. UTM) and must NOT
                         # flow into CMEMS fetch or chart validation — leave them None.
@@ -359,8 +392,10 @@ def run_predictor(boa_b02_path, metadata, output_dir,
                         else:
                             bounds_wgs = None
                     bathy_result = run_bathy_integration(
-                        lat=lat, lon=lon,
-                        b02_arr=b02_arr, b03_arr=b03_arr,
+                        lat=lat,
+                        lon=lon,
+                        b02_arr=b02_arr,
+                        b03_arr=b03_arr,
                         b04_arr=b04_arr,
                         bounds_wgs84=bounds_wgs,
                     )
@@ -370,10 +405,13 @@ def run_predictor(boa_b02_path, metadata, output_dir,
                     calibrated = bathy_result.get("calibration", {}).get("calibrated", False)
                     calibration_status = "success" if calibrated else "failed_insufficient_data"
                     logging.info(
-                        "IH bathy zone=%s | optically_viable=%s | "
-                        "Stumpf m0=%.2f m1=%.2f (calibrated=%s, status=%s)",
-                        zone_info.get("zone"), zone_info.get("optically_viable"),
-                        stumpf_m0, stumpf_m1, calibrated, calibration_status
+                        "IH bathy zone=%s | optically_viable=%s | " "Stumpf m0=%.2f m1=%.2f (calibrated=%s, status=%s)",
+                        zone_info.get("zone"),
+                        zone_info.get("optically_viable"),
+                        stumpf_m0,
+                        stumpf_m1,
+                        calibrated,
+                        calibration_status,
                     )
                 else:
                     logging.warning("IH calibration skipped: no raster transform in profile")
@@ -397,6 +435,7 @@ def run_predictor(boa_b02_path, metadata, output_dir,
         try:
             if bounds_wgs is not None:
                 from src.cmems_sdb import fetch_cmems_sdb, reproject_cmems_to_s2
+
                 # bounds_wgs is WGS84 (min_lat, min_lon, max_lat, max_lon) or None
                 min_lat_c, min_lon_c, max_lat_c, max_lon_c = bounds_wgs
                 cmems_raw = out / "cmems_sdb_100m.tif"
@@ -421,7 +460,7 @@ def run_predictor(boa_b02_path, metadata, output_dir,
         # calibration was unavailable or failed.
         _SURVEY_DIR = Path(__file__).resolve().parents[1] / "outputs" / "icesat2_deep_survey"
         _ATL03_CACHE = (
-            _SURVEY_DIR / "atl03_all_photons.json"       # merged 1–34 m (preferred)
+            _SURVEY_DIR / "atl03_all_photons.json"  # merged 1–34 m (preferred)
             if (_SURVEY_DIR / "atl03_all_photons.json").exists()
             else _SURVEY_DIR / "atl03_seafloor_photons.json"  # deep-only fallback
         )
@@ -429,6 +468,7 @@ def run_predictor(boa_b02_path, metadata, output_dir,
         if _ATL03_CACHE.exists() and not _ih_succeeded:
             try:
                 from src.icesat2_calibrator import calibrate_from_icesat2
+
                 _b03_for_calib = str(out / "BOA_B03.tif") if (out / "BOA_B03.tif").exists() else None
                 if _b03_for_calib:
                     _icesat2_result = calibrate_from_icesat2(
@@ -442,9 +482,9 @@ def run_predictor(boa_b02_path, metadata, output_dir,
                         bathy_result["icesat2_calibration"] = _icesat2_result
                         bathy_result["calibration_status"] = "icesat2_atl03"
                         logging.info(
-                            "ICESat-2 calibration adopted (IH unavailable): "
-                            "m0=%.3f m1=%.3f RMSE=%.3f m (%d photons)",
-                            stumpf_m0, stumpf_m1,
+                            "ICESat-2 calibration adopted (IH unavailable): " "m0=%.3f m1=%.3f RMSE=%.3f m (%d photons)",
+                            stumpf_m0,
+                            stumpf_m1,
                             _icesat2_result["rmse"],
                             _icesat2_result["calibration_samples"],
                         )
@@ -457,8 +497,10 @@ def run_predictor(boa_b02_path, metadata, output_dir,
         # insufficient and we have a CMEMS prior at 10 m resolution.
         if calibration_status not in ("success",) and cmems_10m_path is not None:
             try:
+
+                import rasterio as _rio
+
                 from src.stumpf_emodnet_calibration import calibrate_stumpf_vs_emodnet
-                import tempfile, rasterio as _rio
 
                 # Need a temporary EMODnet-style prior — use the CMEMS tile as sole prior
                 with _rio.open(cmems_10m_path) as _src:
@@ -482,8 +524,10 @@ def run_predictor(boa_b02_path, metadata, output_dir,
                     bathy_result["calibration_status"] = "cmems_fallback"
                     logging.info(
                         "CMEMS fallback calibration: m0=%.3f m1=%.3f RMSE=%.3f m (%d samples)",
-                        stumpf_m0, stumpf_m1,
-                        _calib_result["rmse"], _calib_result["calibration_samples"],
+                        stumpf_m0,
+                        stumpf_m1,
+                        _calib_result["rmse"],
+                        _calib_result["calibration_samples"],
                     )
             except Exception as _fb_err:
                 logging.debug("CMEMS fallback calibration skipped: %s", _fb_err)
@@ -494,6 +538,7 @@ def run_predictor(boa_b02_path, metadata, output_dir,
         # CMEMS-derived coefficients are already in stumpf_m0/m1 if fallback ran.
         try:
             from src.ensemble_calibrator import ensemble_calibrate
+
             _ih_cal = bathy_result.get("calibration", {}) if bathy_result else {}
             _ic_cal = bathy_result.get("icesat2_calibration") if bathy_result else None
             _ens = ensemble_calibrate(
@@ -508,7 +553,10 @@ def run_predictor(boa_b02_path, metadata, output_dir,
                 bathy_result["calibration_status"] = "ensemble"
                 logging.info(
                     "Ensemble calibration: m0=%.3f m1=%.3f sources=%s weights=%s",
-                    stumpf_m0, stumpf_m1, _ens["sources_used"], _ens["weights"],
+                    stumpf_m0,
+                    stumpf_m1,
+                    _ens["sources_used"],
+                    _ens["weights"],
                 )
         except Exception as _ens_err:
             logging.debug("Ensemble calibration skipped: %s", _ens_err)
@@ -522,9 +570,7 @@ def run_predictor(boa_b02_path, metadata, output_dir,
             stumpf_m1 = float(stumpf_m1_override)
             if bathy_result is not None:
                 bathy_result["calibration_status"] = "multiscene_fused"
-            logging.info(
-                "Multi-scene fused coefficients applied: m0=%.3f m1=%.3f", stumpf_m0, stumpf_m1
-            )
+            logging.info("Multi-scene fused coefficients applied: m0=%.3f m1=%.3f", stumpf_m0, stumpf_m1)
 
         # Compute SDB with (possibly calibrated) coefficients
         sdb_map = stumpf_sdb(b02_arr, b03_arr, m0=stumpf_m0, m1=stumpf_m1)
@@ -537,11 +583,10 @@ def run_predictor(boa_b02_path, metadata, output_dir,
         # Validate SDB vs IH chart (if calibration ran)
         if bathy_result and _BATHY_AVAILABLE and lat is not None and tf is not None and bounds_wgs is not None:
             try:
-                from src.bathy_calibrator import validate_sdb_vs_chart, fetch_isobaths_for_bbox
+                from src.bathy_calibrator import fetch_isobaths_for_bbox, validate_sdb_vs_chart
+
                 deg_buf = 3000 / 111_000.0
-                feats = fetch_isobaths_for_bbox(
-                    lon - deg_buf, lat - deg_buf, lon + deg_buf, lat + deg_buf
-                )
+                feats = fetch_isobaths_for_bbox(lon - deg_buf, lat - deg_buf, lon + deg_buf, lat + deg_buf)
                 if tf is not None:
                     val = validate_sdb_vs_chart(sdb_map, feats, bounds_wgs)
                     bathy_result["validation"] = val
@@ -551,7 +596,7 @@ def run_predictor(boa_b02_path, metadata, output_dir,
                             "SDB validation vs IH chart: bias=%.2fm RMSE=%.2fm n=%d",
                             ov.get("overall_bias_m", 0),
                             ov.get("overall_rmse_m", 0),
-                            ov.get("n_total", 0)
+                            ov.get("n_total", 0),
                         )
             except Exception as val_err:
                 logging.warning("SDB validation failed: %s", val_err)
@@ -559,13 +604,12 @@ def run_predictor(boa_b02_path, metadata, output_dir,
         sdb_path, sdb_mean = None, None
 
     # ── Masks & scores ────────────────────────────────────────────────────────
-    cloud_pct   = metadata.get("cloud_cover_pct", 2.0)
+    cloud_pct = metadata.get("cloud_cover_pct", 2.0)
     usable_frac = max(0.0, 1.0 - cloud_pct / 100.0)
     useful_mask = (snr_map >= snr_threshold) & (bottom_est > 0)
-    pct_useful  = 100.0 * float(useful_mask.sum()) / max(1, (bottom_est > 0).sum())
+    pct_useful = 100.0 * float(useful_mask.sum()) / max(1, (bottom_est > 0).sum())
 
-    conf_map = np.where(snr_map >= snr_threshold * 2, 2,
-               np.where(useful_mask, 1, 0)).astype(np.uint8)
+    conf_map = np.where(snr_map >= snr_threshold * 2, 2, np.where(useful_mask, 1, 0)).astype(np.uint8)
     pct_high_conf = 100.0 * float((conf_map == 2).sum()) / max(1, (bottom_est > 0).sum())
 
     # Use spatially-varying transmittance where available for contrast calculation
@@ -574,8 +618,7 @@ def run_predictor(boa_b02_path, metadata, output_dir,
     rock_btm = ROCK_R * _trans_for_contrast
     # Normalise by surface reflectance (SAND_R), not sand_btm, so that trans does not
     # cancel out and contrast properly decreases with depth.
-    contrast  = ((sand_btm - rock_btm) / SAND_R * glint_pen
-                 if SAND_R > 0 else 0.0)
+    contrast = (sand_btm - rock_btm) / SAND_R * glint_pen if SAND_R > 0 else 0.0
 
     # ── Bathymetry-derived features (IH/DGRM) ─────────────────────────────────
     # Computed BEFORE the ranker so the real-data model schema (which includes
@@ -598,13 +641,14 @@ def run_predictor(boa_b02_path, metadata, output_dir,
 
     # ML Ranker inference instead of manual heuristic
     from src.ranking_model import predict_score
+
     ranker_features = {
-        'kd_b02': kd_b02,
-        'water_transmittance_twoway': _trans_for_contrast,
-        'contrast_benthic_mean': contrast,  # canonical: ratio [0, 1] (NOT percentage)
-        'SNR_mean_16m': snr_mean,
-        'cloud_cover': cloud_pct,
-        'cleanliness': FFT_CLEAN_THRESHOLD  # Proxy when FFT is not run — sits at threshold boundary, no penalty
+        "kd_b02": kd_b02,
+        "water_transmittance_twoway": _trans_for_contrast,
+        "contrast_benthic_mean": contrast,  # canonical: ratio [0, 1] (NOT percentage)
+        "SNR_mean_16m": snr_mean,
+        "cloud_cover": cloud_pct,
+        "cleanliness": FFT_CLEAN_THRESHOLD,  # Proxy when FFT is not run — sits at threshold boundary, no penalty
     }
     prediction = predict_score(ranker_features, bathy_features=bathy_feats or None)
     vis_score = prediction["score"]
@@ -615,10 +659,17 @@ def run_predictor(boa_b02_path, metadata, output_dir,
     substrate_stats: dict = {}
     if b03_arr is not None and b04_arr is not None:
         try:
-            from src.substrate_classifier import classify_substrate, write_substrate_tiff, CLASS_NAMES
+            from src.substrate_classifier import (
+                CLASS_NAMES,
+                classify_substrate,
+                write_substrate_tiff,
+            )
+
             _sdb_for_sub = sdb_map if sdb_map is not None else None
             substrate = classify_substrate(
-                b02=b02_arr, b03=b03_arr, b04=b04_arr,
+                b02=b02_arr,
+                b03=b03_arr,
+                b04=b04_arr,
                 sdb_depth=_sdb_for_sub,
             )
             substrate_path = out / "substrate.tif"
@@ -626,16 +677,17 @@ def run_predictor(boa_b02_path, metadata, output_dir,
             _n_total = substrate.size
             substrate_stats = {
                 name: round(100.0 * float((substrate == cls).sum()) / _n_total, 2)
-                for cls, name in CLASS_NAMES.items() if cls != -1
+                for cls, name in CLASS_NAMES.items()
+                if cls != -1
             }
             logging.info("Substrate: %s", substrate_stats)
         except Exception as _sub_err:
             logging.debug("Substrate classification skipped: %s", _sub_err)
 
     # ── Save GeoTIFFs ─────────────────────────────────────────────────────────
-    write_band(str(out / "snr_map.tif"),         snr_map,                          profile)
-    write_band(str(out / "confidence_map.tif"),  conf_map.astype(np.float32),      profile)
-    write_band(str(out / "bottom_est.tif"),      bottom_est,                        profile)
+    write_band(str(out / "snr_map.tif"), snr_map, profile)
+    write_band(str(out / "confidence_map.tif"), conf_map.astype(np.float32), profile)
+    write_band(str(out / "bottom_est.tif"), bottom_est, profile)
 
     # ── Summary CSV ───────────────────────────────────────────────────────────
     summary = {
@@ -670,12 +722,18 @@ def run_predictor(boa_b02_path, metadata, output_dir,
         "kd490_map": str(out / "kd490_map.tif") if (out / "kd490_map.tif").exists() else None,
         "stumpf_m0_used": stumpf_m0,
         "stumpf_m1_used": stumpf_m1,
-        "calibration_ensemble_sources": bathy_result.get("ensemble_calibration", {}).get("sources_used") if bathy_result else None,
-        "bathy_zone":     bathy_result.get("zone", {}).get("zone") if bathy_result else None,
+        "calibration_ensemble_sources": (
+            bathy_result.get("ensemble_calibration", {}).get("sources_used") if bathy_result else None
+        ),
+        "bathy_zone": bathy_result.get("zone", {}).get("zone") if bathy_result else None,
         "bathy_optically_viable": bathy_result.get("zone", {}).get("optically_viable") if bathy_result else None,
         "bathy_calibration_rmse_m": bathy_result.get("calibration", {}).get("rmse_m") if bathy_result else None,
-        "sdb_vs_chart_bias_m": bathy_result.get("validation", {}).get("overall", {}).get("overall_bias_m") if bathy_result else None,
-        "sdb_vs_chart_rmse_m": bathy_result.get("validation", {}).get("overall", {}).get("overall_rmse_m") if bathy_result else None,
+        "sdb_vs_chart_bias_m": (
+            bathy_result.get("validation", {}).get("overall", {}).get("overall_bias_m") if bathy_result else None
+        ),
+        "sdb_vs_chart_rmse_m": (
+            bathy_result.get("validation", {}).get("overall", {}).get("overall_rmse_m") if bathy_result else None
+        ),
         # --- IH/DGRM bathymetry-derived features (new) ---
         "bathy_nearest_isobath_dist_m": bathy_feats.get("nearest_isobath_distance_m") if bathy_feats else None,
         "bathy_nearest_isobath_depth_m": bathy_feats.get("nearest_isobath_depth_m") if bathy_feats else None,
@@ -690,27 +748,44 @@ def run_predictor(boa_b02_path, metadata, output_dir,
         "bathy_n_isobaths_aoi": bathy_feats.get("n_isobaths_in_aoi") if bathy_feats else None,
     }
     pd.DataFrame([summary]).to_csv(out / "summary.csv", index=False)
-    logging.info("Done | date=%s | Kd=%s(%.4f) | vis=%.4f | SNR=%.2f | SDB_mean=%.1fm",
-                 date, kd_method, kd_b02, vis_score, snr_mean,
-                 sdb_mean if sdb_mean is not None else 0)
+    logging.info(
+        "Done | date=%s | Kd=%s(%.4f) | vis=%.4f | SNR=%.2f | SDB_mean=%.1fm",
+        date,
+        kd_method,
+        kd_b02,
+        vis_score,
+        snr_mean,
+        sdb_mean if sdb_mean is not None else 0,
+    )
     return summary
+
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import argparse
+
     p = argparse.ArgumentParser(description="Reef ML Predictor v3 — Gordon/QAA + SDB")
-    p.add_argument("--boa-b02",  required=True)
-    p.add_argument("--b03",      default=None)
-    p.add_argument("--b04",      default=None)
-    p.add_argument("--date",     required=True)
-    p.add_argument("--output",   required=True)
-    p.add_argument("--depth",    type=float, default=16.0)
+    p.add_argument("--boa-b02", required=True)
+    p.add_argument("--b03", default=None)
+    p.add_argument("--b04", default=None)
+    p.add_argument("--date", required=True)
+    p.add_argument("--output", required=True)
+    p.add_argument("--depth", type=float, default=16.0)
     p.add_argument("--snr-threshold", type=float, default=3.0)
-    p.add_argument("--with-bathy-features", action="store_true",
-                   help="Compute IH/DGRM bathymetry-derived features (requires lat/lon)")
+    p.add_argument(
+        "--with-bathy-features", action="store_true", help="Compute IH/DGRM bathymetry-derived features (requires lat/lon)"
+    )
     args = p.parse_args()
     from src.utils import compute_metadata_stub
-    run_predictor(args.boa_b02, compute_metadata_stub(args.date), args.output,
-                  date=args.date, b03_path=args.b03, b04_path=args.b04,
-                  snr_threshold=args.snr_threshold, depth_target=args.depth,
-                  with_bathy_features=args.with_bathy_features)
+
+    run_predictor(
+        args.boa_b02,
+        compute_metadata_stub(args.date),
+        args.output,
+        date=args.date,
+        b03_path=args.b03,
+        b04_path=args.b04,
+        snr_threshold=args.snr_threshold,
+        depth_target=args.depth,
+        with_bathy_features=args.with_bathy_features,
+    )

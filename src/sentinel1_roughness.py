@@ -25,7 +25,7 @@ _E84_STAC_URL = "https://earth-search.aws.element84.com/v1"
 _E84_S1_COLLECTION = "sentinel-1-grd"
 
 # Roughness thresholds (log10 VV/VH ratio).
-ROUGHNESS_CALM_THRESHOLD = 0.05   # below → calm, good diving conditions
+ROUGHNESS_CALM_THRESHOLD = 0.05  # below → calm, good diving conditions
 ROUGHNESS_ROUGH_THRESHOLD = 0.25  # above → rough sea, poor visibility
 
 
@@ -126,7 +126,7 @@ def extract_sigma0_at_point(item: dict, lon: float, lat: float):
         import numpy as np
         import rasterio
         from rasterio.transform import from_origin
-        from rasterio.warp import reproject, Resampling
+        from rasterio.warp import Resampling, reproject
 
         assets = item.get("assets", {})
         vv_href = assets.get("vv") or assets.get("VV") or assets.get("measurement_vv")
@@ -144,24 +144,23 @@ def extract_sigma0_at_point(item: dict, lon: float, lat: float):
         )
         results = {}
         for pol, href in [("vv", vv_href), ("vh", vh_href)]:
-            with env:
-                with rasterio.open(href) as src:
-                    dst_data = np.zeros((3, 3), dtype=np.float32)
-                    reproject(
-                        source=rasterio.band(src, 1),
-                        destination=dst_data,
-                        src_transform=None,
-                        src_crs=None,
-                        dst_transform=dst_transform,
-                        dst_crs=dst_crs,
-                        resampling=Resampling.bilinear,
-                    )
-                    data_pos = dst_data[dst_data > 0]
-                    if len(data_pos) == 0:
-                        results[pol] = None
-                    else:
-                        amplitude_mean = float(np.mean(data_pos))
-                        results[pol] = (amplitude_mean ** 2) / 1e8
+            with env, rasterio.open(href) as src:
+                dst_data = np.zeros((3, 3), dtype=np.float32)
+                reproject(
+                    source=rasterio.band(src, 1),
+                    destination=dst_data,
+                    src_transform=None,
+                    src_crs=None,
+                    dst_transform=dst_transform,
+                    dst_crs=dst_crs,
+                    resampling=Resampling.bilinear,
+                )
+                data_pos = dst_data[dst_data > 0]
+                if len(data_pos) == 0:
+                    results[pol] = None
+                else:
+                    amplitude_mean = float(np.mean(data_pos))
+                    results[pol] = (amplitude_mean**2) / 1e8
 
         if results.get("vv") and results.get("vh"):
             return results
