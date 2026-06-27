@@ -318,6 +318,15 @@ def run_icesat2_validation(
     # ── Sample SDB raster ─────────────────────────────────────────────────────
     sdb_depths = _sample_sdb_at_points(depth_map_path, lons_f, lats_f)
 
+    # SDB rasters may store depth as NEGATIVE (below sea surface), while
+    # icesat_depth above is POSITIVE (= -elevs). Comparing the two raw produces a
+    # spurious bias of ~2x the true depth. Normalize SDB to positive depth using
+    # the median sign of the valid samples so residuals are physically meaningful.
+    _finite = np.isfinite(sdb_depths)
+    if _finite.any() and np.median(sdb_depths[_finite]) < 0:
+        sdb_depths = -sdb_depths
+        log.info("SDB samples have negative median — flipped to positive-depth convention.")
+
     valid = np.isfinite(sdb_depths) & np.isfinite(icesat_depth)
     n_valid = int(valid.sum())
 
