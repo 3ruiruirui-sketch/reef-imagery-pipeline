@@ -40,12 +40,77 @@ except Exception:  # pragma: no cover - exercised only on torch-less installs
     HAS_TORCH = False
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# Canonical weights = pure-PyTorch ReefUNet produced by scripts/dgt_train_unet.py
+# and notebooks/01 (sigmoid applied inside forward).
 _DEFAULT_WEIGHTS = _PROJECT_ROOT / "models" / "unet_reef_best.pth"
-_TILE = 256  # inference tile size; new pure-PyTorch model needs multiples of 16
+# Fallback = vanilla smp.Unet(resnet18) checkpoint (raw logits, sigmoid applied here).
+_SMP_FALLBACK_WEIGHTS = _PROJECT_ROOT / "models" / "unet_reef_best_smp_resnet18.pth"
+_TILE = 256  # inference tile size; both architectures accept multiples of 32
 
-# Lazily-loaded singleton model (keyed by weights path)
+# Lazily-loaded singleton model (keyed by weights path).
+# _MODEL_APPLIES_SIGMOID records whether the loaded architecture already applies
+# sigmoid in forward() (ReefUNet) or returns raw logits (smp.Unet) so callers
+# get probabilities either way.
 _MODEL = None
 _MODEL_KEY: str | None = None
+_MODEL_APPLIES_SIGMOID: bool = True
+
+
+def _resolve_weights(weights_path: str | None):
+    """Pick the weights file: explicit > canonical ReefUNet > smp fallback."""
+    if weights_path:
+        return Path(weights_path)
+    if _DEFAULT_WEIGHTS.exists():
+        return _DEFAULT_WEIGHTS
+    if _SMP_FALLBACK_WEIGHTS.exists():
+        return _SMP_FALLBACK_WEIGHTS
+    return _DEFAULT_WEIGHTS  # non-existent — surfaced as a clear error below
+
+
+def _looks_like_smp(state: dict) -> bool:
+    """smp.Unet state_dicts carry encoder/decoder/segmentation_head keys."""
+    return any(
+        k.startswith(("model.encoder", "encoder.", "model.decoder", "decoder.", "segmentation_head", "model.segmentation_head"))
+        for k in state
+    )
+
+
+def _build_and_load(path: Path):
+    """Return (model, applies_sigmoid) by matching architecture to the checkpoint.
+
+    Supports the canonical pure-PyTorch ReefUNet (sigmoid inside) and a vanilla
+    smp.Unet(resnet18) checkpoint (raw logits). Handles common state_dict nesting
+    and an optional leading ``model.`` prefix from training wrappers.
+    """
+    state = torch.load(str(path), map_location="cpu", weights_only=True)
+    if isinstance(state, dict) and "model_state_dict" in state:
+        state = state["model_state_dict"]
+    if isinstance(state, dict) and "state_dict" in state:
+        state = state["state_dict"]
+
+    if _looks_like_smp(state):
+        try:
+            import segmentation_models_pytorch as smp
+        except Exception as e:  # pragma: no cover - torch-less / smp-less install
+            raise RuntimeError(
+                f"{path.name} is an smp.Unet checkpoint but segmentation_models_pytorch "
+                f"is not installed. Install it, or provide the canonical ReefUNet weights "
+                f"at {_DEFAULT_WEIGHTS}."
+            ) from e
+        net = smp.Unet(encoder_name="resnet18", encoder_weights=None, in_channels=1, classes=1, activation=None)
+        sd = {(k[len("model.") :] if k.startswith("model.") else k): v for k, v in state.items()}
+        net.load_state_dict(sd)
+        net.eval()
+        log.info("Loaded smp.Unet(resnet18) reef model from %s (logits → sigmoid applied)", path)
+        return net, True  # raw logits → sigmoid applied by caller
+
+    from src.ml_unet_model import ReefUNet
+
+    net = ReefUNet(in_channels=1)
+    net.load_state_dict(state)
+    net.eval()
+    log.info("Loaded canonical ReefUNet from %s", path)
+    return net, False  # ReefUNet applies sigmoid internally
 
 
 def normalize_depth(arr: np.ndarray, min_depth_m: float = -SDB_OPTICAL_LIMIT_M, max_depth_m: float = 0.0) -> np.ndarray:
@@ -56,27 +121,32 @@ def normalize_depth(arr: np.ndarray, min_depth_m: float = -SDB_OPTICAL_LIMIT_M, 
 
 
 def _load_model(weights_path: str | None = None):
-    """Load ReefUNet weights once and cache. Raises RuntimeError if torch missing."""
-    global _MODEL, _MODEL_KEY
+    """Load reef U-Net weights once and cache. Raises RuntimeError if unavailable.
+
+    Sets module-level _MODEL_APPLIES_SIGMOID so segment_reef_array() knows whether
+    to apply sigmoid (smp logits) or not (ReefUNet already does).
+    """
+    global _MODEL, _MODEL_KEY, _MODEL_APPLIES_SIGMOID
     if not HAS_TORCH:
         raise RuntimeError(
             "PyTorch not installed — reef segmentation unavailable. "
             "Install with: pip install torch segmentation-models-pytorch"
         )
-    path = str(weights_path or _DEFAULT_WEIGHTS)
+    resolved = _resolve_weights(weights_path)
+    path = str(resolved)
     if _MODEL is not None and path == _MODEL_KEY:
         return _MODEL
-    if not Path(path).exists():
-        raise RuntimeError(f"U-Net weights not found: {path}")
+    if not resolved.exists():
+        raise RuntimeError(
+            "No reef U-Net weights found. Looked for canonical "
+            f"'{_DEFAULT_WEIGHTS.name}' and fallback '{_SMP_FALLBACK_WEIGHTS.name}' "
+            f"in {_DEFAULT_WEIGHTS.parent}. Train on the DGT VM "
+            "(python -m scripts.dgt_train_unet) or copy the trained "
+            f"'{_DEFAULT_WEIGHTS.name}' from the VM into models/."
+        )
 
-    from src.ml_unet_model import ReefUNet
-
-    model = ReefUNet(in_channels=1)
-    state = torch.load(path, map_location="cpu", weights_only=True)
-    model.load_state_dict(state)
-    model.eval()
-    _MODEL, _MODEL_KEY = model, path
-    log.info("ReefUNet loaded from %s", path)
+    model, applies_sigmoid = _build_and_load(resolved)
+    _MODEL, _MODEL_KEY, _MODEL_APPLIES_SIGMOID = model, path, applies_sigmoid
     return model
 
 
@@ -107,8 +177,10 @@ def segment_reef_array(depth: np.ndarray, threshold: float = 0.5, tile: int = _T
             for c in range(0, norm.shape[1], tile):
                 patch = norm[r : r + tile, c : c + tile]
                 x = torch.from_numpy(patch).float().unsqueeze(0).unsqueeze(0)  # (1,1,T,T)
-                probs = model(x)  # model already applies sigmoid internally
-                prob[r : r + tile, c : c + tile] = probs[0, 0].cpu().numpy()
+                out = model(x)
+                if _MODEL_APPLIES_SIGMOID:  # smp.Unet returns raw logits
+                    out = torch.sigmoid(out)
+                prob[r : r + tile, c : c + tile] = out[0, 0].cpu().numpy()
 
     prob = prob[:h, :w]
     mask = (prob >= threshold).astype(np.uint8)

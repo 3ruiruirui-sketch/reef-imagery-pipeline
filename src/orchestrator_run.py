@@ -16,6 +16,7 @@ Uso: python3 -m src.orchestrator_run [--depth 16.0] [--config config.yaml]
 import argparse
 import json
 import logging
+import os
 import shlex
 import shutil
 import subprocess
@@ -63,6 +64,7 @@ except ImportError:
 # Drift monitoring (shadow mode — never blocks pipeline)
 try:
     from src.drift_export import export_to_file as drift_export_file
+    from src.drift_export import export_to_webhook as drift_export_webhook
     from src.drift_history import export_history_csv as drift_history_csv
     from src.drift_history import export_history_json as drift_history_json
     from src.drift_monitor import log_summary as drift_log_summary
@@ -659,6 +661,13 @@ def main(depth: float = 16.0, config_path: str | None = None):
             drift_history_json()
             drift_history_csv()
             drift_export_html()
+            # Optional, env-gated webhook export (shadow layer — never blocks).
+            webhook_url = os.environ.get("DRIFT_WEBHOOK_URL")
+            if webhook_url:
+                try:
+                    drift_export_webhook(webhook_url, batch_id=batch_id)
+                except Exception as e:  # pragma: no cover - defensive
+                    log.debug("Drift webhook export (non-critical): %s", e)
         except Exception as e:
             log.debug("Drift reporting (non-critical): %s", e)
 

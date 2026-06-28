@@ -32,15 +32,34 @@ sys.path.insert(0, str(_PROJECT_ROOT))
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _maxrss_to_mb(ru_maxrss: int, plat: str) -> float:
+    """Convert a ``ru_maxrss`` value to MB given the platform string.
+
+    ``resource.getrusage(RUSAGE_SELF).ru_maxrss`` units are platform-dependent:
+    macOS/Darwin reports the value in **bytes**, Linux reports it in
+    **kilobytes**.  Treating bytes as kilobytes (or vice versa) produces wildly
+    wrong figures (e.g. a 600 MB process logged as 656160 MB).
+
+    Args:
+        ru_maxrss: raw ``ru_maxrss`` value from ``resource.getrusage``.
+        plat:      ``sys.platform`` string (e.g. ``"darwin"``, ``"linux"``).
+
+    Returns:
+        Peak RSS in megabytes.
+    """
+    if plat.startswith("darwin"):
+        # macOS reports bytes.
+        return ru_maxrss / 1e6
+    # Linux (and other POSIX) report kilobytes.
+    return ru_maxrss / 1024
+
+
 def _peak_rss_mb() -> float:
     """Current process peak RSS in MB (cross-platform)."""
     try:
         import resource
         rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        # macOS returns bytes; Linux returns kilobytes
-        if platform.system() == "Darwin":
-            return rss / 1e6
-        return rss / 1024
+        return _maxrss_to_mb(rss, sys.platform)
     except ImportError:
         import psutil
         return psutil.Process().memory_info().rss / 1e6
