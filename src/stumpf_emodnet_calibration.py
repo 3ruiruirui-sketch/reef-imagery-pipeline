@@ -20,8 +20,6 @@ def reproject_emodnet_to_s2(emodnet_path, s2_reference_path, output_emodnet_10m)
     with rasterio.open(s2_reference_path) as dst_ref:
         dst_crs = dst_ref.crs
         dst_transform = dst_ref.transform
-        dst_width = dst_ref.width
-        dst_height = dst_ref.height
         dst_profile = dst_ref.profile
 
     log.info(f"Reamostrando EMODnet para alinhar com Sentinel-2 (CRS: {dst_crs})...")

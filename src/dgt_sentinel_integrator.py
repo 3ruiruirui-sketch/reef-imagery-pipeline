@@ -307,9 +307,36 @@ class DGTSentinelIntegrator:
         try:
             img = request.get_data()
             logger.info(f"Downloaded Sentinel-2 image: shape {img[0].shape}")
-            # Convert to xarray
-            # This requires additional metadata setup; for now return placeholder
-            return None
+
+            from rasterio.transform import from_bounds as _from_bounds
+
+            arr = img[0].astype("float32")  # (H, W, nbands)
+            H, W, nbands = arr.shape
+            bands_arr = np.transpose(arr, (2, 0, 1))  # (nbands, H, W)
+
+            minx, miny, maxx, maxy = self.bbox
+            transform = _from_bounds(minx, miny, maxx, maxy, W, H)
+            band_names = ["B02", "B03", "B04", "B08", "B11", "B12"]
+
+            mem_meta = {
+                "driver": "GTiff",
+                "count": nbands,
+                "height": H,
+                "width": W,
+                "dtype": "float32",
+                "crs": "EPSG:4326",
+                "transform": transform,
+            }
+
+            with MemoryFile() as mem:
+                with mem.open(**mem_meta) as ds:
+                    ds.write(bands_arr)
+                da = rxr.open_rasterio(mem.name, masked=True)
+                da = da.assign_coords(band=band_names[:nbands])
+
+            da = da.rio.reproject(self.TARGET_CRS)
+            logger.info(f"Sentinel-2 DataArray: shape={da.shape}, CRS={da.rio.crs}")
+            return da
         except Exception as e:
             logger.error(f"sentinelhub request failed: {e}")
             return None

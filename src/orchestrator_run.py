@@ -262,7 +262,7 @@ def _normalise_result(pred: dict, meta: dict) -> dict:
     _month = meta.get("month")
     if _month is not None and _get_kd490_live is not None:
         _kd_seasonal = _get_kd490_live(int(_month))
-    elif _month in KD490_TABLE:
+    elif _month is not None and _month in KD490_TABLE:
         _kd_seasonal = KD490_TABLE[_month]
     else:
         _kd_seasonal = pred.get("kd_seasonal_prior", KD490_DEFAULT)
