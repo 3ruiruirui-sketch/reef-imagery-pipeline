@@ -32,7 +32,11 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset, Subset, WeightedRandomSampler
 
 # ── Path setup ────────────────────────────────────────────────────────────────
-WORK = Path('/home/jovyan/reef-imagery-pipeline')
+# Repo root: auto-detect from this file's location so the script runs wherever
+# the repo is cloned (e.g. /home/jovyan/work/reef_imagery_pipeline). Override
+# with REEF_PIPELINE_ROOT if needed.
+_env_root = os.environ.get("REEF_PIPELINE_ROOT")
+WORK = Path(_env_root) if _env_root else Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(WORK))
 os.chdir(str(WORK))
 
