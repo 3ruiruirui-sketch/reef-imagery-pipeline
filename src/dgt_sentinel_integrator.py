@@ -21,6 +21,7 @@ import numpy as np
 import requests
 import rioxarray as rxr
 import xarray as xr
+from rasterio.io import MemoryFile
 
 logger = logging.getLogger(__name__)
 

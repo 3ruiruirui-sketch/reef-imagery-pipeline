@@ -201,3 +201,58 @@ def scene_summary(item: Item) -> dict[str, Any]:
         "collection": item.collection_id,
         "assets": sorted(item.assets.keys()),
     }
+
+
+def metadata_from_stac_item(item: Item) -> dict[str, Any]:
+    """Extract a run_predictor-compatible metadata dict from a Sentinel-2 STAC item.
+
+    This is the production replacement for compute_metadata_stub() in utils.py.
+    All fields fall back to neutral defaults when the STAC catalog does not
+    expose the corresponding property (e.g., older Earth Search vs. PC schemas).
+
+    Sentinel-2 STAC property mapping:
+        view:sun_elevation  → solar_zenith_deg  (= 90 − elevation)
+        view:sun_azimuth    → solar_azimuth_deg
+        view:incidence_angle → satellite_zenith_deg
+        view:azimuth        → satellite_azimuth_deg
+        eo:cloud_cover      → cloud_cover_pct
+        proj:epsg           → crs  (as "EPSG:<code>")
+        s2:product_type or processing:level → level  (normalised to "L2A"/"L1C")
+    """
+    props = item.properties
+
+    sun_elev = props.get("view:sun_elevation")
+    solar_zenith = (90.0 - float(sun_elev)) if sun_elev is not None else 40.0
+    solar_azimuth = float(props.get("view:sun_azimuth", 150.0))
+    sat_zenith = float(props.get("view:incidence_angle", 5.0))
+    sat_azimuth = float(props.get("view:azimuth", 10.0))
+    cloud_cover = float(props.get("eo:cloud_cover", 2.0))
+
+    epsg = props.get("proj:epsg")
+    crs = f"EPSG:{epsg}" if epsg else "EPSG:32629"
+
+    # PC uses "s2:product_type" (e.g. "MSIL2A"); Earth Search uses "processing:level" (e.g. "L2A")
+    raw_level = props.get("s2:product_type") or props.get("processing:level", "L2A")
+    if raw_level and "L2A" in raw_level:
+        level = "L2A"
+    elif raw_level and "L1C" in raw_level:
+        level = "L1C"
+    else:
+        level = raw_level or "L2A"
+
+    if item.datetime is not None:
+        date_str = item.datetime.strftime("%Y-%m-%d")
+    else:
+        date_str = str(props.get("datetime", ""))[:10]
+
+    return {
+        "date": date_str,
+        "crs": crs,
+        "datum": "WGS84",
+        "level": level,
+        "solar_zenith_deg": round(solar_zenith, 3),
+        "solar_azimuth_deg": round(solar_azimuth, 3),
+        "satellite_zenith_deg": round(sat_zenith, 3),
+        "satellite_azimuth_deg": round(sat_azimuth, 3),
+        "cloud_cover_pct": round(cloud_cover, 3),
+    }
